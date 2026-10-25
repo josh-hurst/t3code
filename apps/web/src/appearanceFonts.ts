@@ -62,10 +62,13 @@ export interface AppearanceFontPreferences {
   readonly sans: string;
   readonly code: string;
   readonly composer: string;
+  readonly sidebar: string;
+  readonly response: string;
   readonly sizeInterface: number;
   readonly sizePrompt: number;
   readonly sizeCode: number;
   readonly sizeSidebar: number | null;
+  readonly sizeResponse: number | null;
   readonly smoothing: boolean;
 }
 
@@ -78,6 +81,8 @@ export function applyAppearanceFontVariables(
     ["--font-sans", preferences.sans, DEFAULT_SANS_FONT_STACK],
     ["--font-mono", preferences.code, DEFAULT_CODE_FONT_STACK],
     ["--font-composer", preferences.composer, "var(--font-sans)"],
+    ["--font-sidebar", preferences.sidebar, "var(--font-sans)"],
+    ["--font-response", preferences.response, "var(--font-sans)"],
   ];
   for (const [variable, custom, fallback] of families) {
     const list = cssFontFamilies(custom);
@@ -99,6 +104,14 @@ export function applyAppearanceFontVariables(
     root.style.setProperty(
       "--sidebar-font-size",
       `${clampInterfaceFontSize(preferences.sizeSidebar)}px`,
+    );
+  }
+  if (preferences.sizeResponse === null) {
+    root.style.removeProperty("--font-size-response");
+  } else {
+    root.style.setProperty(
+      "--font-size-response",
+      `${clampPromptFontSize(preferences.sizeResponse)}px`,
     );
   }
 

@@ -76,6 +76,8 @@ type TypographySettings = Pick<
   UnifiedSettings,
   | "fontFamilySans"
   | "fontFamilyComposer"
+  | "fontFamilySidebar"
+  | "fontFamilyResponse"
   | "fontFamilyCode"
   | "fontFamilyTerminal"
   | "fontSizeInterface"
@@ -83,6 +85,7 @@ type TypographySettings = Pick<
   | "fontSizeCode"
   | "fontSizeTerminal"
   | "fontSizeSidebar"
+  | "fontSizeResponse"
 >;
 
 export function getChangedTypographySettingLabels(settings: TypographySettings): string[] {
@@ -103,8 +106,13 @@ export function getChangedTypographySettingLabels(settings: TypographySettings):
     settings.fontSizeTerminal !== DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal
       ? ["Terminal font"]
       : []),
-    ...(settings.fontSizeSidebar !== DEFAULT_UNIFIED_SETTINGS.fontSizeSidebar
-      ? ["Sidebar font size"]
+    ...(settings.fontFamilyResponse !== DEFAULT_UNIFIED_SETTINGS.fontFamilyResponse ||
+    settings.fontSizeResponse !== DEFAULT_UNIFIED_SETTINGS.fontSizeResponse
+      ? ["Response font"]
+      : []),
+    ...(settings.fontFamilySidebar !== DEFAULT_UNIFIED_SETTINGS.fontFamilySidebar ||
+    settings.fontSizeSidebar !== DEFAULT_UNIFIED_SETTINGS.fontSizeSidebar
+      ? ["Sidebar font"]
       : []),
   ];
 }

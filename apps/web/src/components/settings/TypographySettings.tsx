@@ -87,65 +87,71 @@ function InterfaceFontRow({ preview }: { preview?: ReactNode }) {
   );
 }
 
-const SIDEBAR_FONT_SIZE_FOLLOWS_INTERFACE = "interface";
-
-function SidebarFontSizeRow() {
+function SidebarFontRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const value = settings.fontSizeSidebar;
+  const defaults = useFontDefaultFamilies();
   return (
-    <SettingsRow
-      {...searchableSetting("sidebar-font-size")}
-      description="Text in the sidebar. Follows the interface font size unless set."
-      resetAction={
-        value !== DEFAULT_UNIFIED_SETTINGS.fontSizeSidebar ? (
-          <SettingResetButton
-            label="sidebar font size"
-            onClick={() =>
-              updateSettings({ fontSizeSidebar: DEFAULT_UNIFIED_SETTINGS.fontSizeSidebar })
-            }
-          />
-        ) : null
+    <FontFamilySettingsRow
+      {...searchableSetting("sidebar-font")}
+      description="Text in the sidebar. Follows the interface font unless set."
+      defaultFamily={defaults.interfaceFamily}
+      defaultValue={DEFAULT_UNIFIED_SETTINGS.fontFamilySidebar}
+      value={settings.fontFamilySidebar}
+      onValueChange={(fontFamilySidebar) => updateSettings({ fontFamilySidebar })}
+      onReset={() =>
+        updateSettings({
+          fontFamilySidebar: DEFAULT_UNIFIED_SETTINGS.fontFamilySidebar,
+          fontSizeSidebar: DEFAULT_UNIFIED_SETTINGS.fontSizeSidebar,
+        })
       }
-      control={
-        <Select
-          value={value === null ? SIDEBAR_FONT_SIZE_FOLLOWS_INTERFACE : String(value)}
-          onValueChange={(next) => {
-            if (typeof next !== "string") return;
-            if (next === SIDEBAR_FONT_SIZE_FOLLOWS_INTERFACE) {
-              updateSettings({ fontSizeSidebar: null });
-              return;
-            }
-            const parsed = Number(next);
-            if (
-              Number.isInteger(parsed) &&
-              parsed >= MIN_INTERFACE_FONT_SIZE &&
-              parsed <= MAX_INTERFACE_FONT_SIZE
-            ) {
-              updateSettings({ fontSizeSidebar: parsed });
-            }
-          }}
-        >
-          <SelectTrigger size="sm" className="w-44 shrink-0" aria-label="Sidebar font size">
-            <SelectValue>
-              {value === null ? `Interface (${settings.fontSizeInterface} px)` : `${value} px`}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            <SelectItem hideIndicator value={SIDEBAR_FONT_SIZE_FOLLOWS_INTERFACE}>
-              Same as interface
-            </SelectItem>
-            {Array.from(
-              { length: MAX_INTERFACE_FONT_SIZE - MIN_INTERFACE_FONT_SIZE + 1 },
-              (_, index) => MIN_INTERFACE_FONT_SIZE + index,
-            ).map((px) => (
-              <SelectItem hideIndicator key={px} value={String(px)}>
-                {px} px
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
+      size={{
+        label: "Sidebar font size",
+        min: MIN_INTERFACE_FONT_SIZE,
+        max: MAX_INTERFACE_FONT_SIZE,
+        value: settings.fontSizeSidebar ?? settings.fontSizeInterface,
+        onChange: (fontSizeSidebar) => updateSettings({ fontSizeSidebar }),
+        follows: {
+          label: "Same as interface",
+          active: settings.fontSizeSidebar === null,
+          onSelect: () => updateSettings({ fontSizeSidebar: null }),
+        },
+      }}
+    />
+  );
+}
+
+function ResponseFontRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const defaults = useFontDefaultFamilies();
+  return (
+    <FontFamilySettingsRow
+      {...searchableSetting("response-font")}
+      description="Agent responses and plans. Follows the interface font unless set."
+      defaultFamily={defaults.interfaceFamily}
+      defaultValue={DEFAULT_UNIFIED_SETTINGS.fontFamilyResponse}
+      value={settings.fontFamilyResponse}
+      onValueChange={(fontFamilyResponse) => updateSettings({ fontFamilyResponse })}
+      onReset={() =>
+        updateSettings({
+          fontFamilyResponse: DEFAULT_UNIFIED_SETTINGS.fontFamilyResponse,
+          fontSizeResponse: DEFAULT_UNIFIED_SETTINGS.fontSizeResponse,
+        })
       }
+      size={{
+        label: "Response font size",
+        min: MIN_PROMPT_FONT_SIZE,
+        max: MAX_PROMPT_FONT_SIZE,
+        // Unset, responses render at text-sm (0.875rem) of the interface size.
+        value: settings.fontSizeResponse ?? Math.round(settings.fontSizeInterface * 0.875),
+        onChange: (fontSizeResponse) => updateSettings({ fontSizeResponse }),
+        follows: {
+          label: "Same as interface",
+          active: settings.fontSizeResponse === null,
+          onSelect: () => updateSettings({ fontSizeResponse: null }),
+        },
+      }}
     />
   );
 }
@@ -322,7 +328,8 @@ function FontSettingsGroup() {
   return (
     <>
       <InterfaceFontRow />
-      <SidebarFontSizeRow />
+      <ResponseFontRow />
+      <SidebarFontRow />
       <PromptFontRow />
       <CodeFontRow />
       <TerminalFontRow />
@@ -357,7 +364,8 @@ function SimpleFontRows() {
   return (
     <>
       <InterfaceFontRow preview={<PromptFontPreview />} />
-      <SidebarFontSizeRow />
+      <ResponseFontRow />
+      <SidebarFontRow />
       <CodeFontRow
         title="Monospace font"
         description="Code blocks, diffs, file previews, and the terminal."
@@ -412,6 +420,8 @@ export function TypographySection() {
   );
 }
 
+const FONT_SIZE_FOLLOWS = "follows";
+
 function FontFamilySettingsRow({
   id,
   title,
@@ -440,8 +450,10 @@ function FontFamilySettingsRow({
     min: number;
     max: number;
     value: number;
-    defaultValue: number;
+    defaultValue?: number;
     onChange: (v: number) => void;
+    // A size that follows another one by default; following is its default state.
+    follows?: { label: string; active: boolean; onSelect: () => void };
   };
 }) {
   const trimmed = value.trim();
@@ -491,7 +503,8 @@ function FontFamilySettingsRow({
     onReset();
   };
   const resetAction =
-    value !== defaultValue || size.value !== size.defaultValue ? (
+    value !== defaultValue ||
+    (size.follows ? !size.follows.active : size.value !== size.defaultValue) ? (
       <SettingResetButton label={title.toLowerCase()} onClick={resetToDefault} />
     ) : null;
   const fontEnumeration = useFontEnumeration();
@@ -559,9 +572,13 @@ function FontFamilySettingsRow({
     <div className="flex w-full items-center gap-2 sm:w-auto">
       <div className="min-w-0 flex-1 sm:w-44 sm:flex-none">{familyControl}</div>
       <Select
-        value={String(size.value)}
+        value={size.follows?.active ? FONT_SIZE_FOLLOWS : String(size.value)}
         onValueChange={(next) => {
           if (typeof next !== "string") return;
+          if (next === FONT_SIZE_FOLLOWS) {
+            size.follows?.onSelect();
+            return;
+          }
           const parsed = Number(next);
           if (Number.isInteger(parsed) && parsed >= size.min && parsed <= size.max) {
             size.onChange(parsed);
@@ -569,9 +586,14 @@ function FontFamilySettingsRow({
         }}
       >
         <SelectTrigger size="sm" className="w-22 shrink-0" aria-label={size.label}>
-          <SelectValue>{size.value} px</SelectValue>
+          <SelectValue>{size.follows?.active ? "Auto" : `${size.value} px`}</SelectValue>
         </SelectTrigger>
         <SelectPopup align="end" alignItemWithTrigger={false}>
+          {size.follows ? (
+            <SelectItem hideIndicator value={FONT_SIZE_FOLLOWS}>
+              {size.follows.label}
+            </SelectItem>
+          ) : null}
           {Array.from({ length: size.max - size.min + 1 }, (_, index) => size.min + index).map(
             (px) => (
               <SelectItem hideIndicator key={px} value={String(px)}>

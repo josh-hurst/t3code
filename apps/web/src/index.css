@@ -1237,11 +1237,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
-/* Settings -> Appearance -> Sidebar font size. Text utilities are rem-based,
+/* Settings -> Appearance -> Sidebar font. Text utilities are rem-based,
    so they would follow the interface size; rebasing the size tokens on
    --sidebar-font-size scales only the sidebar's text while spacing and icons
    keep following the interface size. Unset, every value equals the default. */
 [data-app-sidebar] {
+  font-family: var(--font-sidebar, inherit);
   font-size: var(--sidebar-font-size, 1rem);
   --text-5xs: calc(0.4375 * var(--sidebar-font-size, 1rem));
   --text-4xs: calc(0.5 * var(--sidebar-font-size, 1rem));
@@ -1902,6 +1903,30 @@ code {
 }
 
 /* Chat markdown rendering */
+
+/* Settings -> Appearance -> Response font. Unlayered so it beats the text-sm
+   utility on the markdown root. Headings use em here so they follow the
+   response size; at the default 0.875rem base they equal the rem sizes below. */
+[data-assistant-response] .chat-markdown {
+  font-family: var(--font-response, inherit);
+  font-size: var(--font-size-response, var(--text-sm));
+}
+
+[data-assistant-response] .chat-markdown h1 {
+  font-size: calc(1.25em / 0.875);
+}
+
+[data-assistant-response] .chat-markdown h2 {
+  font-size: calc(1.125em / 0.875);
+}
+
+[data-assistant-response] .chat-markdown h3 {
+  font-size: calc(1em / 0.875);
+}
+
+[data-assistant-response] .chat-markdown :is(h4, h5, h6) {
+  font-size: 1em;
+}
 
 .chat-markdown > :first-child {
   margin-top: 0;

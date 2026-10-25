@@ -80,20 +80,26 @@ function startClientAppearance(): void {
       previous?.fontFamilySans !== settings.fontFamilySans ||
       previous.fontFamilyCode !== settings.fontFamilyCode ||
       previous.fontFamilyComposer !== settings.fontFamilyComposer ||
+      previous.fontFamilySidebar !== settings.fontFamilySidebar ||
+      previous.fontFamilyResponse !== settings.fontFamilyResponse ||
       previous.fontSizeInterface !== settings.fontSizeInterface ||
       previous.fontSizePrompt !== settings.fontSizePrompt ||
       previous.fontSizeCode !== settings.fontSizeCode ||
       previous.fontSizeSidebar !== settings.fontSizeSidebar ||
+      previous.fontSizeResponse !== settings.fontSizeResponse ||
       previous.fontSmoothing !== settings.fontSmoothing
     ) {
       applyAppearanceFontVariables(root, {
         sans: settings.fontFamilySans,
         code: settings.fontFamilyCode,
         composer: settings.fontFamilyComposer,
+        sidebar: settings.fontFamilySidebar,
+        response: settings.fontFamilyResponse,
         sizeInterface: settings.fontSizeInterface,
         sizePrompt: settings.fontSizePrompt,
         sizeCode: settings.fontSizeCode,
         sizeSidebar: settings.fontSizeSidebar,
+        sizeResponse: settings.fontSizeResponse,
         smoothing: settings.fontSmoothing,
       });
     }
