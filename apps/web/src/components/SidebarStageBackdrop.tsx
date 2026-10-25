@@ -6,7 +6,7 @@ import { resolveServerBackedAppStageLabel } from "../branding.logic";
 import { primaryServerConfigAtom } from "../state/server";
 
 export type SidebarStageBackdropVariant = "nightly" | "dev";
-export type EnvironmentIdentificationPillLabel = "Dev" | "Nightly";
+export type EnvironmentIdentificationPillLabel = "Dev" | "Nightly" | "Beta";
 
 const STAGE_BACKDROP_VIEW_BOX = "0 0 8192 96";
 
@@ -17,7 +17,8 @@ export function resolveSidebarStageBackdropVariant(
   if (!enabled) return null;
   const normalized = stageLabel.trim().toLowerCase();
   if (normalized === "nightly") return "nightly";
-  if (normalized === "dev") return "dev";
+  // J6 fork: Beta builds wear the blueprint art too.
+  if (normalized === "dev" || normalized === "beta") return "dev";
   return null;
 }
 
@@ -27,6 +28,7 @@ export function resolveEnvironmentIdentificationPillLabel(
   const normalized = stageLabel.trim().toLowerCase();
   if (normalized === "dev") return "Dev";
   if (normalized === "nightly") return "Nightly";
+  if (normalized === "beta") return "Beta";
   return null;
 }
 
