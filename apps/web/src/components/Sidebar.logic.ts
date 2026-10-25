@@ -151,10 +151,21 @@ export function sidebarMarkerId(marker: SidebarListMarker): string {
 }
 
 export type SidebarListItem =
-  | { readonly kind: "thread"; readonly key: string; readonly section: SidebarSection }
+  | {
+      readonly kind: "thread";
+      readonly key: string;
+      readonly section: SidebarSection;
+      // In its project's Needs you panel.
+      readonly needsYou?: true;
+    }
   | { readonly kind: "marker"; readonly marker: SidebarListMarker }
   // A heading inside the active section; it does not change the section.
-  | { readonly kind: "group"; readonly key: string; readonly projectKey: string | null };
+  | {
+      readonly kind: "group";
+      readonly key: string;
+      readonly projectKey: string | null;
+      readonly folderId?: string;
+    };
 
 export function sidebarListItemId(item: SidebarListItem): string {
   return item.kind === "thread"
@@ -166,15 +177,20 @@ export function sidebarListItemId(item: SidebarListItem): string {
 
 export interface SidebarActiveGroup<T> {
   readonly key: string;
-  /** Null for the Needs you group. */
+  /** Null for folders and unfiled threads. */
   readonly projectKey: string | null;
+  readonly folderId?: string;
+  /** Unfiled threads list above the folders without a heading. */
+  readonly headless?: true;
   readonly threads: readonly T[];
+  /** How many of `threads`, from the start, need you. */
+  readonly needsYouCount?: number;
 }
 
 /**
- * Splits the active list into Needs you, then one group per project in
- * `projectOrder`. Projects missing from it follow in first-seen order. Each
- * group keeps the input's relative order.
+ * Splits the active list into one group per project in `projectOrder`, each
+ * starting with its threads that need you. Projects missing from it follow in
+ * first-seen order. Both parts keep the input's relative order.
  */
 export function groupSidebarActiveThreads<T>(input: {
   readonly threads: readonly T[];
@@ -182,63 +198,101 @@ export function groupSidebarActiveThreads<T>(input: {
   readonly projectKeyOf: (thread: T) => string;
   readonly projectOrder: readonly string[];
 }): SidebarActiveGroup<T>[] {
-  const needsYou: T[] = [];
-  const byProject = new Map<string, T[]>();
+  const byProject = new Map<string, { needsYou: T[]; rest: T[] }>();
   for (const thread of input.threads) {
-    if (input.needsYou(thread)) {
-      needsYou.push(thread);
-      continue;
-    }
     const key = input.projectKeyOf(thread);
-    const group = byProject.get(key);
-    if (group) group.push(thread);
-    else byProject.set(key, [thread]);
+    let group = byProject.get(key);
+    if (group === undefined) {
+      group = { needsYou: [], rest: [] };
+      byProject.set(key, group);
+    }
+    (input.needsYou(thread) ? group.needsYou : group.rest).push(thread);
   }
-  const groups: SidebarActiveGroup<T>[] =
-    needsYou.length > 0 ? [{ key: "needs-you", projectKey: null, threads: needsYou }] : [];
+  const groups: SidebarActiveGroup<T>[] = [];
   for (const key of [...input.projectOrder, ...byProject.keys()]) {
-    const threads = byProject.get(key);
-    if (threads === undefined) continue;
+    const group = byProject.get(key);
+    if (group === undefined) continue;
     byProject.delete(key);
-    groups.push({ key: `project:${key}`, projectKey: key, threads });
+    groups.push({
+      key: `project:${key}`,
+      projectKey: key,
+      threads: [...group.needsYou, ...group.rest],
+      needsYouCount: group.needsYou.length,
+    });
   }
   return groups;
 }
 
 /**
+ * Lists unfiled threads first, without a heading, then every folder in
+ * `folderOrder`, even empty ones so they stay visible to manage. Each group
+ * keeps the input's relative order.
+ */
+export function groupSidebarFolderThreads<T>(input: {
+  readonly threads: readonly T[];
+  readonly folderIdOf: (thread: T) => string | undefined;
+  readonly folderOrder: readonly string[];
+}): SidebarActiveGroup<T>[] {
+  const byFolder = new Map<string, T[]>(input.folderOrder.map((id) => [id, []]));
+  const unfiled: T[] = [];
+  for (const thread of input.threads) {
+    const folderId = input.folderIdOf(thread);
+    const folder = folderId === undefined ? undefined : byFolder.get(folderId);
+    (folder ?? unfiled).push(thread);
+  }
+  return [
+    ...(unfiled.length > 0
+      ? [{ key: "unfiled", projectKey: null, headless: true as const, threads: unfiled }]
+      : []),
+    ...[...byFolder].map(([folderId, threads]) => ({
+      key: `folder:${folderId}`,
+      projectKey: null,
+      folderId,
+      threads,
+    })),
+  ];
+}
+
+/**
  * Keeps the open thread in the section it had when opened, in or out of Needs
- * you, so a status change never moves the row being looked at. Leaving it
- * re-sorts it. Call with the route key on each grouping pass, then use the
- * returned check for every thread.
+ * you, so a status change never moves the row being looked at. Leaving it, or
+ * sending it a message (a new `sentAt`), re-sorts it. Call with the route key
+ * on each grouping pass, then use the returned check for every thread.
  */
 export function createOpenThreadPlacementHold() {
-  let held: { readonly key: string; readonly needsYou: boolean } | null = null;
+  let held: {
+    readonly key: string;
+    readonly needsYou: boolean;
+    readonly sentAt: string | null;
+  } | null = null;
   return (routeKey: string | null) => {
     if (held?.key !== routeKey) held = null;
-    return (key: string, needsYou: boolean): boolean => {
+    return (key: string, needsYou: boolean, sentAt: string | null): boolean => {
       if (key !== routeKey) return needsYou;
-      held ??= { key, needsYou };
+      if (held === null || held.sentAt !== sentAt) held = { key, needsYou, sentAt };
       return held.needsYou;
     };
   };
 }
 
 export interface SidebarProjectBlock {
-  readonly projectKey: string;
+  /** The project key, or the folder id. */
+  readonly sectionKey: string;
   /** Index of the heading. */
   readonly start: number;
   /** One past the block's last row. */
   readonly end: number;
 }
 
-/** Each project section's heading and the rows beneath it. */
+/** Each movable section's heading (a project or a folder) and the rows beneath it. */
 export function sidebarProjectBlocks(items: readonly SidebarListItem[]): SidebarProjectBlock[] {
   const blocks: SidebarProjectBlock[] = [];
   for (const [index, item] of items.entries()) {
-    if (item.kind !== "group" || item.projectKey === null) continue;
+    const sectionKey = item.kind === "group" ? (item.projectKey ?? item.folderId) : undefined;
+    if (sectionKey === undefined) continue;
     let end = index + 1;
     while (items[end]?.kind === "thread") end += 1;
-    blocks.push({ projectKey: item.projectKey, start: index, end });
+    blocks.push({ sectionKey, start: index, end });
   }
   return blocks;
 }
@@ -1172,6 +1226,34 @@ export function filterSidebarProjectScopeItems<TItem extends { readonly value: s
   return input.items.filter((item) => item.value !== "all" && input.matches(item, query));
 }
 
+/**
+ * The physical project keys whose threads the sidebar lists, or null for all.
+ * Showing one project wins over hiding, so a hidden project can still be
+ * picked on its own.
+ */
+export function resolveSidebarVisibleProjectKeys(input: {
+  readonly groups: ReadonlyArray<{
+    readonly projectKey: string;
+    readonly memberProjectRefs: ReadonlyArray<{
+      readonly environmentId: string;
+      readonly projectId: string;
+    }>;
+  }>;
+  readonly scopeKey: string | null;
+  readonly hiddenKeys: ReadonlySet<string>;
+}): ReadonlySet<string> | null {
+  const scoped = input.groups.find((group) => group.projectKey === input.scopeKey);
+  const shown = scoped
+    ? [scoped]
+    : input.groups.filter((group) => !input.hiddenKeys.has(group.projectKey));
+  if (!scoped && shown.length === input.groups.length) return null;
+  return new Set(
+    shown.flatMap((group) =>
+      group.memberProjectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`),
+    ),
+  );
+}
+
 export interface SidebarProjectScopeMenuState {
   readonly open: boolean;
   readonly query: string;
@@ -1306,9 +1388,14 @@ const NEEDS_YOU_STATUS_LABELS: ReadonlySet<ThreadStatusPill["label"]> = new Set(
 ]);
 
 /** Whether the row's status pill is asking the person to act or look. */
-export function sidebarThreadNeedsYou(thread: ThreadStatusInput): boolean {
+export function sidebarThreadNeedsYou(
+  thread: ThreadStatusInput,
+  options: { readonly includeCompleted: boolean } = { includeCompleted: true },
+): boolean {
   const pill = resolveThreadStatusPill({ thread });
-  return pill !== null && NEEDS_YOU_STATUS_LABELS.has(pill.label);
+  if (pill === null) return false;
+  if (pill.label === "Completed") return options.includeCompleted;
+  return NEEDS_YOU_STATUS_LABELS.has(pill.label);
 }
 
 export function resolveProjectStatusIndicator(

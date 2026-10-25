@@ -27,6 +27,9 @@ export interface PersistedUiState {
   projectOrderCwds?: string[];
   defaultAdvertisedEndpointKey?: string | null;
   sidebarProjectScopeKey?: string | null;
+  sidebarHiddenProjectKeys?: string[];
+  sidebarFolders?: SidebarFolder[];
+  sidebarThreadFolderById?: Record<string, string>;
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   pullRequestMergeMethod?: string;
@@ -36,6 +39,16 @@ export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
   projectOrder: string[];
   sidebarProjectScopeKey: string | null;
+  sidebarHiddenProjectKeys: string[];
+  /** Folders group the active list when project sections are off, in this order. */
+  sidebarFolders: SidebarFolder[];
+  /** Folder id by scoped thread key. */
+  sidebarThreadFolderById: Record<string, string>;
+}
+
+export interface SidebarFolder {
+  readonly id: string;
+  readonly name: string;
 }
 
 export interface UiThreadState {
@@ -58,6 +71,9 @@ const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
   sidebarProjectScopeKey: null,
+  sidebarHiddenProjectKeys: [],
+  sidebarFolders: [],
+  sidebarThreadFolderById: {},
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
@@ -113,6 +129,33 @@ function sanitizeTimestampRecord(value: unknown): Record<string, string> {
   );
 }
 
+function sanitizeSidebarFolders(value: unknown): SidebarFolder[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.flatMap((entry): SidebarFolder[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const { id, name } = entry as Record<string, unknown>;
+    if (typeof id !== "string" || id.length === 0 || seen.has(id)) return [];
+    if (typeof name !== "string" || name.trim().length === 0) return [];
+    seen.add(id);
+    return [{ id, name }];
+  });
+}
+
+function sanitizeThreadFolders(
+  value: unknown,
+  folders: readonly SidebarFolder[],
+): Record<string, string> {
+  if (!value || typeof value !== "object") return {};
+  const folderIds = new Set(folders.map((folder) => folder.id));
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] =>
+        entry[0].length > 0 && typeof entry[1] === "string" && folderIds.has(entry[1]),
+    ),
+  );
+}
+
 function isPullRequestMergeMethod(value: unknown): value is PullRequestMergeMethod {
   return value === "merge" || value === "squash" || value === "rebase";
 }
@@ -141,6 +184,8 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       ? sanitizeStringArray(parsed.projectOrderCwds).map(legacyProjectCwdPreferenceKey)
       : sanitizeStringArray(parsed.projectOrder);
 
+  const sidebarFolders = sanitizeSidebarFolders(parsed.sidebarFolders);
+
   return {
     projectExpandedById,
     projectOrder,
@@ -151,6 +196,9 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
         : {},
     defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
     sidebarProjectScopeKey: sanitizeOptionalKey(parsed.sidebarProjectScopeKey),
+    sidebarHiddenProjectKeys: sanitizeStringArray(parsed.sidebarHiddenProjectKeys),
+    sidebarFolders,
+    sidebarThreadFolderById: sanitizeThreadFolders(parsed.sidebarThreadFolderById, sidebarFolders),
     pullRequestMergeMethod: isPullRequestMergeMethod(parsed.pullRequestMergeMethod)
       ? parsed.pullRequestMergeMethod
       : initialState.pullRequestMergeMethod,
@@ -225,6 +273,9 @@ export function persistState(state: UiState): void {
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         sidebarProjectScopeKey: state.sidebarProjectScopeKey,
+        sidebarHiddenProjectKeys: state.sidebarHiddenProjectKeys,
+        sidebarFolders: state.sidebarFolders,
+        sidebarThreadFolderById: state.sidebarThreadFolderById,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
         pullRequestMergeMethod: state.pullRequestMergeMethod,
@@ -334,6 +385,80 @@ function setSidebarProjectScopeKey(state: UiState, projectKey: string | null): U
   };
 }
 
+export function setSidebarProjectHidden(
+  state: UiState,
+  projectKey: string,
+  hidden: boolean,
+): UiState {
+  if (state.sidebarHiddenProjectKeys.includes(projectKey) === hidden) return state;
+  return {
+    ...state,
+    sidebarHiddenProjectKeys: hidden
+      ? [...state.sidebarHiddenProjectKeys, projectKey]
+      : state.sidebarHiddenProjectKeys.filter((key) => key !== projectKey),
+  };
+}
+
+export function createSidebarFolder(state: UiState, folder: SidebarFolder): UiState {
+  if (state.sidebarFolders.some((existing) => existing.id === folder.id)) return state;
+  return { ...state, sidebarFolders: [...state.sidebarFolders, folder] };
+}
+
+export function renameSidebarFolder(state: UiState, folderId: string, name: string): UiState {
+  if (!state.sidebarFolders.some((folder) => folder.id === folderId && folder.name !== name)) {
+    return state;
+  }
+  return {
+    ...state,
+    sidebarFolders: state.sidebarFolders.map((folder) =>
+      folder.id === folderId ? { ...folder, name } : folder,
+    ),
+  };
+}
+
+/** Deleting a folder returns its threads to the unfiled list. */
+export function deleteSidebarFolder(state: UiState, folderId: string): UiState {
+  if (!state.sidebarFolders.some((folder) => folder.id === folderId)) return state;
+  return {
+    ...state,
+    sidebarFolders: state.sidebarFolders.filter((folder) => folder.id !== folderId),
+    sidebarThreadFolderById: Object.fromEntries(
+      Object.entries(state.sidebarThreadFolderById).filter(([, id]) => id !== folderId),
+    ),
+  };
+}
+
+export function setSidebarFolderOrder(state: UiState, folderIds: readonly string[]): UiState {
+  const byId = new Map(state.sidebarFolders.map((folder) => [folder.id, folder] as const));
+  const ordered = folderIds.flatMap((id) => byId.get(id) ?? []);
+  const next = [
+    ...ordered,
+    ...state.sidebarFolders.filter((folder) => !folderIds.includes(folder.id)),
+  ];
+  return next.every((folder, index) => folder === state.sidebarFolders[index])
+    ? state
+    : { ...state, sidebarFolders: next };
+}
+
+export function setSidebarThreadFolder(
+  state: UiState,
+  threadKeys: readonly string[],
+  folderId: string | null,
+): UiState {
+  if (folderId !== null && !state.sidebarFolders.some((folder) => folder.id === folderId)) {
+    return state;
+  }
+  if (threadKeys.every((key) => (state.sidebarThreadFolderById[key] ?? null) === folderId)) {
+    return state;
+  }
+  const next = { ...state.sidebarThreadFolderById };
+  for (const key of threadKeys) {
+    if (folderId === null) delete next[key];
+    else next[key] = folderId;
+  }
+  return { ...state, sidebarThreadFolderById: next };
+}
+
 function setPullRequestMergeMethod(state: UiState, method: PullRequestMergeMethod): UiState {
   return state.pullRequestMergeMethod === method
     ? state
@@ -423,6 +548,12 @@ interface UiStateStore extends UiState {
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setSidebarProjectScopeKey: (projectKey: string | null) => void;
+  setSidebarProjectHidden: (projectKey: string, hidden: boolean) => void;
+  createSidebarFolder: (folder: SidebarFolder) => void;
+  renameSidebarFolder: (folderId: string, name: string) => void;
+  deleteSidebarFolder: (folderId: string) => void;
+  setSidebarFolderOrder: (folderIds: readonly string[]) => void;
+  setSidebarThreadFolder: (threadKeys: readonly string[], folderId: string | null) => void;
   setPullRequestMergeMethod: (method: PullRequestMergeMethod) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
@@ -445,6 +576,15 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setSidebarProjectScopeKey: (projectKey) =>
     set((state) => setSidebarProjectScopeKey(state, projectKey)),
+  setSidebarProjectHidden: (projectKey, hidden) =>
+    set((state) => setSidebarProjectHidden(state, projectKey, hidden)),
+  createSidebarFolder: (folder) => set((state) => createSidebarFolder(state, folder)),
+  renameSidebarFolder: (folderId, name) =>
+    set((state) => renameSidebarFolder(state, folderId, name)),
+  deleteSidebarFolder: (folderId) => set((state) => deleteSidebarFolder(state, folderId)),
+  setSidebarFolderOrder: (folderIds) => set((state) => setSidebarFolderOrder(state, folderIds)),
+  setSidebarThreadFolder: (threadKeys, folderId) =>
+    set((state) => setSidebarThreadFolder(state, threadKeys, folderId)),
   setPullRequestMergeMethod: (method) => set((state) => setPullRequestMergeMethod(state, method)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),

@@ -30,6 +30,7 @@ import {
   AlarmClockIcon,
   AlarmClockOffIcon,
   ArrowRightLeftIcon,
+  BellDotIcon,
   CheckIcon,
   CircleAlertIcon,
   CircleCheckIcon,
@@ -502,6 +503,18 @@ export function SortableThreadRow(
   return <SidebarThreadRow key={rowProps.variant} {...rowProps} thread={thread} sortable={bag} />;
 }
 export type SidebarSweepAction = "settle" | "unsettle" | "unsnooze";
+
+// Where a row sits in its project's Needs you panel: the first row carries the
+// label and the last closes the tint.
+export type SidebarThreadPanelPosition = "first" | "row" | "last" | "only";
+
+export function sidebarThreadPanelPosition(
+  afterPanelRow: boolean,
+  beforePanelRow: boolean,
+): SidebarThreadPanelPosition {
+  if (afterPanelRow) return beforePanelRow ? "row" : "last";
+  return beforePanelRow ? "first" : "only";
+}
 const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
   pin: (
     <>
@@ -565,8 +578,7 @@ type SidebarThreadRowProps = {
   projectDisplayName: string | null;
   // Under a project section heading, which already names the project.
   projectInHeading: boolean;
-  // Continues the Needs you heading's panel; "last" closes it.
-  panel: "row" | "last" | null;
+  panel: SidebarThreadPanelPosition | null;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
   timestampFormat: TimestampFormat;
   onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
@@ -1417,10 +1429,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             ? "[contain-intrinsic-size:auto_54px]"
             : "[contain-intrinsic-size:auto_78px]",
         panel !== null && "mx-0.5 bg-primary/5 px-1",
-        panel === "last" && "rounded-b-lg pb-1",
+        (panel === "first" || panel === "only") && "mt-0.5 rounded-t-lg",
+        (panel === "last" || panel === "only") && "rounded-b-lg pb-1",
         sortable?.isDragging && "relative z-20",
       )}
     >
+      {panel === "first" || panel === "only" ? (
+        <div className="flex h-6 items-center gap-1.5 px-2 text-xs font-medium text-primary">
+          <BellDotIcon aria-hidden className="size-3.5 shrink-0" />
+          Needs you
+        </div>
+      ) : null}
       <Tooltip disabled={snoozeMenuOpen || sortable?.isDragging}>
         <TooltipTrigger
           render={

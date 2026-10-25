@@ -440,6 +440,10 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarProjectSections !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSections
       ? ["Project sections"]
       : []),
+    ...(settings.sidebarNeedsYouIncludesCompleted !==
+    DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouIncludesCompleted
+      ? ["Finished threads in Needs you"]
+      : []),
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
       : []),
@@ -619,6 +623,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarCompactRows: DEFAULT_UNIFIED_SETTINGS.sidebarCompactRows,
       sidebarProjectSections: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSections,
+      sidebarNeedsYouIncludesCompleted: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouIncludesCompleted,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sharedProjectTerminals: DEFAULT_UNIFIED_SETTINGS.sharedProjectTerminals,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
@@ -1016,7 +1021,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("project-sections")}
-          description="Group active threads under a heading for each project. Threads waiting on an approval, a question, or a finished run you haven't opened move to a Needs you section at the top."
+          description="Group active threads under a heading for each project. Threads waiting on an approval, a question, or a finished run you haven't opened move to a Needs you section at the top of their project."
           resetAction={
             settings.sidebarProjectSections !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSections ? (
               <SettingResetButton
@@ -1039,6 +1044,36 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+
+        {settings.sidebarProjectSections ? (
+          <SettingsRow
+            {...searchableSetting("needs-you-finished-threads")}
+            description="Move threads with a finished run you haven't opened to Needs you. When off, they stay in their project section."
+            resetAction={
+              settings.sidebarNeedsYouIncludesCompleted !==
+              DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouIncludesCompleted ? (
+                <SettingResetButton
+                  label="finished threads in Needs you"
+                  onClick={() =>
+                    updateSettings({
+                      sidebarNeedsYouIncludesCompleted:
+                        DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouIncludesCompleted,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.sidebarNeedsYouIncludesCompleted}
+                onCheckedChange={(checked) =>
+                  updateSettings({ sidebarNeedsYouIncludesCompleted: Boolean(checked) })
+                }
+                aria-label="Finished threads in Needs you"
+              />
+            }
+          />
+        ) : null}
 
         <SettingsRow
           {...searchableSetting("working-shelf")}

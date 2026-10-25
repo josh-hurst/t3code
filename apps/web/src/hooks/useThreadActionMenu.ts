@@ -1,5 +1,6 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
+import { readSidebarFolderMenuState, runSidebarFolderAction } from "../components/sidebarFolders";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
@@ -91,6 +92,7 @@ export function useThreadActionMenu(input: {
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
+  const projectSectionsEnabled = useClientSettings((s) => s.sidebarProjectSections);
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
       toastManager.add({ type: "success", title: "Path copied", description: path });
@@ -141,6 +143,7 @@ export function useThreadActionMenu(input: {
         isRunning: !threadRuntimeCanArchive(thread.runtime),
         supports,
         snoozePresets,
+        folders: readSidebarFolderMenuState(scopedThreadKey(threadRef), projectSectionsEnabled),
       });
       const clicked = await settlePromise(() => api.contextMenu.show(items, position));
       if (clicked._tag === "Failure" || clicked.value === null) return;
@@ -153,6 +156,10 @@ export function useThreadActionMenu(input: {
           "Thread action unavailable",
           new Error("This connection cannot change threads."),
         );
+        return;
+      }
+      if (action.startsWith("folder:")) {
+        await runSidebarFolderAction(action as `folder:${string}`, [scopedThreadKey(threadRef)]);
         return;
       }
       if (action.startsWith("snooze:")) {
