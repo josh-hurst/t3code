@@ -286,10 +286,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["typography family size system sans"],
   },
   {
-    id: "sidebar-font-size",
-    title: "Sidebar font size",
+    id: "response-font",
+    title: "Response font",
     to: "/settings/appearance",
-    searchTerms: ["typography text size sidebar threads navigation"],
+    searchTerms: ["typography family size assistant agent message reply output chat llm"],
+  },
+  {
+    id: "sidebar-font",
+    title: "Sidebar font",
+    to: "/settings/appearance",
+    searchTerms: ["typography family text size sidebar threads navigation"],
   },
   {
     id: "prompt-font",

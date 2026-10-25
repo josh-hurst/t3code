@@ -315,10 +315,13 @@ function FontAppearanceSync() {
   const fontFamilySans = useClientSettings((settings) => settings.fontFamilySans);
   const fontFamilyCode = useClientSettings((settings) => settings.fontFamilyCode);
   const fontFamilyComposer = useClientSettings((settings) => settings.fontFamilyComposer);
+  const fontFamilySidebar = useClientSettings((settings) => settings.fontFamilySidebar);
+  const fontFamilyResponse = useClientSettings((settings) => settings.fontFamilyResponse);
   const fontSizeInterface = useClientSettings((settings) => settings.fontSizeInterface);
   const fontSizePrompt = useClientSettings((settings) => settings.fontSizePrompt);
   const fontSizeCode = useClientSettings((settings) => settings.fontSizeCode);
   const fontSizeSidebar = useClientSettings((settings) => settings.fontSizeSidebar);
+  const fontSizeResponse = useClientSettings((settings) => settings.fontSizeResponse);
   const fontSmoothing = useClientSettings((settings) => settings.fontSmoothing);
 
   useEffect(() => {
@@ -326,19 +329,25 @@ function FontAppearanceSync() {
       sans: fontFamilySans,
       code: fontFamilyCode,
       composer: fontFamilyComposer,
+      sidebar: fontFamilySidebar,
+      response: fontFamilyResponse,
       sizeInterface: fontSizeInterface,
       sizePrompt: fontSizePrompt,
       sizeCode: fontSizeCode,
       sizeSidebar: fontSizeSidebar,
+      sizeResponse: fontSizeResponse,
       smoothing: fontSmoothing,
     });
   }, [
     fontFamilyCode,
     fontFamilyComposer,
+    fontFamilyResponse,
     fontFamilySans,
+    fontFamilySidebar,
     fontSizeCode,
     fontSizeInterface,
     fontSizePrompt,
+    fontSizeResponse,
     fontSizeSidebar,
     fontSmoothing,
   ]);
