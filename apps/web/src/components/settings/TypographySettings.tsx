@@ -121,35 +121,35 @@ function SidebarFontRow() {
   );
 }
 
-function ResponseFontRow() {
+function ChatFontRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const defaults = useFontDefaultFamilies();
   return (
     <FontFamilySettingsRow
-      {...searchableSetting("response-font")}
-      description="Agent responses and plans. Follows the interface font unless set."
+      {...searchableSetting("chat-font")}
+      description="Your messages, agent replies, and plans. Follows the interface font unless set."
       defaultFamily={defaults.interfaceFamily}
-      defaultValue={DEFAULT_UNIFIED_SETTINGS.fontFamilyResponse}
-      value={settings.fontFamilyResponse}
-      onValueChange={(fontFamilyResponse) => updateSettings({ fontFamilyResponse })}
+      defaultValue={DEFAULT_UNIFIED_SETTINGS.fontFamilyChat}
+      value={settings.fontFamilyChat}
+      onValueChange={(fontFamilyChat) => updateSettings({ fontFamilyChat })}
       onReset={() =>
         updateSettings({
-          fontFamilyResponse: DEFAULT_UNIFIED_SETTINGS.fontFamilyResponse,
-          fontSizeResponse: DEFAULT_UNIFIED_SETTINGS.fontSizeResponse,
+          fontFamilyChat: DEFAULT_UNIFIED_SETTINGS.fontFamilyChat,
+          fontSizeChat: DEFAULT_UNIFIED_SETTINGS.fontSizeChat,
         })
       }
       size={{
-        label: "Response font size",
+        label: "Chat font size",
         min: MIN_PROMPT_FONT_SIZE,
         max: MAX_PROMPT_FONT_SIZE,
-        // Unset, responses render at text-sm (0.875rem) of the interface size.
-        value: settings.fontSizeResponse ?? Math.round(settings.fontSizeInterface * 0.875),
-        onChange: (fontSizeResponse) => updateSettings({ fontSizeResponse }),
+        // Unset, chat messages render at text-sm (0.875rem) of the interface size.
+        value: settings.fontSizeChat ?? Math.round(settings.fontSizeInterface * 0.875),
+        onChange: (fontSizeChat) => updateSettings({ fontSizeChat }),
         follows: {
           label: "Same as interface",
-          active: settings.fontSizeResponse === null,
-          onSelect: () => updateSettings({ fontSizeResponse: null }),
+          active: settings.fontSizeChat === null,
+          onSelect: () => updateSettings({ fontSizeChat: null }),
         },
       }}
     />
@@ -328,7 +328,7 @@ function FontSettingsGroup() {
   return (
     <>
       <InterfaceFontRow />
-      <ResponseFontRow />
+      <ChatFontRow />
       <SidebarFontRow />
       <PromptFontRow />
       <CodeFontRow />
@@ -364,7 +364,7 @@ function SimpleFontRows() {
   return (
     <>
       <InterfaceFontRow preview={<PromptFontPreview />} />
-      <ResponseFontRow />
+      <ChatFontRow />
       <SidebarFontRow />
       <CodeFontRow
         title="Monospace font"

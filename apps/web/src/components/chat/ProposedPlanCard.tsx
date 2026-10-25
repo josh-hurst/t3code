@@ -192,7 +192,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           ref={revealRef}
           className={cn("relative", isCollapsed && "max-h-104 overflow-hidden")}
           data-thread-find-text="true"
-          data-assistant-response=""
+          data-chat-message=""
           data-thread-find-fold={isCollapsed ? "" : undefined}
         >
           {showPreview ? (

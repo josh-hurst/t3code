@@ -81,12 +81,12 @@ function startClientAppearance(): void {
       previous.fontFamilyCode !== settings.fontFamilyCode ||
       previous.fontFamilyComposer !== settings.fontFamilyComposer ||
       previous.fontFamilySidebar !== settings.fontFamilySidebar ||
-      previous.fontFamilyResponse !== settings.fontFamilyResponse ||
+      previous.fontFamilyChat !== settings.fontFamilyChat ||
       previous.fontSizeInterface !== settings.fontSizeInterface ||
       previous.fontSizePrompt !== settings.fontSizePrompt ||
       previous.fontSizeCode !== settings.fontSizeCode ||
       previous.fontSizeSidebar !== settings.fontSizeSidebar ||
-      previous.fontSizeResponse !== settings.fontSizeResponse ||
+      previous.fontSizeChat !== settings.fontSizeChat ||
       previous.fontSmoothing !== settings.fontSmoothing
     ) {
       applyAppearanceFontVariables(root, {
@@ -94,12 +94,12 @@ function startClientAppearance(): void {
         code: settings.fontFamilyCode,
         composer: settings.fontFamilyComposer,
         sidebar: settings.fontFamilySidebar,
-        response: settings.fontFamilyResponse,
+        chat: settings.fontFamilyChat,
         sizeInterface: settings.fontSizeInterface,
         sizePrompt: settings.fontSizePrompt,
         sizeCode: settings.fontSizeCode,
         sizeSidebar: settings.fontSizeSidebar,
-        sizeResponse: settings.fontSizeResponse,
+        sizeChat: settings.fontSizeChat,
         smoothing: settings.fontSmoothing,
       });
     }

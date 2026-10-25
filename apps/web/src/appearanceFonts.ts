@@ -63,12 +63,12 @@ export interface AppearanceFontPreferences {
   readonly code: string;
   readonly composer: string;
   readonly sidebar: string;
-  readonly response: string;
+  readonly chat: string;
   readonly sizeInterface: number;
   readonly sizePrompt: number;
   readonly sizeCode: number;
   readonly sizeSidebar: number | null;
-  readonly sizeResponse: number | null;
+  readonly sizeChat: number | null;
   readonly smoothing: boolean;
 }
 
@@ -82,7 +82,7 @@ export function applyAppearanceFontVariables(
     ["--font-mono", preferences.code, DEFAULT_CODE_FONT_STACK],
     ["--font-composer", preferences.composer, "var(--font-sans)"],
     ["--font-sidebar", preferences.sidebar, "var(--font-sans)"],
-    ["--font-response", preferences.response, "var(--font-sans)"],
+    ["--font-chat", preferences.chat, "var(--font-sans)"],
   ];
   for (const [variable, custom, fallback] of families) {
     const list = cssFontFamilies(custom);
@@ -106,13 +106,10 @@ export function applyAppearanceFontVariables(
       `${clampInterfaceFontSize(preferences.sizeSidebar)}px`,
     );
   }
-  if (preferences.sizeResponse === null) {
-    root.style.removeProperty("--font-size-response");
+  if (preferences.sizeChat === null) {
+    root.style.removeProperty("--font-size-chat");
   } else {
-    root.style.setProperty(
-      "--font-size-response",
-      `${clampPromptFontSize(preferences.sizeResponse)}px`,
-    );
+    root.style.setProperty("--font-size-chat", `${clampPromptFontSize(preferences.sizeChat)}px`);
   }
 
   if (preferences.smoothing) {

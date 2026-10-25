@@ -338,10 +338,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["typography family size system sans"],
   },
   {
-    id: "response-font",
-    title: "Response font",
+    id: "chat-font",
+    title: "Chat font",
     to: "/settings/appearance",
-    searchTerms: ["typography family size assistant agent message reply output chat llm"],
+    searchTerms: [
+      "typography family size response assistant agent user my message reply output llm",
+    ],
   },
   {
     id: "sidebar-font",

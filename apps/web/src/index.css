@@ -1904,27 +1904,27 @@ code {
 
 /* Chat markdown rendering */
 
-/* Settings -> Appearance -> Response font. Unlayered so it beats the text-sm
+/* Settings -> Appearance -> Chat font. Unlayered so it beats the text-sm
    utility on the markdown root. Headings use em here so they follow the
-   response size; at the default 0.875rem base they equal the rem sizes below. */
-[data-assistant-response] .chat-markdown {
-  font-family: var(--font-response, inherit);
-  font-size: var(--font-size-response, var(--text-sm));
+   chat size; at the default 0.875rem base they equal the rem sizes below. */
+[data-chat-message] .chat-markdown {
+  font-family: var(--font-chat, inherit);
+  font-size: var(--font-size-chat, var(--text-sm));
 }
 
-[data-assistant-response] .chat-markdown h1 {
+[data-chat-message] .chat-markdown h1 {
   font-size: calc(1.25em / 0.875);
 }
 
-[data-assistant-response] .chat-markdown h2 {
+[data-chat-message] .chat-markdown h2 {
   font-size: calc(1.125em / 0.875);
 }
 
-[data-assistant-response] .chat-markdown h3 {
+[data-chat-message] .chat-markdown h3 {
   font-size: calc(1em / 0.875);
 }
 
-[data-assistant-response] .chat-markdown :is(h4, h5, h6) {
+[data-chat-message] .chat-markdown :is(h4, h5, h6) {
   font-size: 1em;
 }
 
