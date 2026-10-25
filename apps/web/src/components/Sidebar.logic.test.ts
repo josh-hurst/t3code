@@ -1243,6 +1243,50 @@ describe("Working shelf (beta)", () => {
       expect(above.kind === "move-active" && above.assignments[0]!.orderKey < "m").toBe(true);
     });
 
+    it("orders only the rows below Needs you above a flat list", () => {
+      const base = {
+        pinnedOrder: [],
+        pinnedKeysById: new Map(),
+        // n1 needs you and sits on top, though its saved order is last.
+        activeOrder: ["n1", "a1", "a2"],
+        activeKeysById: new Map([
+          ["n1", "x"],
+          ["a1", "f"],
+          ["a2", "t"],
+        ]),
+        activeFixedKeys: new Set(["n1"]),
+      };
+      // Needs you rows hold their place.
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "n1",
+          activeSection: "active",
+          target: { section: "active", pinnedOrder: [], activeOrder: ["a1", "n1", "a2"] },
+        }),
+      ).toEqual({ kind: "none" });
+      // Moving a row past one of them changes nothing below.
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "a1",
+          activeSection: "active",
+          target: { section: "active", pinnedOrder: [], activeOrder: ["a1", "n1", "a2"] },
+        }),
+      ).toEqual({ kind: "none" });
+      // Dropped into the panel, a row lands first below it, ignoring n1's key.
+      const plan = planSidebarThreadDrop({
+        ...base,
+        activeKey: "a2",
+        activeSection: "active",
+        target: { section: "active", pinnedOrder: [], activeOrder: ["a2", "n1", "a1"] },
+      });
+      expect(plan.kind === "move-active" && plan.assignments).toEqual([
+        { id: "a2", orderKey: expect.any(String) },
+      ]);
+      expect(plan.kind === "move-active" && plan.assignments[0]!.orderKey < "f").toBe(true);
+    });
+
     it("only changes lifecycle when the inbox is time-ordered", () => {
       const base = {
         pinnedOrder: ["p1"],

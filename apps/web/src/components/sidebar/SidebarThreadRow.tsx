@@ -1464,7 +1464,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             ? "[contain-intrinsic-size:auto_54px]"
             : "[contain-intrinsic-size:auto_78px]",
         metaLineEmpty && "redesign:[contain-intrinsic-size:auto_58px]",
-        panel !== null && "mx-0.5 bg-primary/5 px-1",
+        panel !== null && "mx-0.5 bg-primary/5 px-1 dark:bg-primary/15",
         (panel === "first" || panel === "only") && "mt-0.5 rounded-t-lg",
         (panel === "last" || panel === "only") && "rounded-b-lg pb-1",
         sortable?.isDragging && "relative z-20",
