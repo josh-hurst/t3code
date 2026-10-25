@@ -1,4 +1,8 @@
-import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type ScopedProjectRef,
+  type SidebarNeedsYouPlacement,
+} from "@t3tools/contracts";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import {
@@ -344,6 +348,7 @@ type SidebarActiveGrouping =
       readonly kind: "projects";
       readonly projectKeyOf: (thread: EnvironmentThreadShell) => string;
       readonly projectOrder: readonly string[];
+      readonly needsYouPlacement: SidebarNeedsYouPlacement;
       readonly completedNeedsYou: boolean;
     }
   | {
@@ -368,11 +373,13 @@ function groupActiveThreads(
   const groups = groupSidebarActiveThreads({
     threads,
     needsYou: (thread) =>
+      sections.needsYouPlacement !== "off" &&
       placeNeedsYou(
         threadShellKey(thread),
         sidebarThreadNeedsYou(thread, { includeCompleted: sections.completedNeedsYou }),
         thread.latestUserAuthoredMessageAt ?? thread.latestUserMessageAt,
       ),
+    needsYouOnTop: sections.needsYouPlacement === "top",
     projectKeyOf: sections.projectKeyOf,
     projectOrder: sections.projectOrder,
   });
@@ -537,6 +544,7 @@ function useSidebarThreads(input: {
         );
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
   const projectSectionsEnabled = useClientSettings((s) => s.sidebarProjectSections);
+  const needsYouPlacement = useClientSettings((s) => s.sidebarNeedsYouPlacement);
   const completedNeedsYou = useClientSettings((s) => s.sidebarNeedsYouIncludesCompleted);
   const folders = useUiStateStore((store) => store.sidebarFolders);
   const threadFolderById = useUiStateStore((store) => store.sidebarThreadFolderById);
@@ -561,6 +569,7 @@ function useSidebarThreads(input: {
       projectKeyOf: (thread) =>
         groupKeyByProject.get(`${thread.environmentId}:${thread.projectId}`) ?? "",
       projectOrder: projectGroups.map((group) => group.projectKey),
+      needsYouPlacement,
       completedNeedsYou,
     };
   })();

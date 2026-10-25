@@ -177,7 +177,7 @@ export function sidebarListItemId(item: SidebarListItem): string {
 
 export interface SidebarActiveGroup<T> {
   readonly key: string;
-  /** Null for folders and unfiled threads. */
+  /** Null for folders, unfiled threads, and Needs you above every project. */
   readonly projectKey: string | null;
   readonly folderId?: string;
   /** Unfiled threads list above the folders without a heading. */
@@ -188,27 +188,46 @@ export interface SidebarActiveGroup<T> {
 }
 
 /**
- * Splits the active list into one group per project in `projectOrder`, each
- * starting with its threads that need you. Projects missing from it follow in
- * first-seen order. Both parts keep the input's relative order.
+ * Splits the active list into one group per project in `projectOrder`.
+ * Projects missing from it follow in first-seen order. Threads that need you
+ * lead their own project's group, or with `needsYouOnTop` form one headless
+ * group above every project. Each part keeps the input's relative order.
  */
 export function groupSidebarActiveThreads<T>(input: {
   readonly threads: readonly T[];
   readonly needsYou: (thread: T) => boolean;
+  readonly needsYouOnTop: boolean;
   readonly projectKeyOf: (thread: T) => string;
   readonly projectOrder: readonly string[];
 }): SidebarActiveGroup<T>[] {
+  const needsYouOnTop: T[] = [];
   const byProject = new Map<string, { needsYou: T[]; rest: T[] }>();
   for (const thread of input.threads) {
+    const needsYou = input.needsYou(thread);
+    if (needsYou && input.needsYouOnTop) {
+      needsYouOnTop.push(thread);
+      continue;
+    }
     const key = input.projectKeyOf(thread);
     let group = byProject.get(key);
     if (group === undefined) {
       group = { needsYou: [], rest: [] };
       byProject.set(key, group);
     }
-    (input.needsYou(thread) ? group.needsYou : group.rest).push(thread);
+    (needsYou ? group.needsYou : group.rest).push(thread);
   }
-  const groups: SidebarActiveGroup<T>[] = [];
+  const groups: SidebarActiveGroup<T>[] =
+    needsYouOnTop.length > 0
+      ? [
+          {
+            key: "needs-you",
+            projectKey: null,
+            headless: true,
+            threads: needsYouOnTop,
+            needsYouCount: needsYouOnTop.length,
+          },
+        ]
+      : [];
   for (const key of [...input.projectOrder, ...byProject.keys()]) {
     const group = byProject.get(key);
     if (group === undefined) continue;

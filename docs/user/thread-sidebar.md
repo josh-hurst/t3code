@@ -133,11 +133,12 @@ cannot drag or move threads within it. Your saved order returns when you turn it
 Turn on **Settings → General → Project sections** on web and desktop to group the active list
 under a heading for each project, in the same order as the project filter. Threads waiting on an
 approval or an answer, with a plan ready, or with a finished or failed run you haven't opened
-move to a **Needs you** section at the top of their project. The thread you have open stays where
-it was until you leave it. While this is on, threads cannot be dragged or moved within the
-active list; pinning, settling, and un-settling by drag still work. Each device keeps its own
-choice. Turn off **Finished threads in Needs you** to keep threads with a finished run in their
-project section.
+move to a **Needs you** section at the top of their project. Set **Needs you section** to
+**Above all projects** to collect them in one section above every project instead, or **Off** to
+leave them in their projects. The thread you have open stays where it was until you leave it.
+While this is on, threads cannot be dragged or moved within the active list; pinning, settling,
+and un-settling by drag still work. Each device keeps its own choice. Turn off **Finished threads
+in Needs you** to keep threads with a finished run in their project section.
 
 Click a project heading to collapse or expand its section; a collapsed section shows how many
 threads it holds and still lists the ones that need you. Click **+** on a heading to start a new thread in that project. Drag a heading,

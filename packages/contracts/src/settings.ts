@@ -65,6 +65,10 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+// Where threads that need you collect when the active list has project sections.
+export const SidebarNeedsYouPlacement = Schema.Literals(["off", "project", "top"]);
+export type SidebarNeedsYouPlacement = typeof SidebarNeedsYouPlacement.Type;
+
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
@@ -457,6 +461,9 @@ export const ClientSettingsSchema = Schema.Struct({
   sharedProjectTerminals: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarCompactRows: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarProjectSections: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  sidebarNeedsYouPlacement: SidebarNeedsYouPlacement.pipe(
+    Schema.withDecodingDefault(Effect.succeed("project")),
+  ),
   sidebarNeedsYouIncludesCompleted: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
@@ -1748,6 +1755,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sharedProjectTerminals: Schema.optionalKey(Schema.Boolean),
   sidebarCompactRows: Schema.optionalKey(Schema.Boolean),
   sidebarProjectSections: Schema.optionalKey(Schema.Boolean),
+  sidebarNeedsYouPlacement: Schema.optionalKey(SidebarNeedsYouPlacement),
   sidebarNeedsYouIncludesCompleted: Schema.optionalKey(Schema.Boolean),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
