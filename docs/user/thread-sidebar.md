@@ -158,6 +158,10 @@ rename, or delete the folder. Deleting a folder keeps its threads and moves them
 of the list. While you have folders, threads cannot be dragged or moved within the active list.
 Folders are saved on each device and are hidden while Project sections is on.
 
+**Above all projects** also works with **Project sections** off: Needs you collects above your
+folders, or above the rest of the active list. Without folders, the threads below it keep your
+saved order and can still be dragged; the Needs you rows stay where they are.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list

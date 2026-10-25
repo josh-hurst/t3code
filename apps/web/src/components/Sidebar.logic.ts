@@ -487,6 +487,9 @@ export function planSidebarThreadDrop(input: {
   readonly activeKeysById: ReadonlyMap<string, string | null | undefined>;
   readonly activeReorderableKeys?: ReadonlySet<string>;
   readonly activeTimeOrdered?: boolean;
+  // Active rows that hold their place, such as Needs you above a flat list.
+  // They cannot be reordered, and drops order only the rows around them.
+  readonly activeFixedKeys?: ReadonlySet<string>;
 }): SidebarThreadDropPlan {
   const {
     activeKey,
@@ -533,11 +536,27 @@ export function planSidebarThreadDrop(input: {
               unsnooze: activeSection === "snoozed",
             };
       }
-      const order = target.activeOrder;
+      const fixed = input.activeFixedKeys;
+      if (fixed?.has(activeKey)) {
+        return activeSection === "active"
+          ? { kind: "none" }
+          : {
+              kind: "move-active",
+              order: null,
+              assignments: [],
+              unpin: activePinned,
+              unsettle: activeSettled,
+              unsnooze: activeSection === "snoozed",
+            };
+      }
+      const movable = (keys: readonly string[]) =>
+        fixed === undefined ? keys : keys.filter((key) => !fixed.has(key));
+      const order = movable(target.activeOrder);
+      const currentOrder = movable(activeOrder);
       if (
         activeSection === "active" &&
-        order.length === activeOrder.length &&
-        order.every((key, index) => key === activeOrder[index])
+        order.length === currentOrder.length &&
+        order.every((key, index) => key === currentOrder[index])
       ) {
         return { kind: "none" };
       }
@@ -545,7 +564,7 @@ export function planSidebarThreadDrop(input: {
       if (assignments === null) return { kind: "none" };
       return {
         kind: "move-active",
-        order,
+        order: target.activeOrder,
         assignments,
         unpin: activePinned,
         unsettle: activeSettled,

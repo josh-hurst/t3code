@@ -1056,50 +1056,49 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        {settings.sidebarProjectSections ? (
-          <SettingsRow
-            {...searchableSetting("needs-you-placement")}
-            description="Collect threads waiting on an approval, a question, or a finished run you haven't opened in a Needs you section, at the top of each project or above all of them."
-            resetAction={
-              settings.sidebarNeedsYouPlacement !==
-              DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement ? (
-                <SettingResetButton
-                  label="Needs you section"
-                  onClick={() =>
-                    updateSettings({
-                      sidebarNeedsYouPlacement: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={settings.sidebarNeedsYouPlacement}
-                onValueChange={(value) => {
-                  if (isSidebarNeedsYouPlacement(value)) {
-                    updateSettings({ sidebarNeedsYouPlacement: value });
-                  }
-                }}
-              >
-                <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Needs you section">
-                  <SelectValue>
-                    {SIDEBAR_NEEDS_YOU_PLACEMENT_LABELS[settings.sidebarNeedsYouPlacement]}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {SidebarNeedsYouPlacement.literals.map((placement) => (
-                    <SelectItem hideIndicator key={placement} value={placement}>
-                      {SIDEBAR_NEEDS_YOU_PLACEMENT_LABELS[placement]}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            }
-          />
-        ) : null}
+        <SettingsRow
+          {...searchableSetting("needs-you-placement")}
+          description="Collect threads waiting on an approval, a question, or a finished run you haven't opened in a Needs you section, at the top of each project or above all of them. Without project sections, only Above all projects applies."
+          resetAction={
+            settings.sidebarNeedsYouPlacement !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement ? (
+              <SettingResetButton
+                label="Needs you section"
+                onClick={() =>
+                  updateSettings({
+                    sidebarNeedsYouPlacement: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.sidebarNeedsYouPlacement}
+              onValueChange={(value) => {
+                if (isSidebarNeedsYouPlacement(value)) {
+                  updateSettings({ sidebarNeedsYouPlacement: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Needs you section">
+                <SelectValue>
+                  {SIDEBAR_NEEDS_YOU_PLACEMENT_LABELS[settings.sidebarNeedsYouPlacement]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {SidebarNeedsYouPlacement.literals.map((placement) => (
+                  <SelectItem hideIndicator key={placement} value={placement}>
+                    {SIDEBAR_NEEDS_YOU_PLACEMENT_LABELS[placement]}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
 
-        {settings.sidebarProjectSections && settings.sidebarNeedsYouPlacement !== "off" ? (
+        {settings.sidebarNeedsYouPlacement === "top" ||
+        (settings.sidebarProjectSections && settings.sidebarNeedsYouPlacement === "project") ? (
           <SettingsRow
             {...searchableSetting("needs-you-finished-threads")}
             description="Move threads with a finished run you haven't opened to Needs you. When off, they stay in their project section."

@@ -1,8 +1,4 @@
-import {
-  type EnvironmentId,
-  type ScopedProjectRef,
-  type SidebarNeedsYouPlacement,
-} from "@t3tools/contracts";
+import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import {
@@ -342,47 +338,75 @@ interface SidebarThreadPartitionInput {
   readonly clockKey: string;
 }
 
-// Project sections, or folders when those are off.
-type SidebarActiveGrouping =
+// Project sections, or folders when those are off. Without either, a flat
+// list is grouped only to lift Needs you above it.
+type SidebarActiveGrouping = {
+  // Null when nothing collects in Needs you.
+  readonly needsYou: { readonly onTop: boolean; readonly includeCompleted: boolean } | null;
+} & (
   | {
       readonly kind: "projects";
       readonly projectKeyOf: (thread: EnvironmentThreadShell) => string;
       readonly projectOrder: readonly string[];
-      readonly needsYouPlacement: SidebarNeedsYouPlacement;
-      readonly completedNeedsYou: boolean;
     }
   | {
       readonly kind: "folders";
       readonly folderIdOf: (thread: EnvironmentThreadShell) => string | undefined;
       readonly folderOrder: readonly string[];
-    };
+    }
+  | { readonly kind: "flat" }
+);
+
+const NEEDS_YOU_GROUP_KEY = "needs-you";
 
 function groupActiveThreads(
   threads: readonly EnvironmentThreadShell[],
   sections: SidebarActiveGrouping,
   routeThreadKey: string | null,
 ): SidebarActiveGroup<EnvironmentThreadShell>[] {
-  if (sections.kind === "folders") {
-    return groupSidebarFolderThreads({
-      threads,
-      folderIdOf: sections.folderIdOf,
-      folderOrder: sections.folderOrder,
-    });
-  }
   const placeNeedsYou = openThreadPlacement(routeThreadKey);
-  const groups = groupSidebarActiveThreads({
-    threads,
-    needsYou: (thread) =>
-      sections.needsYouPlacement !== "off" &&
-      placeNeedsYou(
-        threadShellKey(thread),
-        sidebarThreadNeedsYou(thread, { includeCompleted: sections.completedNeedsYou }),
-        thread.latestUserAuthoredMessageAt ?? thread.latestUserMessageAt,
-      ),
-    needsYouOnTop: sections.needsYouPlacement === "top",
-    projectKeyOf: sections.projectKeyOf,
-    projectOrder: sections.projectOrder,
-  });
+  const { needsYou } = sections;
+  const needsYouOf = (thread: EnvironmentThreadShell) =>
+    needsYou !== null &&
+    placeNeedsYou(
+      threadShellKey(thread),
+      sidebarThreadNeedsYou(thread, { includeCompleted: needsYou.includeCompleted }),
+      thread.latestUserAuthoredMessageAt ?? thread.latestUserMessageAt,
+    );
+  let groups: SidebarActiveGroup<EnvironmentThreadShell>[];
+  if (sections.kind === "projects") {
+    groups = groupSidebarActiveThreads({
+      threads,
+      needsYou: needsYouOf,
+      needsYouOnTop: needsYou?.onTop ?? false,
+      projectKeyOf: sections.projectKeyOf,
+      projectOrder: sections.projectOrder,
+    });
+  } else {
+    const lifted: EnvironmentThreadShell[] = [];
+    const rest: EnvironmentThreadShell[] = [];
+    for (const thread of threads) (needsYouOf(thread) ? lifted : rest).push(thread);
+    groups = [
+      ...(lifted.length > 0
+        ? [
+            {
+              key: NEEDS_YOU_GROUP_KEY,
+              projectKey: null,
+              headless: true as const,
+              threads: lifted,
+              needsYouCount: lifted.length,
+            },
+          ]
+        : []),
+      ...(sections.kind === "folders"
+        ? groupSidebarFolderThreads({
+            threads: rest,
+            folderIdOf: sections.folderIdOf,
+            folderOrder: sections.folderOrder,
+          })
+        : [{ key: "active", projectKey: null, headless: true as const, threads: rest }]),
+    ];
+  }
   return groups.map((group) => {
     const needsYouCount = group.needsYouCount ?? 0;
     if (needsYouCount === 0) return group;
@@ -480,8 +504,10 @@ function resolveDraggedOrders(input: {
     activeOrder: workingShelfEnabled
       ? sortInboxThreadsByReturn(landedActive, inboxReturns.returnedAt).map(threadShellKey)
       : undefined,
+    // A flat list keeps its manual order below Needs you, so drops preview
+    // where they are dropped.
     activeItems:
-      input.activeGrouping === null
+      input.activeGrouping === null || input.activeGrouping.kind === "flat"
         ? undefined
         : activeGroupListItems(
             collapseActiveGroups(
@@ -549,10 +575,15 @@ function useSidebarThreads(input: {
   const folders = useUiStateStore((store) => store.sidebarFolders);
   const threadFolderById = useUiStateStore((store) => store.sidebarThreadFolderById);
   const activeGrouping: SidebarActiveGrouping | null = (() => {
+    const needsYou =
+      needsYouPlacement === "top" || (projectSectionsEnabled && needsYouPlacement === "project")
+        ? { onTop: needsYouPlacement === "top", includeCompleted: completedNeedsYou }
+        : null;
     if (!projectSectionsEnabled) {
-      if (folders.length === 0) return null;
+      if (folders.length === 0) return needsYou === null ? null : { kind: "flat", needsYou };
       return {
         kind: "folders",
+        needsYou,
         folderIdOf: (thread) => threadFolderById[threadShellKey(thread)],
         folderOrder: folders.map((folder) => folder.id),
       };
@@ -566,11 +597,10 @@ function useSidebarThreads(input: {
     );
     return {
       kind: "projects",
+      needsYou,
       projectKeyOf: (thread) =>
         groupKeyByProject.get(`${thread.environmentId}:${thread.projectId}`) ?? "",
       projectOrder: projectGroups.map((group) => group.projectKey),
-      needsYouPlacement,
-      completedNeedsYou,
     };
   })();
   const nowMinute = useNowMinute();
@@ -798,9 +828,21 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   const baseActive = workingShelfEnabled
     ? sortInboxThreadsByReturn(active, inboxReturns.returnedAt)
     : sortThreadsForSidebar(active);
+  // A manual drop's order applies before grouping, which renders from groups.
+  const droppedActive =
+    optimisticDrop?.section !== "active" || optimisticDrop.order === null
+      ? baseActive
+      : orderItemsByPreferredIds({
+          items: baseActive,
+          preferredIds: optimisticDrop.order,
+          getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        });
   const activeGroups =
-    activeGrouping === null ? null : groupActiveThreads(baseActive, activeGrouping, routeThreadKey);
-  const sortedActive = activeGroups === null ? baseActive : activeGroups.flatMap((g) => g.threads);
+    activeGrouping === null
+      ? null
+      : groupActiveThreads(droppedActive, activeGrouping, routeThreadKey);
+  const sortedActive =
+    activeGroups === null ? droppedActive : activeGroups.flatMap((g) => g.threads);
   return {
     activeGroups,
     pinnedThreads:
@@ -813,14 +855,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
           }),
     draggableThreadKeys: draggable,
     activeReorderableThreadKeys: activeReorderable,
-    activeThreads:
-      optimisticDrop?.section !== "active" || optimisticDrop.order === null
-        ? sortedActive
-        : orderItemsByPreferredIds({
-            items: sortedActive,
-            preferredIds: optimisticDrop.order,
-            getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-          }),
+    activeThreads: sortedActive,
     workingThreads: sortWorkingThreadsBySend(working),
     snoozedThreads: snoozed.toSorted(
       (left, right) =>
@@ -2196,7 +2231,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // every sortable row, keeps its identity while thread shells stream in.
   // Working and project sections derive the active order, so drops into
   // active land where the sort puts them instead of where they were dropped.
-  const activeTimeOrdered = workingShelfEnabled || activeGrouping !== null;
+  const activeTimeOrdered =
+    workingShelfEnabled || (activeGrouping !== null && activeGrouping.kind !== "flat");
+  // Above a flat list, Needs you rows hold their place and drops order only
+  // the rows below them.
+  const activeFixedKeys =
+    activeGrouping?.kind === "flat"
+      ? new Set(
+          activeGroups
+            ?.find((group) => group.key === NEEDS_YOU_GROUP_KEY)
+            ?.threads.map(threadShellKey),
+        )
+      : undefined;
   const {
     settledOrder: draggedSettledOrder,
     activeOrder: draggedActiveOrder,
@@ -2267,6 +2313,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
             activeTimeOrdered,
+            ...(activeFixedKeys === undefined ? {} : { activeFixedKeys }),
           }).kind !== "none"
         );
       },
@@ -2316,6 +2363,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeKeysById,
       activeReorderableKeys: activeReorderableThreadKeys,
       activeTimeOrdered,
+      ...(activeFixedKeys === undefined ? {} : { activeFixedKeys }),
     });
     if (plan.kind === "none") return;
     if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
