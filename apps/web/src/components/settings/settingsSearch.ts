@@ -338,6 +338,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["typography family size system sans"],
   },
   {
+    id: "sidebar-font-size",
+    title: "Sidebar font size",
+    to: "/settings/appearance",
+    searchTerms: ["typography text size sidebar threads navigation"],
+  },
+  {
     id: "prompt-font",
     title: "Prompt font",
     to: "/settings/appearance",
@@ -408,6 +414,24 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "New design",
     to: "/settings/appearance",
     searchTerms: ["redesign look style sidebar composer black quieter classic"],
+  },
+  {
+    id: "compact-sidebar-rows",
+    title: "Compact thread rows",
+    to: "/settings/general",
+    searchTerms: ["sidebar density dense smaller tabs cards active pinned"],
+  },
+  {
+    id: "project-sections",
+    title: "Project sections",
+    to: "/settings/general",
+    searchTerms: ["sidebar group by project organize needs you attention inbox"],
+  },
+  {
+    id: "shared-project-terminals",
+    title: "Shared project terminals",
+    to: "/settings/threads",
+    searchTerms: ["terminal drawer tabs other threads chats switch shell"],
   },
   {
     id: "working-shelf",

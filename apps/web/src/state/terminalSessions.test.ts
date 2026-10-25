@@ -3,7 +3,11 @@ import { EnvironmentId, ThreadId, type TerminalSummary } from "@t3tools/contract
 import { selectRunningSubprocessTerminalIds } from "@t3tools/client-runtime/state/terminal";
 import { AtomRegistry } from "effect/reactivity";
 
-import { attachedTerminalSessionAtom, selectKnownTerminalSessions } from "./terminalSessions";
+import {
+  attachedTerminalSessionAtom,
+  selectKnownTerminalSessions,
+  selectSharedProjectTerminalSessions,
+} from "./terminalSessions";
 
 const attachCalls = vi.hoisted(() => [] as unknown[]);
 vi.mock("./terminal", async () => {
@@ -115,5 +119,31 @@ describe("attachedTerminalSessionAtom", () => {
 
     AtomRegistry.make().get(atom);
     expect(attachCalls).toEqual([{ environmentId: environmentA, input }]);
+  });
+});
+
+describe("selectSharedProjectTerminalSessions", () => {
+  it("lists live terminals of the project's other threads", () => {
+    const otherProjectThread = ThreadId.make("thread-c");
+    const sessions = selectKnownTerminalSessions(
+      [
+        summary(threadA, "terminal-1"),
+        summary(threadB, "terminal-1"),
+        summary(threadB, "terminal-2", { status: "exited" }),
+        summary(otherProjectThread, "terminal-1"),
+      ],
+      environmentA,
+      null,
+    );
+
+    const shared = selectSharedProjectTerminalSessions(
+      sessions,
+      [{ threadId: threadA }, { threadId: threadB }],
+      threadA,
+    );
+
+    expect(shared.map((session) => session.target)).toEqual([
+      { environmentId: environmentA, threadId: threadB, terminalId: "terminal-1" },
+    ]);
   });
 });

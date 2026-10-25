@@ -7,6 +7,9 @@ import {
   type SidebarListItem,
   type SidebarListMarker,
   type SidebarSection,
+  sidebarProjectBlockAt,
+  sidebarProjectBlocks,
+  withoutSidebarThread,
 } from "./Sidebar.logic";
 
 const stationary = { x: 0, y: 0, scaleX: 1, scaleY: 1 };
@@ -94,6 +97,9 @@ export function createSidebarSortingStrategy(input: {
   enabled?: boolean;
   settledOrder: readonly string[];
   activeOrder?: readonly string[];
+  // The grouped active section with the dragged thread landed in it; replaces
+  // `activeOrder` when the active list has project sections.
+  activeItems?: readonly SidebarListItem[];
   settledExpanded: boolean;
   settledVisibleCount?: number;
   routeThreadKey?: string | null;
@@ -132,6 +138,7 @@ export function createSidebarSortingStrategy(input: {
         }
         continue;
       }
+      if (item.kind === "group") continue;
       if (item.section === "pinned" || item.section === "active" || item.section === "working")
         cardHeight ??= rects[index]?.height;
       else slimHeight ??= rects[index]?.height;
@@ -175,7 +182,13 @@ export function createSidebarSortingStrategy(input: {
     marker("pinned-header");
     projected.push(...groups.pinned);
     marker("pinned-divider");
-    section("active");
+    const activeItems =
+      input.activeItems === undefined || target.section === "active"
+        ? input.activeItems
+        : withoutSidebarThread(input.activeItems, active.key);
+    if (activeItems === undefined) section("active");
+    else if (activeItems.length > 0) projected.push(...activeItems);
+    else marker("active-placeholder");
     if (items.some((item) => item.kind === "marker" && item.marker === "working-header")) {
       marker("working-header");
       projected.push(...groups.working);
@@ -247,5 +260,52 @@ export function createSidebarSortingStrategy(input: {
     return transforms === null
       ? verticalListSortingStrategy(args)
       : (transforms[args.index] ?? stationary);
+  };
+}
+
+/**
+ * Previews moving a whole project section. The dragged section folds to its
+ * heading, and the other sections close up around the slot it would take.
+ * Rows outside project sections hold still.
+ */
+export function createSidebarSectionSortingStrategy(
+  items: readonly SidebarListItem[],
+): SortingStrategy {
+  const blocks = sidebarProjectBlocks(items);
+  let previous: Pick<Layout, "rects" | "activeIndex" | "overIndex"> | undefined;
+  let transforms: ReturnType<SortingStrategy>[] = [];
+
+  function project({ rects, activeIndex, overIndex }: Layout) {
+    const result = items.map(() => stationary);
+    const from = blocks.findIndex((block) => block.start === activeIndex);
+    const first = blocks[0];
+    if (from === -1 || first === undefined || !rects[first.start]) return result;
+    for (let index = activeIndex + 1; index < blocks[from]!.end; index += 1) result[index] = hidden;
+    const target = sidebarProjectBlockAt(blocks, overIndex) ?? blocks[from]!;
+    const order = blocks.filter((_, index) => index !== from);
+    order.splice(blocks.indexOf(target), 0, blocks[from]!);
+    let top = rects[first.start]!.top;
+    for (const block of order) {
+      const end = block === blocks[from] ? block.start + 1 : block.end;
+      for (let index = block.start; index < end; index += 1) {
+        const rect = rects[index];
+        if (!rect) continue;
+        if (index !== activeIndex) result[index] = { ...stationary, y: top - rect.top };
+        top += rect.height + 1;
+      }
+    }
+    return result;
+  }
+
+  return (args) => {
+    if (
+      previous?.rects !== args.rects ||
+      previous.activeIndex !== args.activeIndex ||
+      previous.overIndex !== args.overIndex
+    ) {
+      previous = args;
+      transforms = project(args);
+    }
+    return transforms[args.index] ?? stationary;
   };
 }

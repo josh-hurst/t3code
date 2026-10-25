@@ -194,10 +194,142 @@ export function sidebarMarkerId(marker: SidebarListMarker): string {
 
 export type SidebarListItem =
   | { readonly kind: "thread"; readonly key: string; readonly section: SidebarSection }
-  | { readonly kind: "marker"; readonly marker: SidebarListMarker };
+  | { readonly kind: "marker"; readonly marker: SidebarListMarker }
+  // A heading inside the active section; it does not change the section.
+  | { readonly kind: "group"; readonly key: string; readonly projectKey: string | null };
 
 export function sidebarListItemId(item: SidebarListItem): string {
-  return item.kind === "thread" ? item.key : sidebarMarkerId(item.marker);
+  return item.kind === "thread"
+    ? item.key
+    : item.kind === "group"
+      ? `sidebar-group-${item.key}`
+      : sidebarMarkerId(item.marker);
+}
+
+export interface SidebarActiveGroup<T> {
+  readonly key: string;
+  /** Null for the Needs you group. */
+  readonly projectKey: string | null;
+  readonly threads: readonly T[];
+}
+
+/**
+ * Splits the active list into Needs you, then one group per project in
+ * `projectOrder`. Projects missing from it follow in first-seen order. Each
+ * group keeps the input's relative order.
+ */
+export function groupSidebarActiveThreads<T>(input: {
+  readonly threads: readonly T[];
+  readonly needsYou: (thread: T) => boolean;
+  readonly projectKeyOf: (thread: T) => string;
+  readonly projectOrder: readonly string[];
+}): SidebarActiveGroup<T>[] {
+  const needsYou: T[] = [];
+  const byProject = new Map<string, T[]>();
+  for (const thread of input.threads) {
+    if (input.needsYou(thread)) {
+      needsYou.push(thread);
+      continue;
+    }
+    const key = input.projectKeyOf(thread);
+    const group = byProject.get(key);
+    if (group) group.push(thread);
+    else byProject.set(key, [thread]);
+  }
+  const groups: SidebarActiveGroup<T>[] =
+    needsYou.length > 0 ? [{ key: "needs-you", projectKey: null, threads: needsYou }] : [];
+  for (const key of [...input.projectOrder, ...byProject.keys()]) {
+    const threads = byProject.get(key);
+    if (threads === undefined) continue;
+    byProject.delete(key);
+    groups.push({ key: `project:${key}`, projectKey: key, threads });
+  }
+  return groups;
+}
+
+/**
+ * Keeps the open thread in the section it had when opened, in or out of Needs
+ * you, so a status change never moves the row being looked at. Leaving it
+ * re-sorts it. Call with the route key on each grouping pass, then use the
+ * returned check for every thread.
+ */
+export function createOpenThreadPlacementHold() {
+  let held: { readonly key: string; readonly needsYou: boolean } | null = null;
+  return (routeKey: string | null) => {
+    if (held?.key !== routeKey) held = null;
+    return (key: string, needsYou: boolean): boolean => {
+      if (key !== routeKey) return needsYou;
+      held ??= { key, needsYou };
+      return held.needsYou;
+    };
+  };
+}
+
+export interface SidebarProjectBlock {
+  readonly projectKey: string;
+  /** Index of the heading. */
+  readonly start: number;
+  /** One past the block's last row. */
+  readonly end: number;
+}
+
+/** Each project section's heading and the rows beneath it. */
+export function sidebarProjectBlocks(items: readonly SidebarListItem[]): SidebarProjectBlock[] {
+  const blocks: SidebarProjectBlock[] = [];
+  for (const [index, item] of items.entries()) {
+    if (item.kind !== "group" || item.projectKey === null) continue;
+    let end = index + 1;
+    while (items[end]?.kind === "thread") end += 1;
+    blocks.push({ projectKey: item.projectKey, start: index, end });
+  }
+  return blocks;
+}
+
+export function sidebarProjectBlockAt(
+  blocks: readonly SidebarProjectBlock[],
+  index: number,
+): SidebarProjectBlock | undefined {
+  return blocks.find((block) => index >= block.start && index < block.end);
+}
+
+/** Moves `moved` into `target`'s slot; the sections between shift toward its old slot. */
+export function moveSidebarSection(
+  order: readonly string[],
+  moved: string,
+  target: string,
+): string[] {
+  const targetIndex = order.indexOf(target);
+  if (!order.includes(moved) || targetIndex === -1 || moved === target) return [...order];
+  const next = order.filter((key) => key !== moved);
+  next.splice(targetIndex, 0, moved);
+  return next;
+}
+
+/**
+ * Applies a new order of the shown sections to the full project list: shown
+ * projects trade slots, and projects without a section keep theirs.
+ */
+export function applySidebarSectionOrder(
+  allKeys: readonly string[],
+  shownOrder: readonly string[],
+): string[] {
+  const shown = new Set(shownOrder);
+  let next = 0;
+  return allKeys.map((key) => (shown.has(key) ? shownOrder[next++]! : key));
+}
+
+/**
+ * Removes a thread row, and its group heading when that row was the group's
+ * only one. Collapsed groups keep their heading with no rows beneath it.
+ */
+export function withoutSidebarThread(
+  items: readonly SidebarListItem[],
+  key: string,
+): readonly SidebarListItem[] {
+  const index = items.findIndex((item) => item.kind === "thread" && item.key === key);
+  if (index === -1) return items;
+  const emptiesGroup = items[index - 1]?.kind === "group" && items[index + 1]?.kind !== "thread";
+  return items.filter((_, i) => i !== index && !(emptiesGroup && i === index - 1));
 }
 
 function sectionAtSidebarSlot(items: readonly SidebarListItem[], index: number): SidebarSection {
@@ -243,8 +375,9 @@ export function resolveSidebarDropTarget(
         item.marker === "settled-header"
       )
         break;
-    } else if (currentSection === "pinned") pinnedOrder.push(item.key);
-    else activeOrder.push(item.key);
+    } else if (item.kind === "thread") {
+      (currentSection === "pinned" ? pinnedOrder : activeOrder).push(item.key);
+    }
   }
   return { section, pinnedOrder, activeOrder };
 }
@@ -1148,6 +1281,20 @@ export function resolveThreadStatusPill(input: {
   }
 
   return null;
+}
+
+const NEEDS_YOU_STATUS_LABELS: ReadonlySet<ThreadStatusPill["label"]> = new Set([
+  "Pending Approval",
+  "Awaiting Input",
+  "Failed",
+  "Plan Ready",
+  "Completed",
+]);
+
+/** Whether the row's status pill is asking the person to act or look. */
+export function sidebarThreadNeedsYou(thread: ThreadStatusInput): boolean {
+  const pill = resolveThreadStatusPill({ thread });
+  return pill !== null && NEEDS_YOU_STATUS_LABELS.has(pill.label);
 }
 
 export function resolveProjectStatusIndicator(

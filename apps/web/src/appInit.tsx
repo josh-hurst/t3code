@@ -83,6 +83,7 @@ function startClientAppearance(): void {
       previous.fontSizeInterface !== settings.fontSizeInterface ||
       previous.fontSizePrompt !== settings.fontSizePrompt ||
       previous.fontSizeCode !== settings.fontSizeCode ||
+      previous.fontSizeSidebar !== settings.fontSizeSidebar ||
       previous.fontSmoothing !== settings.fontSmoothing
     ) {
       applyAppearanceFontVariables(root, {
@@ -92,6 +93,7 @@ function startClientAppearance(): void {
         sizeInterface: settings.fontSizeInterface,
         sizePrompt: settings.fontSizePrompt,
         sizeCode: settings.fontSizeCode,
+        sizeSidebar: settings.fontSizeSidebar,
         smoothing: settings.fontSmoothing,
       });
     }

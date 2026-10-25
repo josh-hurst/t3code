@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   migratePersistedTerminalUiStateStoreState,
+  selectSharedTerminal,
   selectThreadTerminalUiState,
   useTerminalUiStateStore,
 } from "./terminalUiStateStore";
@@ -18,6 +19,7 @@ describe("terminalUiStateStore actions", () => {
     useTerminalUiStateStore.setState({
       terminalUiStateByThreadKey: {},
       suppressedTerminalIdsByThreadKey: {},
+      sharedTerminalByThreadKey: {},
     });
   });
 
@@ -159,5 +161,38 @@ describe("terminalUiStateStore actions", () => {
         THREAD_REF,
       ).terminalIds,
     ).toEqual(["term-2", "term-1"]);
+  });
+
+  it("leaves a shared terminal view when the thread picks or opens one of its own terminals", () => {
+    const store = useTerminalUiStateStore.getState();
+    const shared = { threadId: ThreadId.make("thread-2"), terminalId: "term-1" };
+    const readShared = () =>
+      selectSharedTerminal(
+        useTerminalUiStateStore.getState().sharedTerminalByThreadKey,
+        THREAD_REF,
+      );
+    store.setTerminalOpen(THREAD_REF, true);
+
+    store.showSharedTerminal(THREAD_REF, shared);
+    store.setTerminalHeight(THREAD_REF, 300);
+    expect(readShared()).toEqual(shared);
+    expect(
+      selectSharedTerminal(
+        useTerminalUiStateStore.getState().sharedTerminalByThreadKey,
+        OTHER_THREAD_REF,
+      ),
+    ).toBeNull();
+
+    // Re-selecting the already active tab still switches back from the shared view.
+    store.setActiveTerminal(THREAD_REF, "term-1");
+    expect(readShared()).toBeNull();
+
+    store.showSharedTerminal(THREAD_REF, shared);
+    store.newTerminal(THREAD_REF, "term-2");
+    expect(readShared()).toBeNull();
+
+    store.showSharedTerminal(THREAD_REF, shared);
+    store.ensureTerminal(THREAD_REF, "term-3", { active: false });
+    expect(readShared()).toEqual(shared);
   });
 });

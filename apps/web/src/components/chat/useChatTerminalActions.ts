@@ -36,7 +36,7 @@ import {
   focusActivePanelTerminal,
   focusTerminal,
 } from "../../lib/terminalFocus";
-import { useTerminalUiStateStore } from "../../terminalUiStateStore";
+import { selectSharedTerminal, useTerminalUiStateStore } from "../../terminalUiStateStore";
 import {
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
@@ -429,7 +429,24 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
         requestClosePanelTerminal(activeRightPanelSurface.activeTerminalId);
         return;
       }
-      if (terminalUiState.terminalOpen) requestCloseTerminal(terminalUiState.activeTerminalId);
+      if (!terminalUiState.terminalOpen) return;
+      const sharedTerminal = activeThreadRef
+        ? selectSharedTerminal(
+            useTerminalUiStateStore.getState().sharedTerminalByThreadKey,
+            activeThreadRef,
+          )
+        : null;
+      if (sharedTerminal) {
+        void confirmTerminalClose([getTerminalLabel(sharedTerminal.terminalId)]).then(
+          (confirmed) => {
+            if (confirmed && readEnvironmentScope(environmentId, AuthTerminalOperateScope)) {
+              terminalActions.closeSharedTerminal(sharedTerminal);
+            }
+          },
+        );
+        return;
+      }
+      requestCloseTerminal(terminalUiState.activeTerminalId);
     },
     "terminal.new": ({ terminalFocusOwner }) => {
       if (!hasTerminalWriteAccess()) return false;

@@ -133,6 +133,21 @@ choice.
 While this is on, the active list is ordered by when each thread last came back to you, so you
 cannot drag or move threads within it. Your saved order returns when you turn it off.
 
+### Group active threads by project
+
+Turn on **Settings → General → Project sections** on web and desktop to group the active list
+under a heading for each project, in the same order as the project filter. Threads waiting on an
+approval or an answer, with a plan ready, or with a finished or failed run you haven't opened
+move to a **Needs you** section at the top. The thread you have open stays in whichever section
+it was in until you leave it. While this is on, threads cannot be dragged or moved within the
+active list; pinning, settling, and un-settling by drag still work. Each device keeps its own
+choice.
+
+Click a project heading to collapse or expand its section; a collapsed section shows how many
+threads it holds. Click **+** on a heading to start a new thread in that project. Drag a heading,
+or right-click it and choose **Move section up** or **Move section down**, to reorder sections.
+Moving a section saves a manual project order, which the project filter also uses.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list

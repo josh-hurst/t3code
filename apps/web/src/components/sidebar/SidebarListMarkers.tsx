@@ -1,37 +1,43 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { BellDotIcon, ChevronDownIcon, PlusIcon } from "lucide-react";
 import { type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import { useClientSettings } from "../../hooks/useSettings";
-import {
-  animateSidebarLayoutChanges,
-  sidebarMarkerId,
-  type SidebarListMarker,
-} from "../Sidebar.logic";
-import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
+import { animateSidebarLayoutChanges, sidebarMarkerId } from "../Sidebar.logic";
+import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SIDEBAR_SORTABLE_DRAG_DISABLED, SIDEBAR_SORTABLE_DRAG_ENABLED } from "./SidebarThreadRow";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 
 function SortableSidebarMarker(props: {
-  marker: SidebarListMarker;
+  id: string;
+  placeholder?: boolean;
+  draggable?: boolean;
   className?: string;
   children?: ReactNode;
   "data-testid"?: string;
 }) {
-  const { setNodeRef, transform, transition } = useSortable({
-    id: sidebarMarkerId(props.marker),
-    disabled: SIDEBAR_SORTABLE_DRAG_DISABLED,
+  const { setNodeRef, transform, transition, listeners, isDragging } = useSortable({
+    id: props.id,
+    disabled: props.draggable ? SIDEBAR_SORTABLE_DRAG_ENABLED : SIDEBAR_SORTABLE_DRAG_DISABLED,
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
   return (
     <li
       ref={setNodeRef}
+      {...(props.draggable ? listeners : {})}
       data-thread-selection-safe
       data-testid={props["data-testid"]}
-      className={cn("list-none", props.className)}
+      className={cn(
+        "list-none",
+        props.className,
+        isDragging && "relative z-20 rounded-md bg-sidebar shadow-sm",
+      )}
       style={{
         transform: CSS.Translate.toString(transform),
-        transition: props.marker.endsWith("-placeholder") ? "none" : transition,
+        transition: props.placeholder ? "none" : transition,
         visibility: transform?.scaleY === 0 ? "hidden" : undefined,
       }}
     >
@@ -48,7 +54,8 @@ export function SidebarSectionPlaceholder(props: {
 }) {
   return (
     <SortableSidebarMarker
-      marker={props.marker}
+      id={sidebarMarkerId(props.marker)}
+      placeholder
       data-testid={`sidebar-${props.marker}`}
       className="relative mx-0.5 -mb-px h-0"
     >
@@ -74,7 +81,7 @@ export function SidebarDragBoundary(props: {
 }) {
   return (
     <SortableSidebarMarker
-      marker={props.marker}
+      id={sidebarMarkerId(props.marker)}
       data-testid={`sidebar-${props.marker}`}
       className="pointer-events-none relative mx-0.5 -mb-px h-0"
     >
@@ -124,7 +131,7 @@ export function SidebarSectionHeader(props: {
   const count = redesign ? props.count : collapsedCount;
   return (
     <SortableSidebarMarker
-      marker={props.marker}
+      id={sidebarMarkerId(props.marker)}
       data-testid={`sidebar-${props.marker}`}
       className={cn("relative mx-0.5 h-8", props.className)}
     >
@@ -145,6 +152,115 @@ export function SidebarSectionHeader(props: {
         {props.label}
         {!redesign && collapsedCount !== null ? ` (${collapsedCount})` : null}
       </CollapsibleSectionHeader>
+    </SortableSidebarMarker>
+  );
+}
+
+export function SidebarGroupHeader(props: {
+  id: string;
+  label: string;
+  project: ProjectFaviconProject | null;
+  // Needs you opens a tinted panel that its rows continue; see SidebarThreadRow.
+  panel: { count: number } | null;
+  // A project section's controls; null for Needs you, which cannot collapse or move.
+  section: {
+    collapsed: boolean;
+    count: number;
+    onToggle: () => void;
+    onContextMenu: (position: { x: number; y: number }) => void;
+    onNewThread: () => void;
+  } | null;
+}) {
+  const { section } = props;
+  const label = (
+    <>
+      {props.project ? (
+        <ProjectFavicon project={props.project} className="size-4 shrink-0" />
+      ) : props.panel ? (
+        <BellDotIcon aria-hidden className="size-3.5 shrink-0 text-primary" />
+      ) : null}
+      <span className="min-w-0 truncate text-xs font-semibold text-sidebar-foreground">
+        {props.label}
+      </span>
+    </>
+  );
+  const rowClassName = "flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left";
+  if (section === null) {
+    return (
+      <SortableSidebarMarker
+        id={props.id}
+        data-testid="sidebar-group-header"
+        // Spacing lives inside the row's height: drag previews stack measured
+        // rects and would ignore a margin.
+        className={cn("mx-0.5 flex h-11 items-end", !props.panel && "pb-0.5")}
+      >
+        <div className={cn("w-full", props.panel && "rounded-t-lg bg-primary/5 px-1 pt-1")}>
+          <div className={rowClassName}>
+            {label}
+            {props.panel ? (
+              <span className="shrink-0 text-xs text-primary tabular-nums">
+                {props.panel.count}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </SortableSidebarMarker>
+    );
+  }
+  return (
+    <SortableSidebarMarker
+      id={props.id}
+      draggable
+      data-testid="sidebar-group-header"
+      className="mx-0.5 flex h-11 items-end pb-0.5"
+    >
+      <div
+        className="flex w-full min-w-0 items-center rounded-md hover:bg-sidebar-row-hover"
+        onContextMenu={(event) => {
+          event.preventDefault();
+          section.onContextMenu({ x: event.clientX, y: event.clientY });
+        }}
+      >
+        <button
+          type="button"
+          aria-expanded={!section.collapsed}
+          className={cn(
+            rowClassName,
+            "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+          )}
+          onClick={section.onToggle}
+        >
+          {label}
+          {section.collapsed ? (
+            <span className="shrink-0 text-xs text-sidebar-muted-foreground tabular-nums">
+              {section.count}
+            </span>
+          ) : null}
+          <span aria-hidden className="h-px min-w-2 flex-1 bg-sidebar-border" />
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              "size-3 shrink-0 text-sidebar-muted-foreground",
+              section.collapsed && "-rotate-90",
+            )}
+          />
+        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label={`New thread in ${props.label}`}
+                className="me-1 grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+                onClick={section.onNewThread}
+              />
+            }
+          >
+            <PlusIcon aria-hidden className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="top">New thread in {props.label}</TooltipPopup>
+        </Tooltip>
+      </div>
     </SortableSidebarMarker>
   );
 }

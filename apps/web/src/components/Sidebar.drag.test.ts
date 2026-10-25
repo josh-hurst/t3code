@@ -3,6 +3,7 @@ import { closestCenter, type CollisionDetection } from "@dnd-kit/core";
 import type { SortingStrategy } from "@dnd-kit/sortable";
 import {
   createSidebarCollisionDetection,
+  createSidebarSectionSortingStrategy,
   createSidebarSortingStrategy,
   restrictBelowSidebarLabel,
 } from "./Sidebar.drag";
@@ -38,9 +39,11 @@ function layout(
     const height =
       item.kind === "thread"
         ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
-        : item.marker === "pinned-header" || item.marker === "pinned-divider"
-          ? 0
-          : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
+        : item.kind === "group"
+          ? 44 * scale
+          : item.marker === "pinned-header" || item.marker === "pinned-divider"
+            ? 0
+            : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
     const rect = { top, height, bottom: top + height, left: 0, right: 260, width: 260 };
     top += height + 1;
     return rect;
@@ -528,6 +531,76 @@ describe("sidebar drag projection", () => {
     expect(byTime.get("a2")?.y).toBe(-83);
     expect(byTime.get(sidebarMarkerId("working-header"))).toEqual(stationary);
     expect(byTime.get("w")).toEqual(stationary);
+  });
+
+  describe("with project sections", () => {
+    const group = (key: string): SidebarListItem => ({
+      kind: "group",
+      key: `project:${key}`,
+      projectKey: key,
+    });
+    const groupId = (key: string) => sidebarListItemId(group(key));
+    const items = [
+      pinnedHeader,
+      thread("p", "pinned"),
+      divider,
+      group("a"),
+      thread("a1", "active"),
+      group("b"),
+      thread("b1", "active"),
+      settledHeader,
+      marker("settled-placeholder"),
+    ];
+    const input = { items, settledOrder: [], settledExpanded: false };
+
+    it("previews a pin landing in its project's section", () => {
+      const activeItems = [group("a"), thread("a1", "active"), group("b")];
+      activeItems.push(thread("p", "active"), thread("b1", "active"));
+      const result = preview({ ...input, activeItems }, "p", "a1");
+      expect(result.get(groupId("a"))?.y).toBe(-83);
+      expect(result.get(groupId("b"))?.y).toBe(-83);
+      expect(result.get("b1")?.y).toBe(0);
+    });
+
+    it("hides a project heading when its last thread leaves", () => {
+      const activeItems = [group("a"), thread("a1", "active"), group("b"), thread("b1", "active")];
+      const result = preview(
+        { ...input, activeItems },
+        "b1",
+        sidebarMarkerId("settled-placeholder"),
+      );
+      expect(result.get(groupId("b"))?.scaleY).toBe(0);
+      expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(-128);
+    });
+
+    it("folds a dragged section to its heading and slides the others past it", () => {
+      const strategy = createSidebarSectionSortingStrategy(items);
+      const args = layout(items, groupId("a"), "b1");
+      const result = new Map(
+        items.map((item, index) => [sidebarListItemId(item), strategy({ ...args, index })]),
+      );
+      expect(result.get("a1")?.scaleY).toBe(0);
+      expect(result.get(groupId("b"))?.y).toBe(-128);
+      expect(result.get("b1")?.y).toBe(-128);
+      expect(result.get("p")).toEqual(stationary);
+      expect(result.get(sidebarMarkerId("settled-header"))).toEqual(stationary);
+    });
+
+    it("keeps a collapsed project heading while another row leaves", () => {
+      const collapsed = [pinnedHeader, divider, group("a"), thread("a1", "active"), group("b")];
+      collapsed.push(settledHeader, marker("settled-placeholder"));
+      const result = preview(
+        {
+          items: collapsed,
+          settledOrder: [],
+          settledExpanded: false,
+          activeItems: collapsed.slice(2, 5),
+        },
+        "a1",
+        sidebarMarkerId("settled-placeholder"),
+      );
+      expect(result.get(groupId("b"))).toEqual({ ...stationary, y: -128 });
+    });
   });
 
   it("updates the projection when the target or measured geometry changes", () => {
