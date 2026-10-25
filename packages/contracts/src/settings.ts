@@ -65,6 +65,10 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+// What the detail line under a thread card's title shows.
+export const SidebarRowDetail = Schema.Literals(["branch", "message", "both"]);
+export type SidebarRowDetail = typeof SidebarRowDetail.Type;
+
 // Where threads that need you collect when the active list has project sections.
 export const SidebarNeedsYouPlacement = Schema.Literals(["off", "project", "top"]);
 export type SidebarNeedsYouPlacement = typeof SidebarNeedsYouPlacement.Type;
@@ -453,6 +457,7 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarWorkingShelfEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sharedProjectTerminals: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarCompactRows: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  sidebarRowDetail: SidebarRowDetail.pipe(Schema.withDecodingDefault(Effect.succeed("branch"))),
   sidebarProjectSections: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarNeedsYouPlacement: SidebarNeedsYouPlacement.pipe(
     Schema.withDecodingDefault(Effect.succeed("project")),
@@ -1692,6 +1697,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarWorkingShelfEnabled: Schema.optionalKey(Schema.Boolean),
   sharedProjectTerminals: Schema.optionalKey(Schema.Boolean),
   sidebarCompactRows: Schema.optionalKey(Schema.Boolean),
+  sidebarRowDetail: Schema.optionalKey(SidebarRowDetail),
   sidebarProjectSections: Schema.optionalKey(Schema.Boolean),
   sidebarNeedsYouPlacement: Schema.optionalKey(SidebarNeedsYouPlacement),
   sidebarNeedsYouIncludesCompleted: Schema.optionalKey(Schema.Boolean),

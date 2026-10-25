@@ -133,6 +133,13 @@ choice.
 While this is on, the active list is ordered by when each thread last came back to you, so you
 cannot drag or move threads within it. Your saved order returns when you turn it off.
 
+### Choose what shows under a thread's title
+
+**Settings → General → Thread row details** sets the line under each thread's title on web and
+desktop: its **Branch**, the start of its **Latest message**, or **Both**. A thread started in your
+project's own checkout without picking a branch has no branch to show. While a run is going, the
+preview updates when the run ends.
+
 ### Group active threads by project
 
 Turn on **Settings → General → Project sections** on web and desktop to group the active list

@@ -1,4 +1,5 @@
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
+import { MessageId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { deriveActiveWorkStartedAt } from "../session-logic.ts";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -10,6 +11,7 @@ import {
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
   resolveSidebarRowThreadId,
+  sidebarMessagePreview,
   isSidebarThreadWorking,
   orderItemsByPreferredIds,
   pinOrderKeyBetween,
@@ -63,6 +65,27 @@ import {
 } from "./sidebar/routeReveal";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+describe("sidebarMessagePreview", () => {
+  const message = (role: "user" | "assistant", text: string) => ({
+    id: MessageId.make("message:preview"),
+    role,
+    text,
+    updatedAt: DateTime.makeUnsafe("2026-10-25T00:00:00.000Z"),
+  });
+
+  it("flattens markdown onto one line and marks your own messages", () => {
+    expect(
+      sidebarMessagePreview(message("assistant", "## Done\n\nThe **sidebar** uses `rowDetail`.")),
+    ).toBe("Done The sidebar uses rowDetail.");
+    expect(sidebarMessagePreview(message("user", "Fix   it\nplease"))).toBe("You: Fix it please");
+  });
+
+  it("shows nothing when the message is only markup", () => {
+    expect(sidebarMessagePreview(message("assistant", "```"))).toBeNull();
+    expect(sidebarMessagePreview(null)).toBeNull();
+  });
+});
 
 describe("deleteSelectedThreadEntries", () => {
   const entries = [{ threadKey: "one" }, { threadKey: "two" }, { threadKey: "three" }] as const;

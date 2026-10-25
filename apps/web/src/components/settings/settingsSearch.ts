@@ -428,6 +428,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sidebar density dense smaller tabs cards active pinned"],
   },
   {
+    id: "sidebar-row-detail",
+    title: "Thread row details",
+    to: "/settings/general",
+    searchTerms: ["sidebar branch latest message preview last reply subtitle second line"],
+  },
+  {
     id: "project-sections",
     title: "Project sections",
     to: "/settings/general",

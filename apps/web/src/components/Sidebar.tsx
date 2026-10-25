@@ -1094,6 +1094,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const compactRows = useClientSettings((s) => s.sidebarCompactRows);
+  const rowDetail = useClientSettings((s) => s.sidebarRowDetail);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
     settleThread,
@@ -3661,6 +3662,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             variant={rowVariant}
                             compact={compactRows}
                             projectInHeading={projectInHeading}
+                            rowDetail={rowDetail}
                             panel={panel}
                             variantAction={
                               section === "snoozed"
