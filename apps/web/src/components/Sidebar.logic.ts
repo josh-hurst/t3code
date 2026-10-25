@@ -411,6 +411,56 @@ export function resolveSidebarFolderDrop(
   return null;
 }
 
+function moveSidebarItem(
+  items: readonly SidebarListItem[],
+  activeIndex: number,
+  overIndex: number,
+): SidebarListItem[] {
+  const moved = items.filter((_, index) => index !== activeIndex);
+  moved.splice(overIndex, 0, items[activeIndex]!);
+  return moved;
+}
+
+/**
+ * The active section's rows, headings included, with the dragged thread
+ * moved over `overId`, and the key of the heading it lands under (null for
+ * none). Null when the thread would not land in the active section.
+ */
+export function resolveSidebarActiveDrop(
+  items: readonly SidebarListItem[],
+  activeKey: string,
+  overId: string,
+): { readonly items: SidebarListItem[]; readonly groupKey: string | null } | null {
+  const activeIndex = items.findIndex((item) => sidebarListItemId(item) === activeKey);
+  const overIndex = items.findIndex((item) => sidebarListItemId(item) === overId);
+  if (activeIndex === -1 || overIndex === -1 || items[activeIndex]?.kind !== "thread") return null;
+  const moved = moveSidebarItem(items, activeIndex, overIndex);
+  if (sectionAtSidebarSlot(moved, overIndex) !== "active") return null;
+  const start = moved.findIndex(
+    (item) => item.kind === "marker" && item.marker === "pinned-divider",
+  );
+  let end = start + 1;
+  while (end < moved.length && !isSidebarShelfHeader(moved[end]!)) end += 1;
+  const active = moved
+    .slice(start + 1, end)
+    .filter((item) => item.kind !== "marker" || !item.marker.endsWith("placeholder"));
+  let groupKey: string | null = null;
+  for (const item of active) {
+    if (item.kind === "group") groupKey = item.key;
+    else if (item.kind === "thread" && item.key === activeKey) break;
+  }
+  return { items: active, groupKey };
+}
+
+function isSidebarShelfHeader(item: SidebarListItem): boolean {
+  return (
+    item.kind === "marker" &&
+    (item.marker === "working-header" ||
+      item.marker === "snoozed-header" ||
+      item.marker === "settled-header")
+  );
+}
+
 export function resolveSidebarDropTarget(
   items: readonly SidebarListItem[],
   activeKey: string,
@@ -419,8 +469,7 @@ export function resolveSidebarDropTarget(
   const activeIndex = items.findIndex((item) => sidebarListItemId(item) === activeKey);
   const overIndex = items.findIndex((item) => sidebarListItemId(item) === overId);
   if (activeIndex === -1 || overIndex === -1 || items[activeIndex]?.kind !== "thread") return null;
-  const moved = items.filter((_, index) => index !== activeIndex);
-  moved.splice(overIndex, 0, items[activeIndex]!);
+  const moved = moveSidebarItem(items, activeIndex, overIndex);
   const section = sectionAtSidebarSlot(moved, overIndex);
   if (section === "working" || section === "snoozed") return null;
   const pinnedOrder: string[] = [];
@@ -519,6 +568,13 @@ export function planSidebarThreadDrop(input: {
   // Active rows that hold their place, such as Needs you above a flat list.
   // They cannot be reordered, and drops order only the rows around them.
   readonly activeFixedKeys?: ReadonlySet<string>;
+  // Project sections: each active row's heading key (null for none) and the
+  // heading the drop lands under. Active rows reorder only within their own
+  // section, so other sections' rows never become neighbors in the order.
+  readonly activeGroups?: {
+    readonly byKey: ReadonlyMap<string, string | null>;
+    readonly landing: string | null;
+  };
 }): SidebarThreadDropPlan {
   const {
     activeKey,
@@ -553,7 +609,8 @@ export function planSidebarThreadDrop(input: {
   };
   switch (target.section) {
     case "active": {
-      if (input.activeTimeOrdered) {
+      const groups = activeSection === "active" ? input.activeGroups : undefined;
+      if (input.activeTimeOrdered && groups === undefined) {
         return activeSection === "active"
           ? { kind: "none" }
           : {
@@ -578,8 +635,15 @@ export function planSidebarThreadDrop(input: {
               unsnooze: activeSection === "snoozed",
             };
       }
+      const group = groups?.byKey.get(activeKey);
+      if (groups !== undefined && (group === undefined || group !== groups.landing)) {
+        return { kind: "none" };
+      }
       const movable = (keys: readonly string[]) =>
-        fixed === undefined ? keys : keys.filter((key) => !fixed.has(key));
+        keys.filter(
+          (key) =>
+            fixed?.has(key) !== true && (groups === undefined || groups.byKey.get(key) === group),
+        );
       const order = movable(target.activeOrder);
       const currentOrder = movable(activeOrder);
       if (

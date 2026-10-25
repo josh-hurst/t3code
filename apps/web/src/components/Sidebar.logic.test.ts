@@ -22,6 +22,8 @@ import {
   searchSidebarThreads,
   shouldRecedeSidebarThread,
   sortInboxThreadsByReturn,
+  resolveSidebarActiveDrop,
+  sidebarMarkerId,
   resolveSidebarDropTarget,
   resolveSidebarFolderDrop,
   planSidebarThreadDrop,
@@ -1276,6 +1278,71 @@ describe("Working shelf (beta)", () => {
         unsettle: false,
         unsnooze: false,
       });
+    });
+
+    it("orders project sections by hand, within each project", () => {
+      const base = {
+        pinnedOrder: [],
+        pinnedKeysById: new Map(),
+        // Saved order interleaves the projects: a1, b1, a2.
+        activeOrder: ["a1", "a2", "b1"],
+        activeKeysById: new Map([
+          ["a1", "f"],
+          ["b1", "m"],
+          ["a2", "t"],
+        ]),
+        activeTimeOrdered: true,
+        activeKey: "a1",
+        activeSection: "active" as const,
+      };
+      const byKey = new Map([
+        ["a1", "project:a"],
+        ["a2", "project:a"],
+        ["b1", "project:b"],
+      ]);
+      // b1 is the next row on screen, but only a2 bounds a1 within its project.
+      const plan = planSidebarThreadDrop({
+        ...base,
+        target: { section: "active", pinnedOrder: [], activeOrder: ["a2", "a1", "b1"] },
+        activeGroups: { byKey, landing: "project:a" },
+      });
+      expect(plan.kind === "move-active" && plan.assignments).toEqual([
+        { id: "a1", orderKey: expect.any(String) },
+      ]);
+      expect(plan.kind === "move-active" && plan.assignments[0]!.orderKey > "t").toBe(true);
+      // A row cannot leave its project.
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          target: { section: "active", pinnedOrder: [], activeOrder: ["a2", "b1", "a1"] },
+          activeGroups: { byKey, landing: "project:b" },
+        }),
+      ).toEqual({ kind: "none" });
+    });
+  });
+
+  describe("resolveSidebarActiveDrop", () => {
+    const items: SidebarListItem[] = [
+      { kind: "marker", marker: "pinned-header" },
+      { kind: "marker", marker: "pinned-divider" },
+      { kind: "group", key: "project:a", projectKey: "a" },
+      { kind: "thread", key: "a1", section: "active" },
+      { kind: "thread", key: "a2", section: "active" },
+      { kind: "group", key: "project:b", projectKey: "b" },
+      { kind: "thread", key: "b1", section: "active" },
+      { kind: "marker", marker: "settled-header" },
+      { kind: "marker", marker: "settled-placeholder" },
+    ];
+
+    it("returns the moved active rows and the heading the row lands under", () => {
+      expect(resolveSidebarActiveDrop(items, "a2", "a1")).toEqual({
+        items: [items[2], items[4], items[3], items[5], items[6]],
+        groupKey: "project:a",
+      });
+      expect(resolveSidebarActiveDrop(items, "a1", "b1")?.groupKey).toBe("project:b");
+      expect(
+        resolveSidebarActiveDrop(items, "a1", sidebarMarkerId("settled-placeholder")),
+      ).toBeNull();
     });
   });
 });

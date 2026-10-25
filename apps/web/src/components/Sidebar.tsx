@@ -169,6 +169,7 @@ import {
   reduceSidebarProjectScopeMenuState,
   resolveAdjacentThreadId,
   resolveSidebarSweepKeys,
+  resolveSidebarActiveDrop,
   resolveSidebarDropTarget,
   resolveSidebarFolderDrop,
   resolveSidebarDropVerb,
@@ -360,6 +361,18 @@ type SidebarActiveGrouping = {
 
 const NEEDS_YOU_GROUP_KEY = "needs-you";
 
+// The Working shelf orders the inbox by return, except under project sections,
+// which keep the hand order; returned threads surface there through Needs you.
+function sortActiveThreads(
+  threads: readonly EnvironmentThreadShell[],
+  workingShelfEnabled: boolean,
+  grouping: SidebarActiveGrouping | null,
+): EnvironmentThreadShell[] {
+  return workingShelfEnabled && grouping?.kind !== "projects"
+    ? sortInboxThreadsByReturn(threads, inboxReturns.returnedAt)
+    : sortThreadsForSidebar(threads);
+}
+
 function groupActiveThreads(
   threads: readonly EnvironmentThreadShell[],
   sections: SidebarActiveGrouping,
@@ -520,9 +533,7 @@ function resolveDraggedActiveItems(
 ): (typeof NO_DRAGGED_ORDERS)["activeItems"] {
   const { activeGrouping, drag } = input;
   if (activeGrouping === null || activeGrouping.kind === "flat") return undefined;
-  const sorted = input.workingShelfEnabled
-    ? sortInboxThreadsByReturn(landedActive, inboxReturns.returnedAt)
-    : sortThreadsForSidebar(landedActive);
+  const sorted = sortActiveThreads(landedActive, input.workingShelfEnabled, activeGrouping);
   const itemsFor = (grouping: SidebarActiveGrouping) =>
     activeGroupListItems(
       collapseActiveGroups(
@@ -848,9 +859,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   // sort, or mixed-version fleets would render different pinned orders on
   // web and mobile from the same data.
   const sortedPinned = sortPinnedThreadsForSidebar(pinned);
-  const baseActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, inboxReturns.returnedAt)
-    : sortThreadsForSidebar(active);
+  const baseActive = sortActiveThreads(active, workingShelfEnabled, activeGrouping);
   // A manual drop's order applies before grouping, which renders from groups.
   const droppedActive =
     optimisticDrop?.section !== "active" || optimisticDrop.order === null
@@ -2252,18 +2261,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const sortableIds = sidebarListItems.map(sidebarListItemId);
   // Outside a drag the orders are constants, so the strategy, and with it
   // every sortable row, keeps its identity while thread shells stream in.
-  // Working and project sections derive the active order, so drops into
+  // Working and folder sections derive the active order, so drops into
   // active land where the sort puts them instead of where they were dropped.
+  // Project sections keep a hand order within each project, even beside the
+  // Working shelf; rows arriving from another shelf still land where the
+  // sort puts them.
   const activeTimeOrdered =
     workingShelfEnabled || (activeGrouping !== null && activeGrouping.kind !== "flat");
-  // Above a flat list, Needs you rows hold their place and drops order only
-  // the rows below them.
+  const projectHandOrdered = activeGrouping?.kind === "projects";
+  // Needs you rows hold their place and drops order only the rows below them.
   const activeFixedKeys =
-    activeGrouping?.kind === "flat"
+    activeGrouping?.kind === "flat" || projectHandOrdered
       ? new Set(
-          activeGroups
-            ?.find((group) => group.key === NEEDS_YOU_GROUP_KEY)
-            ?.threads.map(threadShellKey),
+          activeGroups?.flatMap((group) =>
+            group.threads.slice(0, group.needsYouCount ?? 0).map(threadShellKey),
+          ),
         )
       : undefined;
   const sidebarThreadFolderById = useUiStateStore((store) => store.sidebarThreadFolderById);
@@ -2279,6 +2291,26 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const dropChangesFolder = (activeKey: string, overId: string) =>
     activeGrouping?.kind === "folders" &&
     folderAfterDrop(activeKey, overId) !== (sidebarThreadFolderById[activeKey] ?? null);
+  const activeGroupByKey = projectHandOrdered
+    ? new Map(
+        activeGroups?.flatMap((group) =>
+          group.threads.map((thread) => [
+            threadShellKey(thread),
+            group.headless ? null : group.key,
+          ]),
+        ),
+      )
+    : undefined;
+  const activeGroupsOfDrop = (activeKey: string, overId: string) =>
+    activeGroupByKey === undefined
+      ? {}
+      : {
+          activeGroups: {
+            byKey: activeGroupByKey,
+            landing:
+              resolveSidebarActiveDrop(sidebarListItems, activeKey, overId)?.groupKey ?? null,
+          },
+        };
   const {
     settledOrder: draggedSettledOrder,
     activeOrder: draggedActiveOrder,
@@ -2315,6 +2347,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         )
                     : draggedActiveItems,
               }),
+          activeInPlace: projectHandOrdered,
           settledExpanded: settledShelfExpanded,
           settledVisibleCount,
           routeThreadKey: routeRowThreadKey,
@@ -2361,6 +2394,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             activeReorderableKeys: activeReorderableThreadKeys,
             activeTimeOrdered,
             ...(activeFixedKeys === undefined ? {} : { activeFixedKeys }),
+            ...activeGroupsOfDrop(draggedThreadKey, id),
           }).kind !== "none"
         );
       },
@@ -2416,6 +2450,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeReorderableKeys: activeReorderableThreadKeys,
       activeTimeOrdered,
       ...(activeFixedKeys === undefined ? {} : { activeFixedKeys }),
+      ...activeGroupsOfDrop(activeKey, String(event.over?.id)),
     });
     if (plan.kind === "none") return;
     if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;

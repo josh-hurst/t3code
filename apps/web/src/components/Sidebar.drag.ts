@@ -1,6 +1,7 @@
 import { closestCenter, type CollisionDetection, type Modifier } from "@dnd-kit/core";
 import { verticalListSortingStrategy, type SortingStrategy } from "@dnd-kit/sortable";
 import {
+  resolveSidebarActiveDrop,
   resolveSidebarDropTarget,
   sidebarListItemId,
   sidebarMarkerId,
@@ -103,6 +104,9 @@ export function createSidebarSortingStrategy(input: {
   // `activeOrder` when the active list has project sections. Folders pass a
   // function, since where the row lands depends on the folder it is over.
   activeItems?: readonly SidebarListItem[] | ((overId: string) => readonly SidebarListItem[]);
+  // Project sections ordered by hand: a row moved within the active list
+  // previews where it is dropped rather than where `activeItems` sorts it.
+  activeInPlace?: boolean;
   settledExpanded: boolean;
   settledVisibleCount?: number;
   routeThreadKey?: string | null;
@@ -190,9 +194,11 @@ export function createSidebarSortingStrategy(input: {
         ? input.activeItems(sidebarListItemId(over))
         : input.activeItems;
     const activeItems =
-      landedItems === undefined || target.section === "active"
-        ? landedItems
-        : withoutSidebarThread(landedItems, active.key);
+      input.activeInPlace && active.section === "active" && target.section === "active"
+        ? resolveSidebarActiveDrop(items, active.key, sidebarListItemId(over))?.items
+        : landedItems === undefined || target.section === "active"
+          ? landedItems
+          : withoutSidebarThread(landedItems, active.key);
     if (activeItems === undefined) section("active");
     else if (activeItems.length > 0) projected.push(...activeItems);
     else marker("active-placeholder");
