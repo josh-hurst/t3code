@@ -1,6 +1,6 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
@@ -14,10 +14,12 @@ export class ElectronUpdaterCheckForUpdatesError extends Schema.TaggedError<Elec
   "ElectronUpdaterCheckForUpdatesError",
   {
     channel: Schema.NullOr(Schema.String),
+    detail: Schema.optional(Schema.String),
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
+    if (this.detail) return this.detail;
     return `Electron updater failed to check for updates on channel ${this.channel ?? "default"}.`;
   }
 }
@@ -26,10 +28,12 @@ export class ElectronUpdaterDownloadUpdateError extends Schema.TaggedError<Elect
   "ElectronUpdaterDownloadUpdateError",
   {
     channel: Schema.NullOr(Schema.String),
+    detail: Schema.optional(Schema.String),
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
+    if (this.detail) return this.detail;
     return `Electron updater failed to download the update on channel ${this.channel ?? "default"}.`;
   }
 }
@@ -58,6 +62,11 @@ export type ElectronUpdaterError = typeof ElectronUpdaterError.Type;
 export class ElectronUpdater extends Context.Service<
   ElectronUpdater,
   {
+    /**
+     * Some when the updater brings its own feed instead of app-update.yml.
+     * `currentVersion` identifies the running build in its version scheme.
+     */
+    readonly builtInFeed: Option.Option<{ readonly currentVersion: string }>;
     readonly setFeedURL: (options: ElectronUpdaterFeedUrl) => Effect.Effect<void>;
     readonly setAutoDownload: (value: boolean) => Effect.Effect<void>;
     readonly setAutoInstallOnAppQuit: (value: boolean) => Effect.Effect<void>;
@@ -82,6 +91,7 @@ export class ElectronUpdater extends Context.Service<
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = ElectronUpdater.of({
+  builtInFeed: Option.none(),
   setFeedURL: (options) =>
     Effect.suspend(() => {
       autoUpdater.setFeedURL(options);
@@ -168,5 +178,3 @@ export const make = ElectronUpdater.of({
     ).pipe(Effect.asVoid);
   },
 });
-
-export const layer = Layer.succeed(ElectronUpdater, make);

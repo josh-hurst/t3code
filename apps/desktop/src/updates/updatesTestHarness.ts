@@ -35,6 +35,7 @@ export interface UpdatesHarnessOptions {
   readonly platform?: NodeJS.Platform;
   readonly packageType?: string | undefined;
   readonly installRecord?: string | undefined;
+  readonly builtInFeed?: { readonly currentVersion: string } | undefined;
 }
 
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
@@ -66,6 +67,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   };
 
   const layerUpdater = Layer.succeed(ElectronUpdater.ElectronUpdater, {
+    builtInFeed: Option.fromNullishOr(options.builtInFeed),
     setFeedURL: (options) =>
       Effect.sync(() => {
         feedUrls.push(options);

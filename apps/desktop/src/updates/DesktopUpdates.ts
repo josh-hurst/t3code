@@ -346,6 +346,11 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
 
+  const currentVersion = Option.match(electronUpdater.builtInFeed, {
+    onNone: () => environment.appVersion,
+    onSome: (feed) => feed.currentVersion,
+  });
+
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
   const activeUpdateActionRef = yield* Ref.make<Option.Option<UpdateAction>>(Option.none());
   const installRunningBackendsRef = yield* Ref.make<
@@ -412,7 +417,12 @@ export const make = Effect.gen(function* () {
       : false;
 
   const hasUpdateFeedConfig = Ref.get(appUpdateYmlConfigRef).pipe(
-    Effect.map((appUpdateYmlConfig) => Option.isSome(appUpdateYmlConfig) || config.mockUpdates),
+    Effect.map(
+      (appUpdateYmlConfig) =>
+        Option.isSome(appUpdateYmlConfig) ||
+        config.mockUpdates ||
+        Option.isSome(electronUpdater.builtInFeed),
+    ),
   );
 
   const resolveDisabledReason = Effect.gen(function* () {
@@ -608,7 +618,7 @@ export const make = Effect.gen(function* () {
     DESKTOP_UPDATE_INSTALL_RECORD_FILE,
   );
   const writeInstallRecord = (targetVersion: string) =>
-    encodeInstallRecord({ fromVersion: environment.appVersion, targetVersion }).pipe(
+    encodeInstallRecord({ fromVersion: currentVersion, targetVersion }).pipe(
       Effect.flatMap((text) => fileSystem.writeFileString(installRecordPath, text)),
       Effect.catch((error) =>
         logUpdaterWarning("Could not record the update install.", { errorTag: error._tag }),
@@ -623,7 +633,7 @@ export const make = Effect.gen(function* () {
     Effect.option,
     Effect.map((record) =>
       Option.flatMap(record, (value) =>
-        Option.fromNullishOr(resolveNotAppliedInstallVersion(value, environment.appVersion)),
+        Option.fromNullishOr(resolveNotAppliedInstallVersion(value, currentVersion)),
       ),
     ),
     Effect.tap((notAppliedVersion) =>
