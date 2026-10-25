@@ -84,6 +84,17 @@ yay -S t3code-nightly-bin
 
 The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
 
+#### This fork (macOS, Apple Silicon)
+
+Download the DMG from this fork's [Releases](../../releases/latest) and drag T3 Code into
+Applications. It updates itself from this fork's releases, not the official ones.
+
+To publish a release, commit and push to the fork, then run `vp run release:fork`. It needs a
+bundle ID registered to your Apple team in `T3CODE_DESKTOP_APP_ID`, a Developer ID Application
+certificate in your keychain, and notarization credentials; see the header of
+[`scripts/release-fork.ts`](./scripts/release-fork.ts). Each release gets the next version after
+the official one it builds on (`0.1.2` becomes `0.1.2001`, `0.1.2002`, …).
+
 ## Some notes
 
 We are very very early in this project. Expect bugs.
