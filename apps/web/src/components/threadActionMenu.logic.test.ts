@@ -71,4 +71,40 @@ describe("buildThreadActionMenuItems", () => {
     );
     expect(archiveItem?.disabled).toBe(true);
   });
+
+  it("offers folders, checks the current one, and removal only when filed", () => {
+    const folderMenu = (currentFolderId: string | null) =>
+      buildThreadActionMenuItems({
+        ...baseState,
+        folders: {
+          items: [
+            { id: "f1", name: "Bugs" },
+            { id: "f2", name: "Ideas" },
+          ],
+          currentFolderId,
+        },
+      }).find((item) => item.id === "folder");
+    expect(folderMenu("f2")?.children?.map((child) => [child.id, child.checked ?? false])).toEqual([
+      ["folder:f1", false],
+      ["folder:f2", true],
+      ["folder:new", false],
+      ["folder:none", false],
+    ]);
+    expect(folderMenu(null)?.children?.map((child) => child.id)).not.toContain("folder:none");
+    expect(
+      buildThreadActionMenuItems({ ...baseState, folders: null }).some(
+        (item) => item.id === "folder",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps folder moves available to read-only connections", () => {
+    const folderItem = buildThreadActionMenuItems({
+      ...baseState,
+      canOperate: false,
+      folders: { items: [], currentFolderId: null },
+    }).find((item) => item.id === "folder");
+    expect(folderItem?.disabled).toBeUndefined();
+    expect(folderItem?.children?.every((child) => child.disabled === undefined)).toBe(true);
+  });
 });

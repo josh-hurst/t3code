@@ -71,6 +71,7 @@ const clientSettings: ClientSettings = {
   sharedProjectTerminals: false,
   sidebarCompactRows: false,
   sidebarProjectSections: false,
+  sidebarNeedsYouIncludesCompleted: true,
   loadBalancingEnabled: false,
   loadBalancingWeights: { "environment-1": 75, "environment-2": 0 },
   pullRequestMergeMethodOverrides: {},

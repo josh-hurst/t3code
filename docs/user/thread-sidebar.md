@@ -138,15 +138,29 @@ cannot drag or move threads within it. Your saved order returns when you turn it
 Turn on **Settings → General → Project sections** on web and desktop to group the active list
 under a heading for each project, in the same order as the project filter. Threads waiting on an
 approval or an answer, with a plan ready, or with a finished or failed run you haven't opened
-move to a **Needs you** section at the top. The thread you have open stays in whichever section
-it was in until you leave it. While this is on, threads cannot be dragged or moved within the
+move to a **Needs you** section at the top of their project. The thread you have open stays where
+it was until you leave it. While this is on, threads cannot be dragged or moved within the
 active list; pinning, settling, and un-settling by drag still work. Each device keeps its own
-choice.
+choice. Turn off **Finished threads in Needs you** to keep threads with a finished run in their
+project section.
 
 Click a project heading to collapse or expand its section; a collapsed section shows how many
-threads it holds. Click **+** on a heading to start a new thread in that project. Drag a heading,
+threads it holds and still lists the ones that need you. Click **+** on a heading to start a new thread in that project. Drag a heading,
 or right-click it and choose **Move section up** or **Move section down**, to reorder sections.
 Moving a section saves a manual project order, which the project filter also uses.
+
+### Group active threads into folders
+
+With **Project sections** off, you can sort active threads into your own folders instead.
+Right-click a thread, or select several, and choose **Move to folder → New folder…** to create
+one, or pick an existing folder. Threads outside any folder stay at the top of the active list,
+and **Remove from folder** returns a thread there. A thread keeps its folder while it is pinned,
+snoozed, or settled, and goes back into it when it returns to the active list.
+
+Click a folder heading to collapse or expand it. Drag a heading, or right-click it, to reorder,
+rename, or delete the folder. Deleting a folder keeps its threads and moves them back to the top
+of the list. While you have folders, threads cannot be dragged or moved within the active list.
+Folders are saved on each device and are hidden while Project sections is on.
 
 ## Settle finished work
 

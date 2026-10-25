@@ -444,6 +444,9 @@ export const ClientSettingsSchema = Schema.Struct({
   sharedProjectTerminals: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarCompactRows: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarProjectSections: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  sidebarNeedsYouIncludesCompleted: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -1674,6 +1677,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sharedProjectTerminals: Schema.optionalKey(Schema.Boolean),
   sidebarCompactRows: Schema.optionalKey(Schema.Boolean),
   sidebarProjectSections: Schema.optionalKey(Schema.Boolean),
+  sidebarNeedsYouIncludesCompleted: Schema.optionalKey(Schema.Boolean),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

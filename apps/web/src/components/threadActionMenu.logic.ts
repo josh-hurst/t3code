@@ -4,6 +4,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
   | "filter-by-project"
+  | "hide-project"
   | "project-settings"
   | "pin"
   | "unpin"
@@ -19,6 +20,8 @@ export type ThreadActionMenuId =
   | "regenerate-title"
   | "mark-unread"
   | "share-guest"
+  | "folder"
+  | `folder:${string}`
   | "copy"
   | "copy-path"
   | "copy-branch"
@@ -89,10 +92,18 @@ export interface ThreadActionMenuState {
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
   /** Guest links need their own grant, so the caller checks it instead of `canOperate`. */
   readonly canShareWithGuest?: boolean;
+  /** Sidebar folders, or null while project sections group the list instead. */
+  readonly folders?: SidebarFolderMenuState | null;
+}
+
+export interface SidebarFolderMenuState {
+  readonly items: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+  readonly currentFolderId: string | null;
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
+  if (action === "folder" || action.startsWith("folder:")) return false;
   return ![
     "new-thread-on-branch",
     "project-settings",
@@ -103,6 +114,33 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     "copy-branch",
     "copy-thread-id",
   ].includes(action);
+}
+
+/** The Move to folder submenu; `currentFolderId` is checked and offers removal. */
+export function buildSidebarFolderMenuItem(
+  folders: SidebarFolderMenuState,
+  label = "Move to folder",
+): ContextMenuItem<"folder" | `folder:${string}`> {
+  return {
+    id: "folder",
+    label,
+    icon: "folder",
+    children: [
+      ...folders.items.map((folder) => ({
+        id: `folder:${folder.id}` as const,
+        label: folder.name,
+        checked: folder.id === folders.currentFolderId,
+      })),
+      {
+        id: "folder:new" as const,
+        label: "New folder…",
+        separatorBefore: folders.items.length > 0,
+      },
+      ...(folders.currentFolderId === null
+        ? []
+        : [{ id: "folder:none" as const, label: "Remove from folder" }]),
+    ],
+  };
 }
 
 export function buildThreadActionMenuItems(
@@ -175,8 +213,18 @@ export function buildThreadActionMenuItems(
               : `Filter by ${state.projectFilter.label}`,
             icon: "folder-tree",
           },
+          ...(state.projectFilter.isActive
+            ? []
+            : [
+                {
+                  id: "hide-project" as const,
+                  label: `Hide ${state.projectFilter.label}`,
+                  icon: "eye-off",
+                },
+              ]),
         ]
       : []),
+    ...(state.folders ? [buildSidebarFolderMenuItem(state.folders)] : []),
     ...(state.supports.autoSettleOptOut
       ? [
           {

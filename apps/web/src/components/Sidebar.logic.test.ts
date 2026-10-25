@@ -34,12 +34,14 @@ import {
   type SidebarSection,
   resolveSidebarDropVerb,
   groupSidebarActiveThreads,
+  groupSidebarFolderThreads,
   sidebarThreadNeedsYou,
   createOpenThreadPlacementHold,
   withoutSidebarThread,
   applySidebarSectionOrder,
   moveSidebarSection,
   sidebarProjectBlocks,
+  resolveSidebarVisibleProjectKeys,
 } from "./Sidebar.logic";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
@@ -1360,6 +1362,37 @@ describe("resolveSidebarRouteReveal", () => {
   });
 });
 
+describe("folder sections", () => {
+  it("lists unfiled threads first, then every folder in order, even empty ones", () => {
+    const folderOf: Record<string, string> = { a1: "a", a2: "a", gone: "deleted" };
+    const groups = groupSidebarFolderThreads({
+      threads: ["a1", "u1", "a2", "gone"],
+      folderIdOf: (id) => folderOf[id],
+      folderOrder: ["b", "a"],
+    });
+    expect(groups.map((group) => [group.key, group.headless ?? false, group.threads])).toEqual([
+      // A thread whose folder was deleted counts as unfiled.
+      ["unfiled", true, ["u1", "gone"]],
+      ["folder:b", false, []],
+      ["folder:a", false, ["a1", "a2"]],
+    ]);
+  });
+
+  it("finds folder sections as movable blocks", () => {
+    expect(
+      sidebarProjectBlocks([
+        { kind: "thread", key: "u1", section: "active" },
+        { kind: "group", key: "folder:b", projectKey: null, folderId: "b" },
+        { kind: "group", key: "folder:a", projectKey: null, folderId: "a" },
+        { kind: "thread", key: "a1", section: "active" },
+      ]),
+    ).toEqual([
+      { sectionKey: "b", start: 1, end: 2 },
+      { sectionKey: "a", start: 2, end: 4 },
+    ]);
+  });
+});
+
 describe("project sections", () => {
   const thread = (id: string, project: string, needsYou = false) => ({ id, project, needsYou });
   const group = (threads: ReturnType<typeof thread>[], projectOrder: readonly string[]) =>
@@ -1368,37 +1401,47 @@ describe("project sections", () => {
       needsYou: (entry) => entry.needsYou,
       projectKeyOf: (entry) => entry.project,
       projectOrder,
-    }).map((entry) => [entry.projectKey, entry.threads.map(({ id }) => id)]);
+    }).map((entry) => [entry.projectKey, entry.threads.map(({ id }) => id), entry.needsYouCount]);
 
-  it("lifts threads that need you above project groups in project order", () => {
+  it("lifts threads that need you to the top of their own project, in project order", () => {
     expect(
       group(
-        [thread("b1", "b"), thread("a1", "a", true), thread("a2", "a"), thread("b2", "b", true)],
+        [thread("b1", "b"), thread("a1", "a"), thread("a2", "a", true), thread("b2", "b", true)],
         ["a", "b"],
       ),
     ).toEqual([
-      [null, ["a1", "b2"]],
-      ["a", ["a2"]],
-      ["b", ["b1"]],
+      ["a", ["a2", "a1"], 1],
+      ["b", ["b2", "b1"], 1],
     ]);
     expect(group([thread("x1", "x"), thread("a1", "a"), thread("a2", "a")], ["a"])).toEqual([
-      ["a", ["a1", "a2"]],
-      ["x", ["x1"]],
+      ["a", ["a1", "a2"], 0],
+      ["x", ["x1"], 0],
     ]);
   });
 
   it("keeps the open thread in the section it was opened in until you leave it", () => {
     const hold = createOpenThreadPlacementHold();
     // Opened from a project section, then it finishes while open.
-    expect(hold("a")("a", false)).toBe(false);
-    expect(hold("a")("a", true)).toBe(false);
-    expect(hold("a")("b", true)).toBe(true);
+    expect(hold("a")("a", false, null)).toBe(false);
+    expect(hold("a")("a", true, null)).toBe(false);
+    expect(hold("a")("b", true, null)).toBe(true);
     // Leaving re-sorts it: an unanswered request still lands in Needs you.
-    expect(hold("b")("a", true)).toBe(true);
+    expect(hold("b")("a", true, null)).toBe(true);
     // Opened from Needs you, then visiting clears its status.
-    expect(hold("b")("b", true)).toBe(true);
-    expect(hold("b")("b", false)).toBe(true);
-    expect(hold(null)("b", false)).toBe(false);
+    expect(hold("b")("b", true, null)).toBe(true);
+    expect(hold("b")("b", false, null)).toBe(true);
+    expect(hold(null)("b", false, null)).toBe(false);
+  });
+
+  it("re-sorts the open thread out of Needs you once you send it a message", () => {
+    const hold = createOpenThreadPlacementHold();
+    const t1 = "2026-03-09T10:00:00.000Z";
+    const t2 = "2026-03-09T11:00:00.000Z";
+    expect(hold("a")("a", true, t1)).toBe(true);
+    expect(hold("a")("a", false, t1)).toBe(true);
+    // Sending starts a turn, so it goes back to its project and stays there.
+    expect(hold("a")("a", false, t2)).toBe(false);
+    expect(hold("a")("a", true, t2)).toBe(false);
   });
 
   it("treats approvals, questions, failures and unseen completions as needing you", () => {
@@ -1426,6 +1469,22 @@ describe("project sections", () => {
     expect(
       sidebarThreadNeedsYou({ ...idle, latestRun: run("failed", "2026-03-09T11:00:00.000Z") }),
     ).toBe(true);
+
+    // With finished runs left out, only the asks remain.
+    const options = { includeCompleted: false };
+    expect(
+      sidebarThreadNeedsYou(
+        { ...idle, latestRun: run("completed", "2026-03-09T11:00:00.000Z") },
+        options,
+      ),
+    ).toBe(false);
+    expect(
+      sidebarThreadNeedsYou(
+        { ...idle, latestRun: run("failed", "2026-03-09T11:00:00.000Z") },
+        options,
+      ),
+    ).toBe(true);
+    expect(sidebarThreadNeedsYou({ ...idle, hasPendingApprovals: true }, options)).toBe(true);
   });
 
   it("drops a heading only with its last row", () => {
@@ -1450,8 +1509,8 @@ describe("project sections", () => {
   it("finds each project section's heading and rows", () => {
     const items: readonly SidebarListItem[] = [
       { kind: "marker", marker: "pinned-divider" },
-      { kind: "group", key: "needs-you", projectKey: null },
-      { kind: "thread", key: "n1", section: "active" },
+      { kind: "group", key: "project:c", projectKey: "c" },
+      { kind: "thread", key: "c1", section: "active", needsYou: true },
       { kind: "group", key: "project:a", projectKey: "a" },
       { kind: "thread", key: "a1", section: "active" },
       { kind: "thread", key: "a2", section: "active" },
@@ -1459,8 +1518,9 @@ describe("project sections", () => {
       { kind: "marker", marker: "settled-header" },
     ];
     expect(sidebarProjectBlocks(items)).toEqual([
-      { projectKey: "a", start: 3, end: 6 },
-      { projectKey: "b", start: 6, end: 7 },
+      { sectionKey: "c", start: 1, end: 3 },
+      { sectionKey: "a", start: 3, end: 6 },
+      { sectionKey: "b", start: 6, end: 7 },
     ]);
   });
 
@@ -1494,5 +1554,43 @@ describe("project sections", () => {
       pinnedOrder: [],
       activeOrder: ["a1", "p1"],
     });
+  });
+});
+
+describe("resolveSidebarVisibleProjectKeys", () => {
+  const groups = [
+    { projectKey: "a", memberProjectRefs: [{ environmentId: "e1", projectId: "a1" }] },
+    {
+      projectKey: "b",
+      memberProjectRefs: [
+        { environmentId: "e1", projectId: "b1" },
+        { environmentId: "e2", projectId: "b2" },
+      ],
+    },
+    { projectKey: "c", memberProjectRefs: [{ environmentId: "e1", projectId: "c1" }] },
+  ];
+
+  it("lists everything when nothing is scoped or hidden", () => {
+    expect(
+      resolveSidebarVisibleProjectKeys({ groups, scopeKey: null, hiddenKeys: new Set(["gone"]) }),
+    ).toBeNull();
+  });
+
+  it("drops hidden projects from the full list", () => {
+    expect(
+      resolveSidebarVisibleProjectKeys({ groups, scopeKey: null, hiddenKeys: new Set(["b"]) }),
+    ).toEqual(new Set(["e1:a1", "e1:c1"]));
+  });
+
+  it("shows a picked project even when it is hidden", () => {
+    expect(
+      resolveSidebarVisibleProjectKeys({ groups, scopeKey: "b", hiddenKeys: new Set(["b"]) }),
+    ).toEqual(new Set(["e1:b1", "e2:b2"]));
+  });
+
+  it("falls back to hiding while a picked project is not loaded yet", () => {
+    expect(
+      resolveSidebarVisibleProjectKeys({ groups, scopeKey: "z", hiddenKeys: new Set() }),
+    ).toBeNull();
   });
 });

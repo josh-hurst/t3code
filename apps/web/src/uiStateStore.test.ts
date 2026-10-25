@@ -9,6 +9,12 @@ import {
   PERSISTED_STATE_KEY,
   type PersistedUiState,
   persistState,
+  setSidebarProjectHidden,
+  createSidebarFolder,
+  deleteSidebarFolder,
+  renameSidebarFolder,
+  setSidebarFolderOrder,
+  setSidebarThreadFolder,
   reorderProjects,
   resolveProjectExpanded,
   setProjectExpanded,
@@ -20,6 +26,9 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectExpandedById: {},
     projectOrder: [],
     sidebarProjectScopeKey: null,
+    sidebarHiddenProjectKeys: [],
+    sidebarFolders: [],
+    sidebarThreadFolderById: {},
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
@@ -126,6 +135,9 @@ describe("parsePersistedState", () => {
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKey: null,
+      sidebarHiddenProjectKeys: [],
+      sidebarFolders: [],
+      sidebarThreadFolderById: {},
       pullRequestMergeMethod: "merge",
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
@@ -231,6 +243,9 @@ describe("uiStateStore persistence", () => {
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKey: null,
+      sidebarHiddenProjectKeys: [],
+      sidebarFolders: [],
+      sidebarThreadFolderById: {},
       threadChangedFilesExpansionVersion: 2,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
@@ -255,5 +270,55 @@ describe("uiStateStore persistence", () => {
     expect(parsePersistedState(persisted).sidebarProjectScopeKey).toBe(
       "github.com/pingdotgg/t3code",
     );
+  });
+
+  it("hides and unhides sidebar projects across reloads", () => {
+    const hidden = setSidebarProjectHidden(makeUiState(), "github.com/a/b", true);
+    expect(setSidebarProjectHidden(hidden, "github.com/a/b", true)).toBe(hidden);
+    persistState(hidden);
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+    expect(parsePersistedState(persisted).sidebarHiddenProjectKeys).toEqual(["github.com/a/b"]);
+    expect(
+      setSidebarProjectHidden(hidden, "github.com/a/b", false).sidebarHiddenProjectKeys,
+    ).toEqual([]);
+  });
+
+  it("files threads into folders across reloads and drops them with their folder", () => {
+    let state = createSidebarFolder(makeUiState(), { id: "f1", name: "Bugs" });
+    state = createSidebarFolder(state, { id: "f2", name: "Ideas" });
+    state = setSidebarThreadFolder(state, ["env:t1", "env:t2"], "f1");
+    state = setSidebarThreadFolder(state, ["env:t3"], "f2");
+    // Unknown folders are ignored.
+    expect(setSidebarThreadFolder(state, ["env:t1"], "missing")).toBe(state);
+    state = renameSidebarFolder(state, "f2", "Later");
+    state = setSidebarFolderOrder(state, ["f2", "f1"]);
+    persistState(state);
+    const restored = parsePersistedState(
+      JSON.parse(localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}") as PersistedUiState,
+    );
+    expect(restored.sidebarFolders).toEqual([
+      { id: "f2", name: "Later" },
+      { id: "f1", name: "Bugs" },
+    ]);
+    expect(restored.sidebarThreadFolderById).toEqual({
+      "env:t1": "f1",
+      "env:t2": "f1",
+      "env:t3": "f2",
+    });
+    const deleted = deleteSidebarFolder(restored, "f1");
+    expect(deleted.sidebarFolders).toEqual([{ id: "f2", name: "Later" }]);
+    expect(deleted.sidebarThreadFolderById).toEqual({ "env:t3": "f2" });
+    expect(setSidebarThreadFolder(deleted, ["env:t3"], null).sidebarThreadFolderById).toEqual({});
+  });
+
+  it("drops persisted assignments to folders that no longer exist", () => {
+    expect(
+      parsePersistedState({
+        sidebarFolders: [{ id: "f1", name: "Bugs" }],
+        sidebarThreadFolderById: { "env:t1": "f1", "env:t2": "gone" },
+      }).sidebarThreadFolderById,
+    ).toEqual({ "env:t1": "f1" });
   });
 });

@@ -428,6 +428,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sidebar group by project organize needs you attention inbox"],
   },
   {
+    id: "needs-you-finished-threads",
+    title: "Finished threads in Needs you",
+    to: "/settings/general",
+    searchTerms: ["sidebar needs you completed done finished unread project sections"],
+  },
+  {
     id: "shared-project-terminals",
     title: "Shared project terminals",
     to: "/settings/threads",

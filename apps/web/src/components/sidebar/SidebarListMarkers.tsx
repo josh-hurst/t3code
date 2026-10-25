@@ -1,7 +1,7 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { BellDotIcon, ChevronDownIcon, PlusIcon } from "lucide-react";
+import { ChevronDownIcon, FolderIcon, PlusIcon } from "lucide-react";
 import { type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -160,24 +160,23 @@ export function SidebarGroupHeader(props: {
   id: string;
   label: string;
   project: ProjectFaviconProject | null;
-  // Needs you opens a tinted panel that its rows continue; see SidebarThreadRow.
-  panel: { count: number } | null;
-  // A project section's controls; null for Needs you, which cannot collapse or move.
+  folder?: boolean;
   section: {
     collapsed: boolean;
     count: number;
     onToggle: () => void;
     onContextMenu: (position: { x: number; y: number }) => void;
-    onNewThread: () => void;
-  } | null;
+    // Null for folders, which hold threads from any project.
+    onNewThread: (() => void) | null;
+  };
 }) {
   const { section } = props;
   const label = (
     <>
       {props.project ? (
         <ProjectFavicon project={props.project} className="size-4 shrink-0" />
-      ) : props.panel ? (
-        <BellDotIcon aria-hidden className="size-3.5 shrink-0 text-primary" />
+      ) : props.folder ? (
+        <FolderIcon aria-hidden className="size-3.5 shrink-0 text-sidebar-muted-foreground" />
       ) : null}
       <span className="min-w-0 truncate text-xs font-semibold text-sidebar-foreground">
         {props.label}
@@ -185,28 +184,6 @@ export function SidebarGroupHeader(props: {
     </>
   );
   const rowClassName = "flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left";
-  if (section === null) {
-    return (
-      <SortableSidebarMarker
-        id={props.id}
-        data-testid="sidebar-group-header"
-        // Spacing lives inside the row's height: drag previews stack measured
-        // rects and would ignore a margin.
-        className={cn("mx-0.5 flex h-11 items-end", !props.panel && "pb-0.5")}
-      >
-        <div className={cn("w-full", props.panel && "rounded-t-lg bg-primary/5 px-1 pt-1")}>
-          <div className={rowClassName}>
-            {label}
-            {props.panel ? (
-              <span className="shrink-0 text-xs text-primary tabular-nums">
-                {props.panel.count}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </SortableSidebarMarker>
-    );
-  }
   return (
     <SortableSidebarMarker
       id={props.id}
@@ -245,21 +222,23 @@ export function SidebarGroupHeader(props: {
             )}
           />
         </button>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                aria-label={`New thread in ${props.label}`}
-                className="me-1 grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-                onClick={section.onNewThread}
-              />
-            }
-          >
-            <PlusIcon aria-hidden className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">New thread in {props.label}</TooltipPopup>
-        </Tooltip>
+        {section.onNewThread === null ? null : (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={`New thread in ${props.label}`}
+                  className="me-1 grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+                  onClick={section.onNewThread}
+                />
+              }
+            >
+              <PlusIcon aria-hidden className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">New thread in {props.label}</TooltipPopup>
+          </Tooltip>
+        )}
       </div>
     </SortableSidebarMarker>
   );
