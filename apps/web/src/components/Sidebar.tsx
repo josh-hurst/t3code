@@ -170,6 +170,7 @@ import {
   resolveAdjacentThreadId,
   resolveSidebarSweepKeys,
   resolveSidebarDropTarget,
+  resolveSidebarFolderDrop,
   resolveSidebarDropVerb,
   resolveSidebarThreadSection,
   searchSidebarThreads,
@@ -472,7 +473,10 @@ const NO_DRAGGED_ORDER: readonly string[] = [];
 const NO_DRAGGED_ORDERS: {
   readonly settledOrder: readonly string[];
   readonly activeOrder: readonly string[] | undefined;
-  readonly activeItems: readonly SidebarListItem[] | undefined;
+  readonly activeItems:
+    | readonly SidebarListItem[]
+    | ((folderId: string | null) => readonly SidebarListItem[])
+    | undefined;
 } = { settledOrder: NO_DRAGGED_ORDER, activeOrder: undefined, activeItems: undefined };
 
 // Where the dragged row would sort if dropped on the settled or the
@@ -504,24 +508,43 @@ function resolveDraggedOrders(input: {
     activeOrder: workingShelfEnabled
       ? sortInboxThreadsByReturn(landedActive, inboxReturns.returnedAt).map(threadShellKey)
       : undefined,
-    // A flat list keeps its manual order below Needs you, so drops preview
-    // where they are dropped.
-    activeItems:
-      input.activeGrouping === null || input.activeGrouping.kind === "flat"
-        ? undefined
-        : activeGroupListItems(
-            collapseActiveGroups(
-              groupActiveThreads(
-                workingShelfEnabled
-                  ? sortInboxThreadsByReturn(landedActive, inboxReturns.returnedAt)
-                  : sortThreadsForSidebar(landedActive),
-                input.activeGrouping,
-                input.routeThreadKey,
-              ),
-              input.collapsedProjectKeys,
-              [input.routeThreadKey, drag.activeKey],
-            ),
-          ),
+    activeItems: resolveDraggedActiveItems(input, landedActive),
+  };
+}
+
+// A flat list keeps its manual order below Needs you, so drops preview where
+// they are dropped. With folders, the row lands in the folder it is over.
+function resolveDraggedActiveItems(
+  input: Parameters<typeof resolveDraggedOrders>[0],
+  landedActive: readonly EnvironmentThreadShell[],
+): (typeof NO_DRAGGED_ORDERS)["activeItems"] {
+  const { activeGrouping, drag } = input;
+  if (activeGrouping === null || activeGrouping.kind === "flat") return undefined;
+  const sorted = input.workingShelfEnabled
+    ? sortInboxThreadsByReturn(landedActive, inboxReturns.returnedAt)
+    : sortThreadsForSidebar(landedActive);
+  const itemsFor = (grouping: SidebarActiveGrouping) =>
+    activeGroupListItems(
+      collapseActiveGroups(
+        groupActiveThreads(sorted, grouping, input.routeThreadKey),
+        input.collapsedProjectKeys,
+        [input.routeThreadKey, drag.activeKey],
+      ),
+    );
+  if (activeGrouping.kind === "projects") return itemsFor(activeGrouping);
+  const byFolder = new Map<string | null, readonly SidebarListItem[]>();
+  return (folderId) => {
+    const cached = byFolder.get(folderId);
+    if (cached !== undefined) return cached;
+    const items = itemsFor({
+      ...activeGrouping,
+      folderIdOf: (thread) =>
+        threadShellKey(thread) === drag.activeKey
+          ? (folderId ?? undefined)
+          : activeGrouping.folderIdOf(thread),
+    });
+    byFolder.set(folderId, items);
+    return items;
   };
 }
 
@@ -2243,6 +2266,19 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             ?.threads.map(threadShellKey),
         )
       : undefined;
+  const sidebarThreadFolderById = useUiStateStore((store) => store.sidebarThreadFolderById);
+  const setSidebarThreadFolder = useUiStateStore((store) => store.setSidebarThreadFolder);
+  // The folder a dragged thread would end up in; a drop outside the active
+  // section keeps its folder.
+  const folderAfterDrop = (activeKey: string, overId: string): string | null =>
+    (activeGrouping?.kind === "folders"
+      ? resolveSidebarFolderDrop(sidebarListItems, activeKey, overId)
+      : undefined) ??
+    sidebarThreadFolderById[activeKey] ??
+    null;
+  const dropChangesFolder = (activeKey: string, overId: string) =>
+    activeGrouping?.kind === "folders" &&
+    folderAfterDrop(activeKey, overId) !== (sidebarThreadFolderById[activeKey] ?? null);
   const {
     settledOrder: draggedSettledOrder,
     activeOrder: draggedActiveOrder,
@@ -2268,7 +2304,17 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
           settledOrder: draggedSettledOrder,
           ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
-          ...(draggedActiveItems === undefined ? {} : { activeItems: draggedActiveItems }),
+          ...(draggedActiveItems === undefined
+            ? {}
+            : {
+                activeItems:
+                  typeof draggedActiveItems === "function"
+                    ? (overId: string) =>
+                        draggedActiveItems(
+                          dragState === null ? null : folderAfterDrop(dragState.activeKey, overId),
+                        )
+                    : draggedActiveItems,
+              }),
           settledExpanded: settledShelfExpanded,
           settledVisibleCount,
           routeThreadKey: routeRowThreadKey,
@@ -2296,6 +2342,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       (id) => {
         const target = resolveSidebarDropTarget(sidebarListItems, draggedThreadKey, id);
         if (target === null) return false;
+        if (dropChangesFolder(draggedThreadKey, id)) return true;
         return (
           planSidebarThreadDrop({
             activeKey: draggedThreadKey,
@@ -2346,6 +2393,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         : resolveSidebarDropTarget(sidebarListItems, activeKey, String(event.over.id));
     const activeThread = threadByKey.get(activeKey);
     if (activeSection === undefined || target === null || activeThread === undefined) return;
+    // Folders live on this device, so filing needs no server round trip and
+    // happens even when the section change below fails.
+    if (event.over !== null && dropChangesFolder(activeKey, String(event.over.id))) {
+      setSidebarThreadFolder([activeKey], folderAfterDrop(activeKey, String(event.over.id)));
+    }
     const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
     const plan = planSidebarThreadDrop({
       activeKey,

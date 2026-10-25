@@ -23,6 +23,7 @@ import {
   shouldRecedeSidebarThread,
   sortInboxThreadsByReturn,
   resolveSidebarDropTarget,
+  resolveSidebarFolderDrop,
   planSidebarThreadDrop,
   sortPinnedThreadsForSidebar,
   sortProjectsForSidebar,
@@ -1314,6 +1315,40 @@ describe("folder sections", () => {
       ["folder:b", false, []],
       ["folder:a", false, ["a1", "a2"]],
     ]);
+  });
+
+  it("files a dropped thread into the folder it lands in", () => {
+    const folder = (id: string): SidebarListItem => ({
+      kind: "group",
+      key: `folder:${id}`,
+      projectKey: null,
+      folderId: id,
+    });
+    const row = (key: string): SidebarListItem => ({ kind: "thread", key, section: "active" });
+    const items: SidebarListItem[] = [
+      { kind: "marker", marker: "pinned-header" },
+      { kind: "thread", key: "p1", section: "pinned" },
+      { kind: "marker", marker: "pinned-divider" },
+      row("u1"),
+      folder("f1"),
+      row("a1"),
+      row("a2"),
+      folder("f2"),
+      { kind: "marker", marker: "settled-header" },
+      { kind: "thread", key: "s1", section: "settled" },
+    ];
+    const drop = (active: string, over: string) => resolveSidebarFolderDrop(items, active, over);
+    // Onto a heading, even dragging up past it.
+    expect(drop("u1", "sidebar-group-folder:f2")).toBe("f2");
+    expect(drop("a2", "sidebar-group-folder:f1")).toBe("f1");
+    // Among a folder's rows.
+    expect(drop("u1", "a2")).toBe("f1");
+    expect(drop("p1", "a1")).toBe("f1");
+    // Above every folder.
+    expect(drop("a1", "u1")).toBeNull();
+    // Outside the active section.
+    expect(drop("a1", "p1")).toBeUndefined();
+    expect(drop("a1", "s1")).toBeUndefined();
   });
 
   it("finds folder sections as movable blocks", () => {

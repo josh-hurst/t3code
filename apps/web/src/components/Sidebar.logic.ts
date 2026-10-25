@@ -382,6 +382,35 @@ export type SidebarDropTarget = {
   readonly activeOrder: readonly string[];
 };
 
+/**
+ * The folder a thread dragged over `overId` would join: the folder whose
+ * heading or rows it lands among, null above every folder, and undefined
+ * outside the active section. Dropping on a heading joins that folder, even a
+ * collapsed one.
+ */
+export function resolveSidebarFolderDrop(
+  items: readonly SidebarListItem[],
+  activeKey: string,
+  overId: string,
+): string | null | undefined {
+  const activeIndex = items.findIndex((item) => sidebarListItemId(item) === activeKey);
+  const overIndex = items.findIndex((item) => sidebarListItemId(item) === overId);
+  if (activeIndex === -1 || overIndex === -1 || items[activeIndex]?.kind !== "thread") {
+    return undefined;
+  }
+  const over = items[overIndex]!;
+  if (over.kind === "group" && over.folderId !== undefined) return over.folderId;
+  const moved = items.filter((_, index) => index !== activeIndex);
+  moved.splice(overIndex, 0, items[activeIndex]!);
+  if (sectionAtSidebarSlot(moved, overIndex) !== "active") return undefined;
+  for (let index = overIndex - 1; index >= 0; index -= 1) {
+    const item = moved[index]!;
+    if (item.kind === "group") return item.folderId ?? null;
+    if (item.kind === "marker") return null;
+  }
+  return null;
+}
+
 export function resolveSidebarDropTarget(
   items: readonly SidebarListItem[],
   activeKey: string,

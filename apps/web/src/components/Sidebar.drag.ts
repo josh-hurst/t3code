@@ -100,8 +100,9 @@ export function createSidebarSortingStrategy(input: {
   settledOrder: readonly string[];
   activeOrder?: readonly string[];
   // The grouped active section with the dragged thread landed in it; replaces
-  // `activeOrder` when the active list has project sections.
-  activeItems?: readonly SidebarListItem[];
+  // `activeOrder` when the active list has project sections. Folders pass a
+  // function, since where the row lands depends on the folder it is over.
+  activeItems?: readonly SidebarListItem[] | ((overId: string) => readonly SidebarListItem[]);
   settledExpanded: boolean;
   settledVisibleCount?: number;
   routeThreadKey?: string | null;
@@ -184,10 +185,14 @@ export function createSidebarSortingStrategy(input: {
     marker("pinned-header");
     projected.push(...groups.pinned);
     marker("pinned-divider");
+    const landedItems =
+      typeof input.activeItems === "function"
+        ? input.activeItems(sidebarListItemId(over))
+        : input.activeItems;
     const activeItems =
-      input.activeItems === undefined || target.section === "active"
-        ? input.activeItems
-        : withoutSidebarThread(input.activeItems, active.key);
+      landedItems === undefined || target.section === "active"
+        ? landedItems
+        : withoutSidebarThread(landedItems, active.key);
     if (activeItems === undefined) section("active");
     else if (activeItems.length > 0) projected.push(...activeItems);
     else marker("active-placeholder");
