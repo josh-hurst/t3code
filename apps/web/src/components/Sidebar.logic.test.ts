@@ -1395,10 +1395,15 @@ describe("folder sections", () => {
 
 describe("project sections", () => {
   const thread = (id: string, project: string, needsYou = false) => ({ id, project, needsYou });
-  const group = (threads: ReturnType<typeof thread>[], projectOrder: readonly string[]) =>
+  const group = (
+    threads: ReturnType<typeof thread>[],
+    projectOrder: readonly string[],
+    needsYouOnTop = false,
+  ) =>
     groupSidebarActiveThreads({
       threads,
       needsYou: (entry) => entry.needsYou,
+      needsYouOnTop,
       projectKeyOf: (entry) => entry.project,
       projectOrder,
     }).map((entry) => [entry.projectKey, entry.threads.map(({ id }) => id), entry.needsYouCount]);
@@ -1416,6 +1421,20 @@ describe("project sections", () => {
     expect(group([thread("x1", "x"), thread("a1", "a"), thread("a2", "a")], ["a"])).toEqual([
       ["a", ["a1", "a2"], 0],
       ["x", ["x1"], 0],
+    ]);
+  });
+
+  it("gathers threads that need you above every project when placed on top", () => {
+    expect(
+      group(
+        [thread("b1", "b"), thread("a1", "a"), thread("a2", "a", true), thread("b2", "b", true)],
+        ["a", "b"],
+        true,
+      ),
+    ).toEqual([
+      [null, ["a2", "b2"], 2],
+      ["a", ["a1"], 0],
+      ["b", ["b1"], 0],
     ]);
   });
 

@@ -425,7 +425,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "project-sections",
     title: "Project sections",
     to: "/settings/general",
-    searchTerms: ["sidebar group by project organize needs you attention inbox"],
+    searchTerms: ["sidebar group by project organize"],
+  },
+  {
+    id: "needs-you-placement",
+    title: "Needs you section",
+    to: "/settings/general",
+    searchTerms: ["sidebar needs you attention inbox top project sections waiting off"],
   },
   {
     id: "needs-you-finished-threads",
