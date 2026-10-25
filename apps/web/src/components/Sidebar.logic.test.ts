@@ -33,6 +33,13 @@ import {
   type SidebarListMarker,
   type SidebarSection,
   resolveSidebarDropVerb,
+  groupSidebarActiveThreads,
+  sidebarThreadNeedsYou,
+  createOpenThreadPlacementHold,
+  withoutSidebarThread,
+  applySidebarSectionOrder,
+  moveSidebarSection,
+  sidebarProjectBlocks,
 } from "./Sidebar.logic";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
@@ -1244,5 +1251,142 @@ describe("pendingSidebarRouteReveal", () => {
     pendingSidebarRouteReveal(reveal, "env:a1");
     expect(pendingSidebarRouteReveal(reveal, null)).toBeNull();
     expect(pendingSidebarRouteReveal(reveal, "env:a1")).toBe("env:a1");
+  });
+});
+
+describe("project sections", () => {
+  const thread = (id: string, project: string, needsYou = false) => ({ id, project, needsYou });
+  const group = (threads: ReturnType<typeof thread>[], projectOrder: readonly string[]) =>
+    groupSidebarActiveThreads({
+      threads,
+      needsYou: (entry) => entry.needsYou,
+      projectKeyOf: (entry) => entry.project,
+      projectOrder,
+    }).map((entry) => [entry.projectKey, entry.threads.map(({ id }) => id)]);
+
+  it("lifts threads that need you above project groups in project order", () => {
+    expect(
+      group(
+        [thread("b1", "b"), thread("a1", "a", true), thread("a2", "a"), thread("b2", "b", true)],
+        ["a", "b"],
+      ),
+    ).toEqual([
+      [null, ["a1", "b2"]],
+      ["a", ["a2"]],
+      ["b", ["b1"]],
+    ]);
+    expect(group([thread("x1", "x"), thread("a1", "a"), thread("a2", "a")], ["a"])).toEqual([
+      ["a", ["a1", "a2"]],
+      ["x", ["x1"]],
+    ]);
+  });
+
+  it("keeps the open thread in the section it was opened in until you leave it", () => {
+    const hold = createOpenThreadPlacementHold();
+    // Opened from a project section, then it finishes while open.
+    expect(hold("a")("a", false)).toBe(false);
+    expect(hold("a")("a", true)).toBe(false);
+    expect(hold("a")("b", true)).toBe(true);
+    // Leaving re-sorts it: an unanswered request still lands in Needs you.
+    expect(hold("b")("a", true)).toBe(true);
+    // Opened from Needs you, then visiting clears its status.
+    expect(hold("b")("b", true)).toBe(true);
+    expect(hold("b")("b", false)).toBe(true);
+    expect(hold(null)("b", false)).toBe(false);
+  });
+
+  it("treats approvals, questions, failures and unseen completions as needing you", () => {
+    const idle = {
+      hasActionableProposedPlan: false,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      pendingSubagentRequest: null,
+      interactionMode: "default" as const,
+      runtime: null,
+      latestRun: null,
+      lastVisitedAt: "2026-03-09T10:00:00.000Z",
+    };
+    const run = (status: "completed" | "failed", completedAt: string) =>
+      ({ status, completedAt }) as never;
+    expect(sidebarThreadNeedsYou(idle)).toBe(false);
+    expect(sidebarThreadNeedsYou({ ...idle, hasPendingApprovals: true })).toBe(true);
+    expect(sidebarThreadNeedsYou({ ...idle, pendingSubagentRequest: "user_input" })).toBe(true);
+    expect(
+      sidebarThreadNeedsYou({ ...idle, latestRun: run("completed", "2026-03-09T11:00:00.000Z") }),
+    ).toBe(true);
+    expect(
+      sidebarThreadNeedsYou({ ...idle, latestRun: run("completed", "2026-03-09T09:00:00.000Z") }),
+    ).toBe(false);
+    expect(
+      sidebarThreadNeedsYou({ ...idle, latestRun: run("failed", "2026-03-09T11:00:00.000Z") }),
+    ).toBe(true);
+  });
+
+  it("drops a heading only with its last row", () => {
+    const group = (key: string): SidebarListItem => ({ kind: "group", key, projectKey: key });
+    const row = (key: string): SidebarListItem => ({ kind: "thread", key, section: "active" });
+    const items = [group("a"), row("a1"), group("b"), row("b1"), row("b2"), group("c")];
+    expect(withoutSidebarThread(items, "a1")).toEqual([
+      group("b"),
+      row("b1"),
+      row("b2"),
+      group("c"),
+    ]);
+    expect(withoutSidebarThread(items, "b1")).toEqual([
+      group("a"),
+      row("a1"),
+      group("b"),
+      row("b2"),
+      group("c"),
+    ]);
+  });
+
+  it("finds each project section's heading and rows", () => {
+    const items: readonly SidebarListItem[] = [
+      { kind: "marker", marker: "pinned-divider" },
+      { kind: "group", key: "needs-you", projectKey: null },
+      { kind: "thread", key: "n1", section: "active" },
+      { kind: "group", key: "project:a", projectKey: "a" },
+      { kind: "thread", key: "a1", section: "active" },
+      { kind: "thread", key: "a2", section: "active" },
+      { kind: "group", key: "project:b", projectKey: "b" },
+      { kind: "marker", marker: "settled-header" },
+    ];
+    expect(sidebarProjectBlocks(items)).toEqual([
+      { projectKey: "a", start: 3, end: 6 },
+      { projectKey: "b", start: 6, end: 7 },
+    ]);
+  });
+
+  it("moves a section into the target's slot in either direction", () => {
+    expect(moveSidebarSection(["a", "b", "c"], "a", "c")).toEqual(["b", "c", "a"]);
+    expect(moveSidebarSection(["a", "b", "c"], "c", "a")).toEqual(["c", "a", "b"]);
+    expect(moveSidebarSection(["a", "b", "c"], "a", "missing")).toEqual(["a", "b", "c"]);
+  });
+
+  it("keeps projects without a section in their slots", () => {
+    expect(applySidebarSectionOrder(["a", "x", "b", "y", "c"], ["c", "a", "b"])).toEqual([
+      "c",
+      "x",
+      "a",
+      "y",
+      "b",
+    ]);
+  });
+
+  it("ignores group headings when resolving drop orders", () => {
+    const items: readonly SidebarListItem[] = [
+      { kind: "marker", marker: "pinned-header" },
+      { kind: "thread", key: "p1", section: "pinned" },
+      { kind: "marker", marker: "pinned-divider" },
+      { kind: "group", key: "project:a", projectKey: "a" },
+      { kind: "thread", key: "a1", section: "active" },
+      { kind: "marker", marker: "settled-header" },
+    ];
+    expect(resolveSidebarDropTarget(items, "p1", "a1")).toEqual({
+      section: "active",
+      pinnedOrder: [],
+      activeOrder: ["a1", "p1"],
+    });
   });
 });

@@ -17,7 +17,7 @@ import {
   parseThreadKey,
   threadKey,
 } from "@t3tools/client-runtime/state/entities";
-import type { ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
+import type { ProjectId, ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   OrchestrationV2ProjectedTurnItem,
@@ -47,6 +47,9 @@ const EMPTY_PROJECT_ATOM = Atom.make<EnvironmentProject | null>(null).pipe(
 const EMPTY_THREAD_REFS_ATOM = Atom.make(EMPTY_THREAD_REFS).pipe(
   Atom.withLabel("web-thread-refs:empty"),
 );
+const EMPTY_THREAD_REFS_BY_PROJECT_ATOM = Atom.make<
+  ReadonlyMap<ProjectId, ReadonlyArray<ScopedThreadRef>>
+>(new Map()).pipe(Atom.withLabel("web-thread-refs-by-project:empty"));
 const EMPTY_THREAD_SHELLS_ATOM = Atom.make<ReadonlyArray<EnvironmentThreadShell>>(
   Object.freeze([]),
 ).pipe(Atom.withLabel("web-thread-shells:empty"));
@@ -100,6 +103,16 @@ export function useEnvironmentThreadRefs(
       ? EMPTY_THREAD_REFS_ATOM
       : environmentThreadShells.environmentThreadRefsAtom(environmentId),
   );
+}
+
+/** Threads of one environment-local project; unlike shells, this holds through streaming ticks. */
+export function useProjectThreadRefs(ref: ScopedProjectRef | null): ReadonlyArray<ScopedThreadRef> {
+  const refsByProject = useAtomValue(
+    ref === null
+      ? EMPTY_THREAD_REFS_BY_PROJECT_ATOM
+      : environmentThreadShells.environmentThreadRefsByProjectAtom(ref.environmentId),
+  );
+  return (ref === null ? undefined : refsByProject.get(ref.projectId)) ?? EMPTY_THREAD_REFS;
 }
 
 export function useProjects(): ReadonlyArray<EnvironmentProject> {

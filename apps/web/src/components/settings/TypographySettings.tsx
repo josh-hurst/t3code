@@ -82,6 +82,69 @@ function InterfaceFontRow({ preview }: { preview?: ReactNode }) {
   );
 }
 
+const SIDEBAR_FONT_SIZE_FOLLOWS_INTERFACE = "interface";
+
+function SidebarFontSizeRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const value = settings.fontSizeSidebar;
+  return (
+    <SettingsRow
+      {...searchableSetting("sidebar-font-size")}
+      description="Text in the sidebar. Follows the interface font size unless set."
+      resetAction={
+        value !== DEFAULT_UNIFIED_SETTINGS.fontSizeSidebar ? (
+          <SettingResetButton
+            label="sidebar font size"
+            onClick={() =>
+              updateSettings({ fontSizeSidebar: DEFAULT_UNIFIED_SETTINGS.fontSizeSidebar })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Select
+          value={value === null ? SIDEBAR_FONT_SIZE_FOLLOWS_INTERFACE : String(value)}
+          onValueChange={(next) => {
+            if (typeof next !== "string") return;
+            if (next === SIDEBAR_FONT_SIZE_FOLLOWS_INTERFACE) {
+              updateSettings({ fontSizeSidebar: null });
+              return;
+            }
+            const parsed = Number(next);
+            if (
+              Number.isInteger(parsed) &&
+              parsed >= MIN_INTERFACE_FONT_SIZE &&
+              parsed <= MAX_INTERFACE_FONT_SIZE
+            ) {
+              updateSettings({ fontSizeSidebar: parsed });
+            }
+          }}
+        >
+          <SelectTrigger size="sm" className="w-44 shrink-0" aria-label="Sidebar font size">
+            <SelectValue>
+              {value === null ? `Interface (${settings.fontSizeInterface} px)` : `${value} px`}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            <SelectItem hideIndicator value={SIDEBAR_FONT_SIZE_FOLLOWS_INTERFACE}>
+              Same as interface
+            </SelectItem>
+            {Array.from(
+              { length: MAX_INTERFACE_FONT_SIZE - MIN_INTERFACE_FONT_SIZE + 1 },
+              (_, index) => MIN_INTERFACE_FONT_SIZE + index,
+            ).map((px) => (
+              <SelectItem hideIndicator key={px} value={String(px)}>
+                {px} px
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      }
+    />
+  );
+}
+
 function PromptFontRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -254,6 +317,7 @@ function FontSettingsGroup() {
   return (
     <>
       <InterfaceFontRow />
+      <SidebarFontSizeRow />
       <PromptFontRow />
       <CodeFontRow />
       <TerminalFontRow />
@@ -267,6 +331,7 @@ function SimpleFontRows() {
   return (
     <>
       <InterfaceFontRow preview={<PromptFontPreview />} />
+      <SidebarFontSizeRow />
       <CodeFontRow
         title="Monospace font"
         description="Code blocks, diffs, file previews, and the terminal."

@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ThreadId, type TerminalSummary } from "@t3tools/contracts";
 import { selectRunningSubprocessTerminalIds } from "@t3tools/client-runtime/state/terminal";
 
-import { selectKnownTerminalSessions } from "./terminalSessions";
+import {
+  selectKnownTerminalSessions,
+  selectSharedProjectTerminalSessions,
+} from "./terminalSessions";
 
 vi.mock("./terminal", () => ({ terminalEnvironment: {} }));
 
@@ -75,5 +78,31 @@ describe("selectKnownTerminalSessions", () => {
     ).toBe("Renamed");
     expect(selectKnownTerminalSessions([other], environmentA, threadA)).toEqual([]);
     expect(selectKnownTerminalSessions([other], environmentA, threadB)).toBe(beforeB);
+  });
+});
+
+describe("selectSharedProjectTerminalSessions", () => {
+  it("lists live terminals of the project's other threads", () => {
+    const otherProjectThread = ThreadId.make("thread-c");
+    const sessions = selectKnownTerminalSessions(
+      [
+        summary(threadA, "terminal-1"),
+        summary(threadB, "terminal-1"),
+        summary(threadB, "terminal-2", { status: "exited" }),
+        summary(otherProjectThread, "terminal-1"),
+      ],
+      environmentA,
+      null,
+    );
+
+    const shared = selectSharedProjectTerminalSessions(
+      sessions,
+      [{ threadId: threadA }, { threadId: threadB }],
+      threadA,
+    );
+
+    expect(shared.map((session) => session.target)).toEqual([
+      { environmentId: environmentA, threadId: threadB, terminalId: "terminal-1" },
+    ]);
   });
 });

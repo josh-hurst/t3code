@@ -122,6 +122,28 @@ export function selectKnownTerminalSessions(
   return sessions;
 }
 
+/**
+ * Live terminals that other threads of the same project own, for shared project terminals.
+ * Exited shells stay out: there is nothing left to switch to.
+ */
+export function selectSharedProjectTerminalSessions(
+  sessions: ReadonlyArray<KnownTerminalSession>,
+  projectThreadRefs: ReadonlyArray<{ readonly threadId: ThreadId }>,
+  threadId: ThreadId,
+): ReadonlyArray<KnownTerminalSession> {
+  if (sessions.length === 0 || projectThreadRefs.length === 0) {
+    return EMPTY_KNOWN_TERMINAL_SESSIONS;
+  }
+  const projectThreadIds = new Set<string>(projectThreadRefs.map((ref) => ref.threadId));
+  const shared = sessions.filter(
+    (session) =>
+      session.target.threadId !== threadId &&
+      projectThreadIds.has(session.target.threadId) &&
+      (session.state.status === "running" || session.state.status === "starting"),
+  );
+  return shared.length === 0 ? EMPTY_KNOWN_TERMINAL_SESSIONS : shared;
+}
+
 export function useAttachedTerminalSession(input: {
   readonly environmentId: EnvironmentId | null;
   readonly terminal: TerminalAttachInput | null;

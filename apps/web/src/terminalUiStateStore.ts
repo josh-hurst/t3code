@@ -1,5 +1,5 @@
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { type ScopedThreadRef } from "@t3tools/contracts";
+import { type ScopedThreadRef, type ThreadId } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { resolveStorage } from "./lib/storage";
@@ -470,6 +470,13 @@ function reconcileThreadTerminalSessionIds(
   });
 }
 
+export function selectSharedTerminal(
+  sharedTerminalByThreadKey: Record<string, SharedTerminalTarget>,
+  threadRef: ScopedThreadRef,
+): SharedTerminalTarget | null {
+  return sharedTerminalByThreadKey[terminalThreadKey(threadRef)] ?? null;
+}
+
 export function selectThreadTerminalUiState(
   terminalUiStateByThreadKey: Record<string, ThreadTerminalUiState>,
   threadRef: ScopedThreadRef | null | undefined,
@@ -553,9 +560,17 @@ function removeRecordEntry<T>(record: Record<string, T>, key: string): Record<st
   return remaining;
 }
 
+/** A terminal owned by another thread of the same project, shown in this thread's drawer. */
+export interface SharedTerminalTarget {
+  readonly threadId: ThreadId;
+  readonly terminalId: string;
+}
+
 interface TerminalUiStateStoreState {
   terminalUiStateByThreadKey: Record<string, ThreadTerminalUiState>;
   suppressedTerminalIdsByThreadKey: Record<string, string[]>;
+  sharedTerminalByThreadKey: Record<string, SharedTerminalTarget>;
+  showSharedTerminal: (threadRef: ScopedThreadRef, target: SharedTerminalTarget | null) => void;
   setTerminalOpen: (threadRef: ScopedThreadRef, open: boolean) => void;
   setTerminalHeight: (threadRef: ScopedThreadRef, height: number) => void;
   splitTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
@@ -584,6 +599,8 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
           suppressedTerminalIds: readonly string[],
         ) => ThreadTerminalUiState,
         suppression?: { terminalId: string; suppressed: boolean },
+        // Picking one of the thread's own terminals leaves a shared terminal view.
+        leaveSharedTerminal = false,
       ) => {
         set((state) => {
           const threadKey = terminalThreadKey(threadRef);
@@ -601,15 +618,20 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
                 suppression.suppressed,
               )
             : state.suppressedTerminalIdsByThreadKey;
+          const nextSharedTerminalByThreadKey = leaveSharedTerminal
+            ? removeRecordEntry(state.sharedTerminalByThreadKey, threadKey)
+            : state.sharedTerminalByThreadKey;
           if (
             nextTerminalUiStateByThreadKey === state.terminalUiStateByThreadKey &&
-            nextSuppressedTerminalIdsByThreadKey === state.suppressedTerminalIdsByThreadKey
+            nextSuppressedTerminalIdsByThreadKey === state.suppressedTerminalIdsByThreadKey &&
+            nextSharedTerminalByThreadKey === state.sharedTerminalByThreadKey
           ) {
             return state;
           }
           return {
             terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
             suppressedTerminalIdsByThreadKey: nextSuppressedTerminalIdsByThreadKey,
+            sharedTerminalByThreadKey: nextSharedTerminalByThreadKey,
           };
         });
       };
@@ -617,6 +639,23 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
       return {
         terminalUiStateByThreadKey: {},
         suppressedTerminalIdsByThreadKey: {},
+        sharedTerminalByThreadKey: {},
+        showSharedTerminal: (threadRef, target) =>
+          set((state) => {
+            const threadKey = terminalThreadKey(threadRef);
+            const current = state.sharedTerminalByThreadKey[threadKey];
+            if (
+              current?.threadId === target?.threadId &&
+              current?.terminalId === target?.terminalId
+            ) {
+              return state;
+            }
+            return {
+              sharedTerminalByThreadKey: target
+                ? { ...state.sharedTerminalByThreadKey, [threadKey]: target }
+                : removeRecordEntry(state.sharedTerminalByThreadKey, threadKey),
+            };
+          }),
         setTerminalOpen: (threadRef, open) => {
           const terminalState = selectThreadTerminalUiState(
             get().terminalUiStateByThreadKey,
@@ -633,20 +672,26 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
         setTerminalHeight: (threadRef, height) =>
           updateTerminal(threadRef, (state) => setThreadTerminalHeight(state, height)),
         splitTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => splitThreadTerminal(state, terminalId), {
-            terminalId,
-            suppressed: false,
-          }),
+          updateTerminal(
+            threadRef,
+            (state) => splitThreadTerminal(state, terminalId),
+            { terminalId, suppressed: false },
+            true,
+          ),
         splitTerminalVertical: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => splitThreadTerminal(state, terminalId, "vertical"), {
-            terminalId,
-            suppressed: false,
-          }),
+          updateTerminal(
+            threadRef,
+            (state) => splitThreadTerminal(state, terminalId, "vertical"),
+            { terminalId, suppressed: false },
+            true,
+          ),
         newTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => newThreadTerminal(state, terminalId), {
-            terminalId,
-            suppressed: false,
-          }),
+          updateTerminal(
+            threadRef,
+            (state) => newThreadTerminal(state, terminalId),
+            { terminalId, suppressed: false },
+            true,
+          ),
         ensureTerminal: (threadRef, terminalId, options) =>
           updateTerminal(
             threadRef,
@@ -671,9 +716,15 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
               return normalizeThreadTerminalUiState(nextState);
             },
             { terminalId, suppressed: false },
+            options?.active ?? true,
           ),
         setActiveTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => setThreadActiveTerminal(state, terminalId)),
+          updateTerminal(
+            threadRef,
+            (state) => setThreadActiveTerminal(state, terminalId),
+            undefined,
+            true,
+          ),
         closeTerminal: (threadRef, terminalId) =>
           updateTerminal(threadRef, (state) => closeThreadTerminal(state, terminalId), {
             terminalId,
@@ -700,9 +751,11 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
             );
             const hadSuppressedTerminalIds =
               state.suppressedTerminalIdsByThreadKey[threadKey] !== undefined;
+            const hadSharedTerminal = state.sharedTerminalByThreadKey[threadKey] !== undefined;
             if (
               nextTerminalUiStateByThreadKey === state.terminalUiStateByThreadKey &&
-              !hadSuppressedTerminalIds
+              !hadSuppressedTerminalIds &&
+              !hadSharedTerminal
             ) {
               return state;
             }
@@ -710,6 +763,10 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
               terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
               suppressedTerminalIdsByThreadKey: removeRecordEntry(
                 state.suppressedTerminalIdsByThreadKey,
+                threadKey,
+              ),
+              sharedTerminalByThreadKey: removeRecordEntry(
+                state.sharedTerminalByThreadKey,
                 threadKey,
               ),
             };
@@ -720,7 +777,8 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
             const hadTerminalUiState = state.terminalUiStateByThreadKey[threadKey] !== undefined;
             const hadSuppressedTerminalIds =
               state.suppressedTerminalIdsByThreadKey[threadKey] !== undefined;
-            if (!hadTerminalUiState && !hadSuppressedTerminalIds) {
+            const hadSharedTerminal = state.sharedTerminalByThreadKey[threadKey] !== undefined;
+            if (!hadTerminalUiState && !hadSuppressedTerminalIds && !hadSharedTerminal) {
               return state;
             }
             return {
@@ -730,6 +788,10 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
               ),
               suppressedTerminalIdsByThreadKey: removeRecordEntry(
                 state.suppressedTerminalIdsByThreadKey,
+                threadKey,
+              ),
+              sharedTerminalByThreadKey: removeRecordEntry(
+                state.sharedTerminalByThreadKey,
                 threadKey,
               ),
             };

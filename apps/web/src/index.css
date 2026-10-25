@@ -169,14 +169,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-mono:
     ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
-}
-
-@theme inline {
   /* Two steps below Tailwind's text-xs (12px) for dense UI: metadata rows,
      badges, counters, keyboard hints and diagnostics tables. 2xs is 11px,
      3xs is 10px. Provider icon overlays use 4xs (8px) and 5xs (7px) to fit
      their smaller badges. Registered with tailwind-merge in
-     lib/utils.ts so cn() treats them as font sizes, not colours. */
+     lib/utils.ts so cn() treats them as font sizes, not colours. Not inline,
+     so the sidebar can rescale them like the built-in sizes. */
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: calc(1 / 0.6875);
   --text-3xs: 0.625rem;
@@ -185,6 +183,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --text-4xs--line-height: 1;
   --text-5xs: 0.4375rem;
   --text-5xs--line-height: 1;
+}
+
+@theme inline {
   /* Motion. drawer is the decelerating curve for surfaces that slide or pop in
      (composer context, pills). */
   --inset-shadow-control-highlight: 0 1px rgb(255 255 255 / 16%);
@@ -1197,6 +1198,22 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --terminal-cursor: rgb(180 203 255);
     --terminal-selection-background: rgb(180 203 255 / 25%);
   }
+}
+
+/* Settings -> Appearance -> Sidebar font size. Text utilities are rem-based,
+   so they would follow the interface size; rebasing the size tokens on
+   --sidebar-font-size scales only the sidebar's text while spacing and icons
+   keep following the interface size. Unset, every value equals the default. */
+[data-app-sidebar] {
+  font-size: var(--sidebar-font-size, 1rem);
+  --text-5xs: calc(0.4375 * var(--sidebar-font-size, 1rem));
+  --text-4xs: calc(0.5 * var(--sidebar-font-size, 1rem));
+  --text-3xs: calc(0.625 * var(--sidebar-font-size, 1rem));
+  --text-2xs: calc(0.6875 * var(--sidebar-font-size, 1rem));
+  --text-xs: calc(0.75 * var(--sidebar-font-size, 1rem));
+  --text-sm: calc(0.875 * var(--sidebar-font-size, 1rem));
+  --text-base: var(--sidebar-font-size, 1rem);
+  --text-lg: calc(1.125 * var(--sidebar-font-size, 1rem));
 }
 
 /* Keep both sidebar implementations (default and legacy) on the same quiet

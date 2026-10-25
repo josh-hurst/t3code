@@ -2,6 +2,7 @@ import {
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
   type ScopedThreadRef,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
@@ -16,7 +17,11 @@ import { readEnvironmentScope } from "../../state/session";
 import { terminalEnvironment } from "../../state/terminal";
 import { useKnownTerminalSessions } from "../../state/terminalSessions";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../../terminalUiStateStore";
+import {
+  selectThreadTerminalUiState,
+  useTerminalUiStateStore,
+  type SharedTerminalTarget,
+} from "../../terminalUiStateStore";
 
 /** Where a new terminal starts. Omitted fields fall back to the thread's project and worktree. */
 export interface TerminalLaunchLocation {
@@ -124,11 +129,14 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     return { terminalId, result };
   };
 
-  /** Ends a session and deletes its history. A failed close falls back to typing `exit`. */
-  const closeTerminalSession = (terminalId: string) => {
+  /**
+   * Ends a session and deletes its history. A failed close falls back to typing `exit`.
+   * `ownerThreadId` targets a shared terminal that another thread of the project owns.
+   */
+  const closeTerminalSession = (terminalId: string, ownerThreadId?: ThreadId) => {
     if (!threadRef || !canWrite()) return;
     const environmentId = threadRef.environmentId;
-    const threadId = threadRef.threadId;
+    const threadId = ownerThreadId ?? threadRef.threadId;
     void (async () => {
       const closeResult = await closeTerminalCommand({
         environmentId,
@@ -144,6 +152,18 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     })();
   };
 
+  /** Ends another thread's terminal from this thread's drawer and drops it from both drawers. */
+  const closeSharedTerminal = (target: SharedTerminalTarget) => {
+    if (!threadRef || !canWrite()) return;
+    closeTerminalSession(target.terminalId, target.threadId);
+    const store = useTerminalUiStateStore.getState();
+    store.closeTerminal(
+      { environmentId: threadRef.environmentId, threadId: target.threadId },
+      target.terminalId,
+    );
+    store.showSharedTerminal(threadRef, null);
+  };
+
   const writeToTerminal = (terminalId: string, data: string) => {
     if (!threadRef || !canWrite()) return null;
     return writeTerminal({
@@ -157,6 +177,7 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     allocateTerminalId: useStableCallback(allocateTerminalId),
     launchTerminal: useStableCallback(launchTerminal),
     closeTerminalSession: useStableCallback(closeTerminalSession),
+    closeSharedTerminal: useStableCallback(closeSharedTerminal),
     writeToTerminal: useStableCallback(writeToTerminal),
   };
 }

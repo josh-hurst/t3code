@@ -434,8 +434,17 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarProjectSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder
       ? ["Project order"]
       : []),
+    ...(settings.sidebarCompactRows !== DEFAULT_UNIFIED_SETTINGS.sidebarCompactRows
+      ? ["Compact thread rows"]
+      : []),
+    ...(settings.sidebarProjectSections !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSections
+      ? ["Project sections"]
+      : []),
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
+      : []),
+    ...(settings.sharedProjectTerminals !== DEFAULT_UNIFIED_SETTINGS.sharedProjectTerminals
+      ? ["Shared project terminals"]
       : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-settle inactive threads"]
@@ -608,7 +617,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
+      sidebarCompactRows: DEFAULT_UNIFIED_SETTINGS.sidebarCompactRows,
+      sidebarProjectSections: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSections,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+      sharedProjectTerminals: DEFAULT_UNIFIED_SETTINGS.sharedProjectTerminals,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -638,6 +650,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
       fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
       fontSizeTerminal: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
+      fontSizeSidebar: DEFAULT_UNIFIED_SETTINGS.fontSizeSidebar,
       browserDefaultViewport: DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport,
       browserDefaultZoomFactor: DEFAULT_UNIFIED_SETTINGS.browserDefaultZoomFactor,
       browserDefaultAppearance: DEFAULT_UNIFIED_SETTINGS.browserDefaultAppearance,
@@ -971,6 +984,58 @@ export function GeneralSettingsPanel() {
                 updateSettings({ snoozeLimitedThreads: Boolean(checked) })
               }
               aria-label="Snooze limited threads"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("compact-sidebar-rows")}
+          description="Show active and pinned threads as single-line rows in the sidebar. Branch, project and other details show on hover."
+          resetAction={
+            settings.sidebarCompactRows !== DEFAULT_UNIFIED_SETTINGS.sidebarCompactRows ? (
+              <SettingResetButton
+                label="compact thread rows"
+                onClick={() =>
+                  updateSettings({
+                    sidebarCompactRows: DEFAULT_UNIFIED_SETTINGS.sidebarCompactRows,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarCompactRows}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarCompactRows: Boolean(checked) })
+              }
+              aria-label="Compact thread rows"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("project-sections")}
+          description="Group active threads under a heading for each project. Threads waiting on an approval, a question, or a finished run you haven't opened move to a Needs you section at the top."
+          resetAction={
+            settings.sidebarProjectSections !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSections ? (
+              <SettingResetButton
+                label="project sections"
+                onClick={() =>
+                  updateSettings({
+                    sidebarProjectSections: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSections,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarProjectSections}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarProjectSections: Boolean(checked) })
+              }
+              aria-label="Project sections"
             />
           }
         />
@@ -1680,6 +1745,31 @@ export function GeneralSettingsPanel() {
               placeholder={mixedAddProjectBaseDirectory ? "Mixed" : "~/"}
               spellCheck={false}
               aria-label="Add project base directory"
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("shared-project-terminals")}
+          description="List the running terminals of a project's other threads in each thread's terminal drawer, so you can switch to them."
+          resetAction={
+            settings.sharedProjectTerminals !== DEFAULT_UNIFIED_SETTINGS.sharedProjectTerminals ? (
+              <SettingResetButton
+                label="shared project terminals"
+                onClick={() =>
+                  updateSettings({
+                    sharedProjectTerminals: DEFAULT_UNIFIED_SETTINGS.sharedProjectTerminals,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sharedProjectTerminals}
+              onCheckedChange={(checked) =>
+                updateSettings({ sharedProjectTerminals: Boolean(checked) })
+              }
+              aria-label="Shared project terminals"
             />
           }
         />
