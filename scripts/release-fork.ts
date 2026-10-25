@@ -132,6 +132,16 @@ function main() {
     }
   }
 
+  // `vp run dev` rebuilds apps/desktop/dist-electron while the release copies
+  // it, which shipped apps without main.cjs (0.1.2002).
+  const desktopDir = NodePath.join(root, "apps/desktop");
+  const desktopWatchers = run("lsof", ["-a", "-d", "cwd", "-c", "node", "-Fn"])
+    .stdout.split("\n")
+    .filter((line) => line === `n${desktopDir}`);
+  if (desktopWatchers.length > 0) {
+    fail("Stop the desktop dev server (vp run dev) in this checkout first; it rewrites the build.");
+  }
+
   if (output("git", ["status", "--porcelain"]) !== "") {
     fail("Commit or stash your changes first; a release is built from HEAD.");
   }
