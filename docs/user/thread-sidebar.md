@@ -158,10 +158,14 @@ one, or pick an existing folder. Threads outside any folder stay at the top of t
 and **Remove from folder** returns a thread there. A thread keeps its folder while it is pinned,
 snoozed, or settled, and goes back into it when it returns to the active list.
 
+On web and desktop, you can also drag a thread onto a folder's heading or among its threads to
+move it there, even from the pinned or settled sections, and drag it above every folder to take
+it out. The other rows slide aside to show which folder it will join. Within a folder, threads
+keep their usual order, so you cannot drag them into a different position.
+
 Click a folder heading to collapse or expand it. Drag a heading, or right-click it, to reorder,
 rename, or delete the folder. Deleting a folder keeps its threads and moves them back to the top
-of the list. While you have folders, threads cannot be dragged or moved within the active list.
-Folders are saved on each device and are hidden while Project sections is on.
+of the list. Folders are saved on each device and are hidden while Project sections is on.
 
 **Above all projects** also works with **Project sections** off: Needs you collects above your
 folders, or above the rest of the active list. Without folders, the threads below it keep your

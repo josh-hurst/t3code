@@ -533,6 +533,46 @@ describe("sidebar drag projection", () => {
     expect(byTime.get("w")).toEqual(stationary);
   });
 
+  describe("with folders", () => {
+    const folder = (id: string): SidebarListItem => ({
+      kind: "group",
+      key: `folder:${id}`,
+      projectKey: null,
+      folderId: id,
+    });
+    const items = [
+      pinnedHeader,
+      divider,
+      thread("u1", "active"),
+      folder("f1"),
+      thread("a1", "active"),
+      folder("f2"),
+      settledHeader,
+      marker("settled-placeholder"),
+    ];
+
+    it("previews the row in the folder it is over", () => {
+      const overIds: string[] = [];
+      const result = preview(
+        {
+          items,
+          settledOrder: [],
+          settledExpanded: false,
+          activeItems: (overId) => {
+            overIds.push(overId);
+            return [folder("f1"), thread("a1", "active"), folder("f2"), thread("u1", "active")];
+          },
+        },
+        "u1",
+        sidebarListItemId(folder("f2")),
+      );
+      expect(overIds).toEqual([sidebarListItemId(folder("f2"))]);
+      // u1 leaves the top, so both folders close up beneath the divider.
+      expect(result.get(sidebarListItemId(folder("f1")))?.y).toBe(-83);
+      expect(result.get(sidebarListItemId(folder("f2")))?.y).toBe(-83);
+    });
+  });
+
   describe("with project sections", () => {
     const group = (key: string): SidebarListItem => ({
       kind: "group",
