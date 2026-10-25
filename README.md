@@ -88,7 +88,7 @@ The AUR packaging is maintained in this repository under [`packaging/aur`](./pac
 
 Download from this fork's [Releases](../../releases/latest): on Windows, run the `.exe` (it is not
 code-signed, so if Windows shows "Windows protected your PC", click **More info**, then **Run
-anyway**); on macOS, open the DMG and drag T3 Code into Applications. Installed apps update
+anyway**); on macOS, open the DMG and drag J6 Code into Applications. Installed apps update
 themselves from this fork's releases, not the official ones.
 
 To publish a release, commit and push to the fork, then run `vp run release:fork`. It needs a
