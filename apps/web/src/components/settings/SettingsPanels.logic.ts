@@ -77,7 +77,7 @@ type TypographySettings = Pick<
   | "fontFamilySans"
   | "fontFamilyComposer"
   | "fontFamilySidebar"
-  | "fontFamilyResponse"
+  | "fontFamilyChat"
   | "fontFamilyCode"
   | "fontFamilyTerminal"
   | "fontSizeInterface"
@@ -85,7 +85,7 @@ type TypographySettings = Pick<
   | "fontSizeCode"
   | "fontSizeTerminal"
   | "fontSizeSidebar"
-  | "fontSizeResponse"
+  | "fontSizeChat"
 >;
 
 export function getChangedTypographySettingLabels(settings: TypographySettings): string[] {
@@ -106,9 +106,9 @@ export function getChangedTypographySettingLabels(settings: TypographySettings):
     settings.fontSizeTerminal !== DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal
       ? ["Terminal font"]
       : []),
-    ...(settings.fontFamilyResponse !== DEFAULT_UNIFIED_SETTINGS.fontFamilyResponse ||
-    settings.fontSizeResponse !== DEFAULT_UNIFIED_SETTINGS.fontSizeResponse
-      ? ["Response font"]
+    ...(settings.fontFamilyChat !== DEFAULT_UNIFIED_SETTINGS.fontFamilyChat ||
+    settings.fontSizeChat !== DEFAULT_UNIFIED_SETTINGS.fontSizeChat
+      ? ["Chat font"]
       : []),
     ...(settings.fontFamilySidebar !== DEFAULT_UNIFIED_SETTINGS.fontFamilySidebar ||
     settings.fontSizeSidebar !== DEFAULT_UNIFIED_SETTINGS.fontSizeSidebar

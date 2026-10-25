@@ -316,12 +316,12 @@ function FontAppearanceSync() {
   const fontFamilyCode = useClientSettings((settings) => settings.fontFamilyCode);
   const fontFamilyComposer = useClientSettings((settings) => settings.fontFamilyComposer);
   const fontFamilySidebar = useClientSettings((settings) => settings.fontFamilySidebar);
-  const fontFamilyResponse = useClientSettings((settings) => settings.fontFamilyResponse);
+  const fontFamilyChat = useClientSettings((settings) => settings.fontFamilyChat);
   const fontSizeInterface = useClientSettings((settings) => settings.fontSizeInterface);
   const fontSizePrompt = useClientSettings((settings) => settings.fontSizePrompt);
   const fontSizeCode = useClientSettings((settings) => settings.fontSizeCode);
   const fontSizeSidebar = useClientSettings((settings) => settings.fontSizeSidebar);
-  const fontSizeResponse = useClientSettings((settings) => settings.fontSizeResponse);
+  const fontSizeChat = useClientSettings((settings) => settings.fontSizeChat);
   const fontSmoothing = useClientSettings((settings) => settings.fontSmoothing);
 
   useEffect(() => {
@@ -330,24 +330,24 @@ function FontAppearanceSync() {
       code: fontFamilyCode,
       composer: fontFamilyComposer,
       sidebar: fontFamilySidebar,
-      response: fontFamilyResponse,
+      chat: fontFamilyChat,
       sizeInterface: fontSizeInterface,
       sizePrompt: fontSizePrompt,
       sizeCode: fontSizeCode,
       sizeSidebar: fontSizeSidebar,
-      sizeResponse: fontSizeResponse,
+      sizeChat: fontSizeChat,
       smoothing: fontSmoothing,
     });
   }, [
     fontFamilyCode,
     fontFamilyComposer,
-    fontFamilyResponse,
+    fontFamilyChat,
     fontFamilySans,
     fontFamilySidebar,
     fontSizeCode,
     fontSizeInterface,
     fontSizePrompt,
-    fontSizeResponse,
+    fontSizeChat,
     fontSizeSidebar,
     fontSmoothing,
   ]);

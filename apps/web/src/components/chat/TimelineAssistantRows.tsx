@@ -31,7 +31,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
     <>
       <div className="relative min-w-0 px-1 py-0.5">
         <MessageAuthorHeading>J6 Code</MessageAuthorHeading>
-        <div data-thread-find-text="true" data-assistant-response="">
+        <div data-thread-find-text="true" data-chat-message="">
           <AssistantCitationSource
             messageId={row.message.id}
             {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}

@@ -778,16 +778,18 @@ const UserMessageBody = memo(function UserMessageBody(props: {
     return null;
   }
   return (
-    <ChatMarkdown
-      text={props.text}
-      cwd={props.markdownCwd}
-      threadRef={ctx.threadRef ?? undefined}
-      skills={props.skills}
-      className="text-foreground"
-      lineBreaks
-      parseRawHtml={false}
-      renderContextReference={props.renderContextReference}
-      headingLevelOffset={MESSAGE_HEADING_LEVEL}
-    />
+    <div data-chat-message="">
+      <ChatMarkdown
+        text={props.text}
+        cwd={props.markdownCwd}
+        threadRef={ctx.threadRef ?? undefined}
+        skills={props.skills}
+        className="text-foreground"
+        lineBreaks
+        parseRawHtml={false}
+        renderContextReference={props.renderContextReference}
+        headingLevelOffset={MESSAGE_HEADING_LEVEL}
+      />
+    </div>
   );
 });
