@@ -125,7 +125,10 @@ export const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* ()
   return yield* decodeWorkspaceConfig(workspaceYaml);
 });
 
+const MAC_ICON_COMPOSER_FILE = "icon.icon";
+
 interface DesktopBuildIconAssets {
+  readonly macIconComposerProject: string;
   readonly macIconPng: string;
   readonly linuxIconPng: string;
   readonly windowsIconIco: string;
@@ -2489,6 +2492,7 @@ const generateMacIconSet = Effect.fn("build-desktop-artifact.generateMacIconSet"
 const stageMacIcons = Effect.fn("build-desktop-artifact.stageMacIcons")(function* (
   stageResourcesDir: string,
   sourcePng: string,
+  iconComposerProject: string,
   verbose: boolean,
 ) {
   const fs = yield* FileSystem.FileSystem;
@@ -2513,6 +2517,7 @@ const stageMacIcons = Effect.fn("build-desktop-artifact.stageMacIcons")(function
   });
 
   yield* generateMacIconSet(sourcePng, iconIcnsPath, tmpRoot, path, verbose);
+  yield* fs.copy(iconComposerProject, path.join(stageResourcesDir, MAC_ICON_COMPOSER_FILE));
 });
 
 export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(function* (
@@ -2720,6 +2725,7 @@ export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
 export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
   if (resolveDesktopUpdateChannel(version) === "nightly") {
     return {
+      macIconComposerProject: BRAND_ASSET_PATHS.nightlyIconComposerProject,
       macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
       linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
       windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
@@ -2727,6 +2733,7 @@ export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIcon
   }
 
   return {
+    macIconComposerProject: BRAND_ASSET_PATHS.productionIconComposerProject,
     macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
     linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
     windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
@@ -2824,7 +2831,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     const repoRoot = yield* RepoRoot;
     buildConfig.mac = {
       target: target === "dmg" ? [target, "zip"] : [target],
-      icon: "icon.icns",
+      // electron-builder compiles the Icon Composer project with actool (Xcode
+      // 26+) into Assets.car for Liquid Glass, plus an icns for older macOS.
+      icon: MAC_ICON_COMPOSER_FILE,
       category: "public.app-category.developer-tools",
       extendInfo: {
         // macOS 26 offers Messages/Mail codes in every text field unless opted out.
@@ -2973,7 +2982,12 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
   verbose: boolean,
 ) {
   if (platform === "mac") {
-    yield* stageMacIcons(stageResourcesDir, iconAssets.macIconPng, verbose);
+    yield* stageMacIcons(
+      stageResourcesDir,
+      iconAssets.macIconPng,
+      iconAssets.macIconComposerProject,
+      verbose,
+    );
     return;
   }
 
@@ -3760,6 +3774,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     options.platform,
     stageResourcesDir,
     {
+      macIconComposerProject: path.join(repoRoot, iconAssets.macIconComposerProject),
       macIconPng: path.join(repoRoot, iconAssets.macIconPng),
       linuxIconPng: path.join(repoRoot, iconAssets.linuxIconPng),
       windowsIconIco: path.join(repoRoot, iconAssets.windowsIconIco),
