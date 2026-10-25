@@ -3701,6 +3701,15 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
 
   yield* Effect.log("[desktop-artifact] Staging release app...");
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));
+  // A concurrent dev watcher can clear dist-electron mid-copy; boot.cjs then
+  // fails at launch with "Cannot find module './main.cjs'".
+  if (!(yield* fs.exists(path.join(stageAppDir, "apps/desktop/dist-electron/main.cjs")))) {
+    return yield* new MissingDesktopBuildInputError({
+      artifact: "desktop-dist",
+      artifactPath: path.join(distDirs.desktopDist, "main.cjs"),
+      buildCommand: "vp run build:desktop",
+    });
+  }
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   if (options.platform === "linux") {
     const extensionDir = path.join(stageAppDir, "apps/desktop/gnome-extension");
