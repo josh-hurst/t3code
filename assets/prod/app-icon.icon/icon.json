@@ -7,7 +7,27 @@
       "layers": [
         {
           "image-name": "text.svg",
-          "name": "Text",
+          "name": "J6",
+          "position": {
+            "scale": 8.5,
+            "translation-in-points": [0, 0]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name": "brackets.svg",
+          "name": "Brackets",
           "position": {
             "scale": 8.5,
             "translation-in-points": [0, 0]
