@@ -2770,8 +2770,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
 ) {
+  // Forks that sign with their own Apple team cannot use the official bundle ID.
+  const appId = yield* Config.String("T3CODE_DESKTOP_APP_ID").pipe(
+    Config.withDefault(DESKTOP_APP_ID),
+  );
   const buildConfig: Record<string, unknown> = {
-    appId: DESKTOP_APP_ID,
+    appId,
     productName: resolveDesktopProductName(version),
     artifactName: "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
@@ -3758,8 +3762,13 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
+  // Passkey entitlements need a provisioning profile for the official bundle
+  // ID, so builds under another bundle ID sign without them.
+  const officialAppId =
+    (yield* Config.String("T3CODE_DESKTOP_APP_ID").pipe(Config.withDefault(DESKTOP_APP_ID))) ===
+    DESKTOP_APP_ID;
   const configuredMacPasskeySigning =
-    options.platform === "mac" && options.signed
+    options.platform === "mac" && options.signed && officialAppId
       ? yield* Effect.try({
           try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
