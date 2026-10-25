@@ -473,41 +473,6 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
-  it.effect("enables updates for an updater that brings its own feed", () =>
-    Effect.gen(function* () {
-      const status = (builtInFeed?: { readonly currentVersion: string }) =>
-        Effect.scoped(
-          Effect.gen(function* () {
-            const updates = yield* DesktopUpdates.DesktopUpdates;
-            yield* updates.configure;
-            return (yield* updates.getState).status;
-          }),
-        ).pipe(
-          Effect.provide(
-            makeHarness({ builtInFeed, env: { T3CODE_DESKTOP_MOCK_UPDATES: "false" } }).layer,
-          ),
-        );
-
-      assert.equal(yield* status(), "disabled");
-      assert.equal(yield* status({ currentVersion: "1.2.3+aaa" }), "idle");
-    }).pipe(Effect.provide(TestClock.layer())),
-  );
-
-  it.effect("compares install records against the built-in feed's current version", () => {
-    const harness = makeHarness({
-      builtInFeed: { currentVersion: "1.2.3+aaa" },
-      installRecord: JSON.stringify({ fromVersion: "1.2.3+aaa", targetVersion: "1.2.3+bbb" }),
-    });
-
-    return Effect.scoped(
-      Effect.gen(function* () {
-        const updates = yield* DesktopUpdates.DesktopUpdates;
-        yield* updates.configure;
-        assert.equal((yield* updates.getState).notAppliedVersion, "1.2.3+bbb");
-      }),
-    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
-  });
-
   it.effect("drops the update restart marker when an install is interrupted", () =>
     Effect.gen(function* () {
       const stopping = yield* Deferred.make<void>();

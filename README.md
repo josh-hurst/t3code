@@ -84,25 +84,6 @@ yay -S t3code-nightly-bin
 
 The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
 
-#### Build from this checkout, with in-app updates (macOS)
-
-An app built this way updates itself from the checkout it was built from: when the branch's
-upstream has new commits, the app offers an update, and installing it runs `git pull`, `vp i`,
-and a rebuild, then relaunches. It never updates from the official releases.
-
-Install [`vp`](#install-vp), the Rust toolchain (`rustup`), and the Xcode command line tools,
-then from the checkout:
-
-```bash
-vp i
-vp run dist:desktop:source
-ditto -x -k release-source/T3-Code-*.zip /Applications
-```
-
-Keep the checkout where it is and on a branch that tracks the remote you want updates from;
-the app remembers its path. Local commits are kept and merged with each update. If an update
-reports a merge conflict, resolve it in the checkout and click **Retry**.
-
 ## Some notes
 
 We are very very early in this project. Expect bugs.
