@@ -626,6 +626,36 @@ describe("sidebar drag projection", () => {
       expect(result.get(sidebarMarkerId("settled-header"))).toEqual(stationary);
     });
 
+    it("previews a hand-ordered row where it is dropped within its project", () => {
+      const ordered = [pinnedHeader, divider, group("a"), thread("a1", "active")];
+      ordered.push(thread("a2", "active"), group("b"), thread("b1", "active"), settledHeader);
+      // The sorted landing would put a2 back below a1.
+      const result = preview(
+        {
+          items: ordered,
+          settledOrder: [],
+          settledExpanded: false,
+          activeItems: ordered.slice(2, 7),
+        },
+        "a2",
+        "a1",
+      );
+      expect(result.get("a1")?.y).toBe(0);
+      const inPlace = preview(
+        {
+          items: ordered,
+          settledOrder: [],
+          settledExpanded: false,
+          activeItems: ordered.slice(2, 7),
+          activeInPlace: true,
+        },
+        "a2",
+        "a1",
+      );
+      expect(inPlace.get("a1")?.y).toBe(83);
+      expect(inPlace.get(groupId("b"))).toEqual(stationary);
+    });
+
     it("keeps a collapsed project heading while another row leaves", () => {
       const collapsed = [pinnedHeader, divider, group("a"), thread("a1", "active"), group("b")];
       collapsed.push(settledHeader, marker("settled-placeholder"));
