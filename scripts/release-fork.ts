@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off
-// Publishes a signed, notarized Apple Silicon build of this checkout as a
-// GitHub Release of a fork. Apps installed from those releases check the
+// Publishes a signed, notarized Apple Silicon build and an unsigned Windows
+// x64 installer of this checkout as a GitHub Release of a fork. Apps installed from those releases check the
 // fork's releases for updates instead of the official repository's.
 //
 //   vp run release:fork
@@ -17,6 +17,10 @@
 // keychain, or CSC_LINK + CSC_KEY_PASSWORD. Notarization needs either
 // APPLE_API_KEY (path to the .p8) + APPLE_API_KEY_ID + APPLE_API_ISSUER, or
 // APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID.
+//
+// The Windows build is cross-compiled. It needs the Rust target
+// x86_64-pc-windows-msvc, cargo-xwin, Homebrew's llvm and lld (for clang-cl and
+// lld-link), and Rosetta, because electron-builder's makensis is x86_64 only.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -105,6 +109,29 @@ function main() {
     fail('No "Developer ID Application" certificate in the keychain, and CSC_LINK is not set.');
   }
 
+  const crossToolPath = [
+    "/opt/homebrew/opt/llvm/bin",
+    "/opt/homebrew/opt/lld/bin",
+    env.PATH ?? process.env.PATH ?? "",
+  ].join(":");
+  const windowsToolchain = [
+    ["cargo", ["xwin", "--version"]],
+    ["lld-link", ["--version"]],
+    ["clang-cl", ["--version"]],
+    ["arch", ["-x86_64", "/usr/bin/true"]],
+  ] as const;
+  for (const [command, args] of windowsToolchain) {
+    const probe = NodeChildProcess.spawnSync(command, args, {
+      env: { ...env, PATH: crossToolPath },
+      stdio: "ignore",
+    });
+    if (probe.status !== 0) {
+      fail(
+        `${command} is missing for the Windows build. Install: rustup target add x86_64-pc-windows-msvc, cargo install --locked cargo-xwin, brew install llvm lld, softwareupdate --install-rosetta.`,
+      );
+    }
+  }
+
   if (output("git", ["status", "--porcelain"]) !== "") {
     fail("Commit or stash your changes first; a release is built from HEAD.");
   }
@@ -136,40 +163,56 @@ function main() {
 
   const outputDir = NodePath.join(root, "release-fork", version);
   console.log(`release:fork: building ${version} for ${repository}`);
-  const build = NodeChildProcess.spawnSync(
-    "node",
-    [
-      "scripts/build-desktop-artifact.ts",
-      "--platform",
-      "mac",
-      "--target",
-      "dmg",
-      "--arch",
-      "arm64",
-      "--build-version",
-      version,
-      "--output-dir",
-      outputDir,
-      "--signed",
-    ],
-    {
-      cwd: root,
-      stdio: "inherit",
-      env: {
-        ...env,
-        T3CODE_DESKTOP_APP_ID: appId,
-        T3CODE_DESKTOP_UPDATE_REPOSITORY: repository,
-      },
-    },
-  );
-  if (build.status !== 0) fail("The desktop build failed.");
+  const buildEnv = {
+    ...env,
+    T3CODE_DESKTOP_APP_ID: appId,
+    T3CODE_DESKTOP_UPDATE_REPOSITORY: repository,
+  };
+  const buildDesktop = (args: ReadonlyArray<string>, extraEnv: Record<string, string> = {}) => {
+    const build = NodeChildProcess.spawnSync(
+      "node",
+      [
+        "scripts/build-desktop-artifact.ts",
+        ...args,
+        "--build-version",
+        version,
+        "--output-dir",
+        outputDir,
+      ],
+      { cwd: root, stdio: "inherit", env: { ...buildEnv, ...extraEnv } },
+    );
+    if (build.status !== 0) fail(`The desktop build (${args.join(" ")}) failed.`);
+  };
 
-  // The updater reads latest-mac.yml and installs the zip; the DMG is for
-  // first installs.
+  buildDesktop(["--platform", "mac", "--target", "dmg", "--arch", "arm64", "--signed"]);
+
+  // The build script's own cargo call cannot link MSVC binaries off Windows,
+  // so the resource monitor is built with cargo-xwin first, as CI does.
+  const monitor = NodeChildProcess.spawnSync(
+    "cargo",
+    [
+      "xwin",
+      "build",
+      "--locked",
+      "--release",
+      "--manifest-path",
+      "native/resource-monitor/Cargo.toml",
+      "--target",
+      "x86_64-pc-windows-msvc",
+    ],
+    { cwd: root, stdio: "inherit", env: { ...env, PATH: crossToolPath } },
+  );
+  if (monitor.status !== 0) fail("Building the Windows resource monitor failed.");
+  buildDesktop(["--platform", "win", "--target", "nsis", "--arch", "x64"], {
+    T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "1",
+  });
+
+  // The updaters read latest-mac.yml (installing the zip) and latest.yml
+  // (installing the exe); the DMG is for first installs on macOS.
   const assets = NodeFS.readdirSync(outputDir)
-    .filter((name) => /\.(dmg|zip|blockmap)$/.test(name) || name === "latest-mac.yml")
+    .filter((name) => /\.(dmg|zip|exe|blockmap)$/.test(name) || /^latest(-mac)?\.yml$/.test(name))
     .map((name) => NodePath.join(outputDir, name));
-  for (const required of ["latest-mac.yml", ".zip", ".dmg"]) {
+  for (const required of ["latest-mac.yml", "latest.yml", ".zip", ".dmg", ".exe"]) {
     if (!assets.some((asset) => asset.endsWith(required))) {
       fail(`The build did not produce a ${required} file in ${outputDir}.`);
     }
@@ -188,7 +231,7 @@ function main() {
       "--title",
       `T3 Code ${version}`,
       "--notes",
-      `Built from ${commit.slice(0, 12)}. Download the DMG for a first install; installed apps update themselves.`,
+      `Built from ${commit.slice(0, 12)}. Windows: run T3-Code-${version}-x64.exe; it is not code-signed, so if Windows shows "Windows protected your PC", click More info, then Run anyway. macOS (Apple Silicon): open the DMG and drag T3 Code to Applications. Installed apps update themselves.`,
       "--latest",
       ...assets,
     ],
