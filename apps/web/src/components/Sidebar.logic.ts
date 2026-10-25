@@ -835,6 +835,18 @@ export function buildMultiSelectThreadContextMenuItems(input: {
   ];
 }
 
+// Markdown emphasis and code markers read as noise in a one-line preview.
+const PREVIEW_MARKDOWN_NOISE = /\*\*|__|`+|^#+\s+|^>\s+/g;
+
+export function sidebarMessagePreview(
+  message: SidebarThreadSummary["source"]["latestVisibleMessage"],
+): string | null {
+  if (message === null) return null;
+  const text = message.text.replace(PREVIEW_MARKDOWN_NOISE, "").replace(/\s+/g, " ").trim();
+  if (text === "") return null;
+  return message.role === "user" ? `You: ${text}` : text;
+}
+
 export function isSidebarSubagentThread(thread: Pick<SidebarThreadSummary, "lineage">): boolean {
   return thread.lineage.relationshipToParent === "subagent";
 }

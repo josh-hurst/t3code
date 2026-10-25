@@ -73,6 +73,7 @@ const clientSettings: ClientSettings = {
   sidebarWorkingShelfEnabled: false,
   sharedProjectTerminals: false,
   sidebarCompactRows: false,
+  sidebarRowDetail: "branch",
   sidebarProjectSections: false,
   sidebarNeedsYouPlacement: "project",
   sidebarNeedsYouIncludesCompleted: true,

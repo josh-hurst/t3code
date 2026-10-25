@@ -4,6 +4,7 @@ import * as Stream from "effect/Stream";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { makeThreadFind, findProjectedThreadItems } from "./ThreadFind.ts";
 import type {
+  OrchestrationV2LatestVisibleMessageSummary,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
   OrchestrationV2ThreadHistoryPage,
@@ -1105,6 +1106,7 @@ type ShellThreadRow = {
   readonly pending_secret_request_payload_json: string | null;
   readonly latest_user_message_at: string | null;
   readonly latest_user_authored_message_at: string | null;
+  readonly latest_visible_message_json: string | null;
   readonly has_actionable_proposed_plan: number;
 };
 
@@ -1537,6 +1539,64 @@ function secretRequestAsPendingInput(
   };
 }
 
+// Shell rows carry only the start of the latest finished message so the
+// sidebar can preview it without loading the transcript. Streaming messages
+// are skipped so token deltas never change the shell.
+const LATEST_VISIBLE_MESSAGE_TEXT_LENGTH = 200;
+const LEADING_PREVIEW_WHITESPACE = /^[\t\n\r ]+/;
+
+function latestVisibleMessageSummary(
+  projection: Pick<OrchestrationV2ThreadProjection, "messages" | "runs">,
+): OrchestrationV2LatestVisibleMessageSummary | null {
+  const rolledBackRunIds = new Set(
+    projection.runs.filter((run) => run.status === "rolled_back").map((run) => run.id),
+  );
+  let latest: OrchestrationV2ThreadProjection["messages"][number] | null = null;
+  let latestText = "";
+  for (const message of projection.messages) {
+    if (
+      message.role === "system" ||
+      message.streaming ||
+      message.idleCompaction !== undefined ||
+      (message.runId !== null && rolledBackRunIds.has(message.runId))
+    ) {
+      continue;
+    }
+    const text = message.text.replace(LEADING_PREVIEW_WHITESPACE, "");
+    if (text === "") continue;
+    if (
+      latest === null ||
+      DateTime.toEpochMillis(message.createdAt) > DateTime.toEpochMillis(latest.createdAt) ||
+      (DateTime.toEpochMillis(message.createdAt) === DateTime.toEpochMillis(latest.createdAt) &&
+        message.id > latest.id)
+    ) {
+      latest = message;
+      latestText = text;
+    }
+  }
+  if (latest === null) return null;
+  return {
+    id: latest.id,
+    role: latest.role,
+    // Code points, matching SQLite substr on the shell query.
+    text: Array.from(latestText.slice(0, LATEST_VISIBLE_MESSAGE_TEXT_LENGTH * 2))
+      .slice(0, LATEST_VISIBLE_MESSAGE_TEXT_LENGTH)
+      .join(""),
+    updatedAt: latest.updatedAt,
+  };
+}
+
+const decodeLatestVisibleMessageRow = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      id: Schema.String,
+      role: Schema.Literals(["user", "assistant"]),
+      text: Schema.String,
+      updatedAt: Schema.String,
+    }),
+  ),
+);
+
 export function threadShellFromProjection(
   projection: OrchestrationV2ThreadProjection,
 ): OrchestrationV2ThreadShell {
@@ -1660,9 +1720,7 @@ export function threadShellFromProjection(
       providerSession?.lastError ?? null,
     ),
     pendingRuntimeRequest,
-    // Thread detail owns message bodies. Keeping them out of shell rows makes
-    // initial hydration and streaming updates independent of transcript size.
-    latestVisibleMessage: null,
+    latestVisibleMessage: latestVisibleMessageSummary(projection),
     latestUserMessageAt: latestUserMessage?.updatedAt ?? null,
     latestUserAuthoredMessageAt:
       userMessages.find((message) => message.createdBy === "user")?.updatedAt ?? null,
@@ -1760,6 +1818,7 @@ type ShellThreadState = {
   readonly lastErrorCode: OrchestrationV2ThreadShell["lastErrorCode"];
   readonly usageLimitResetAt: OrchestrationV2ThreadShell["usageLimitResetAt"];
   readonly pendingRuntimeRequest: OrchestrationV2PendingRuntimeRequestSummary | null;
+  readonly latestVisibleMessage: OrchestrationV2LatestVisibleMessageSummary | null;
   readonly latestUserMessageAt: DateTime.Utc | null;
   readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
   readonly hasActionableProposedPlan: boolean;
@@ -1917,7 +1976,7 @@ function shellFromState(input: {
     lastErrorCode: input.state.lastErrorCode,
     usageLimitResetAt: input.state.usageLimitResetAt,
     pendingRuntimeRequest: input.state.pendingRuntimeRequest,
-    latestVisibleMessage: null,
+    latestVisibleMessage: input.state.latestVisibleMessage,
     latestUserMessageAt: input.state.latestUserMessageAt,
     latestUserAuthoredMessageAt: input.state.latestUserAuthoredMessageAt,
     hasActionableProposedPlan: input.state.hasActionableProposedPlan,
@@ -5844,6 +5903,31 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_authored_message_at,
+              (
+                -- Mirrors latestVisibleMessageSummary.
+                SELECT json_object(
+                  'id', message.message_id,
+                  'role', message.role,
+                  'text', substr(
+                    ltrim(json_extract(message.payload_json, '$.text'), char(9, 10, 13, 32)),
+                    1,
+                    ${LATEST_VISIBLE_MESSAGE_TEXT_LENGTH}
+                  ),
+                  'updatedAt', message.updated_at
+                )
+                FROM orchestration_v2_projection_messages message
+                WHERE message.thread_id = t.thread_id
+                  AND message.role IN ('user', 'assistant')
+                  AND message.streaming = 0
+                  AND json_extract(message.payload_json, '$.idleCompaction') IS NULL
+                  AND ltrim(json_extract(message.payload_json, '$.text'), char(9, 10, 13, 32)) != ''
+                  AND NOT EXISTS (
+                    SELECT 1 FROM orchestration_v2_projection_runs rolled_back
+                    WHERE rolled_back.run_id = message.run_id AND rolled_back.status = 'rolled_back'
+                  )
+                ORDER BY message.created_at DESC, message.message_id DESC
+                LIMIT 1
+              ) AS latest_visible_message_json,
               EXISTS (
                 SELECT 1
                 FROM orchestration_v2_projection_plans plan
@@ -6305,6 +6389,19 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 : DateTime.makeUnsafe(row.blocking_run_completed_at);
           }
         }
+        const latestVisibleMessageRow =
+          row.latest_visible_message_json === null
+            ? null
+            : yield* decodeLatestVisibleMessageRow(row.latest_visible_message_json);
+        const latestVisibleMessage =
+          latestVisibleMessageRow === null
+            ? null
+            : {
+                id: MessageId.make(latestVisibleMessageRow.id),
+                role: latestVisibleMessageRow.role,
+                text: latestVisibleMessageRow.text,
+                updatedAt: DateTime.makeUnsafe(latestVisibleMessageRow.updatedAt),
+              };
         const pendingBackgroundTasks = [
           ...derivePendingBackgroundWork({
             latestRun:
@@ -6355,6 +6452,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             row.last_error,
           ),
           pendingRuntimeRequest,
+          latestVisibleMessage,
           latestUserMessageAt:
             row.latest_user_message_at === null
               ? null
