@@ -188,6 +188,13 @@ function EnvironmentNotifications({
           description: thread.title,
           data: {
             hideCopyButton: true,
+            onClick: () => {
+              toastManager.close(toastId);
+              void navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId, threadId: thread.id },
+              });
+            },
             leadingIcon:
               kind === "completion" ? (
                 <CircleCheckIcon aria-hidden className="size-4 text-success-foreground" />
@@ -198,16 +205,6 @@ function EnvironmentNotifications({
               ) : (
                 <MessageCircleQuestionIcon aria-hidden className="size-4 text-info-foreground" />
               ),
-          },
-          actionProps: {
-            children: "Open thread",
-            onClick: () => {
-              toastManager.close(toastId);
-              void navigate({
-                to: "/$environmentId/$threadId",
-                params: { environmentId, threadId: thread.id },
-              });
-            },
           },
         });
         continue;

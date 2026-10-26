@@ -270,6 +270,7 @@ describe("ThreadTitleRegenerationService", () => {
         const call = harness.generateThreadTitle.mock.calls[0]?.[0];
         assert.equal(call?.previousTitle, "Seed title");
         assert.equal(call?.cwd, "/repo");
+        assert.equal(call?.projectName, "Project");
         assert.include(call?.message, "USER:\nInvestigate the flaky login test");
         const projection = yield* threads.getThreadProjection(threadId);
         assert.equal(projection.thread.title, "Fresh title");

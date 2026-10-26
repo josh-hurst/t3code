@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
+import { APP_VERSION } from "../../branding";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
@@ -72,6 +73,14 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           </div>
         ) : null}
       </div>
+      <span
+        className={cn(
+          "relative z-10 hidden shrink-0 text-3xs tabular-nums md:block",
+          backdropVariant ? "text-white/50" : "text-muted-foreground/60",
+        )}
+      >
+        v{APP_VERSION}
+      </span>
     </div>
   );
 });

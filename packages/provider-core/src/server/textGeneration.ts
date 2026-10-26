@@ -58,6 +58,7 @@ export interface BranchNameGenerationResult {
 export interface ThreadTitleGenerationInput {
   linkedContext?: string | undefined;
   cwd: string;
+  projectName?: string | undefined;
   message: string;
   previousTitle?: string | undefined;
   attachments?: ReadonlyArray<ChatAttachment> | undefined;

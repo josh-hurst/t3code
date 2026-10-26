@@ -7,6 +7,8 @@ import {
   type CSSProperties,
   type ComponentPropsWithoutRef,
   type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
   type ReactNode,
 } from "react";
 import { type ScopedThreadRef, type ThreadId } from "@t3tools/contracts";
@@ -35,6 +37,8 @@ export type ThreadToastData = {
   onClose?: (() => void) | undefined;
   dismissAfterVisibleMs?: number;
   hideCopyButton?: boolean;
+  /** Makes the whole toast body a click target, for toasts whose only action is "go there". */
+  onClick?: () => void;
   additionalActions?: ReadonlyArray<{
     id: string;
     props: ComponentPropsWithoutRef<"button">;
@@ -100,6 +104,40 @@ function handleToastDismissClick(
 ) {
   onClose?.();
   manager.close(toastId);
+}
+
+// Base UI captures the pointer on the toast root for swipe-to-dismiss, so a
+// click on the body lands on the root, not on the content. Keyed by element
+// because the swipe re-renders the toast between pointerdown and click.
+const toastPointerDownAt = new WeakMap<Element, { x: number; y: number }>();
+const TOAST_CLICK_SLOP_PX = 5;
+
+// The root's `transform` carries stacking and swipe offsets, so the press
+// feedback uses the separate `scale` property, which composes with it.
+const clickableToastRootClass = cn(
+  "group/toast w-fit min-w-56 max-w-full cursor-pointer",
+  "[transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s,scale_.15s_ease-out]",
+  "motion-safe:hover:scale-[1.02] motion-safe:active:scale-[0.97]",
+);
+const clickableToastContentClass = cn(
+  "rounded-lg pl-3 transition-[opacity,background-color] duration-150 ease-out",
+  "group-hover/toast:bg-foreground/5 group-active/toast:bg-foreground/8",
+);
+
+function toastBodyClickProps(onClick: (() => void) | undefined) {
+  if (!onClick) return {};
+  return {
+    onPointerDown: (event: PointerEvent<HTMLElement>) => {
+      toastPointerDownAt.set(event.currentTarget, { x: event.clientX, y: event.clientY });
+    },
+    onClick: (event: MouseEvent<HTMLElement>) => {
+      if (event.target instanceof Element && event.target.closest("button,a")) return;
+      const down = toastPointerDownAt.get(event.currentTarget);
+      if (down && Math.hypot(event.clientX - down.x, event.clientY - down.y) > TOAST_CLICK_SLOP_PX)
+        return;
+      onClick();
+    },
+  };
 }
 
 function CopyErrorButton({ text }: { text: string }) {
@@ -604,9 +642,11 @@ function Toasts({ position }: { position: ToastPosition }) {
                 "data-expanded:data-ending-style:data-[swipe-direction=right]:transform-[translateX(calc(var(--toast-swipe-movement-x)+100%+var(--toast-inset)))_translateY(var(--toast-calc-offset-y))]",
                 "data-expanded:data-ending-style:data-[swipe-direction=up]:transform-[translateY(calc(var(--toast-swipe-movement-y)-100%-var(--toast-inset)))]",
                 "data-expanded:data-ending-style:data-[swipe-direction=down]:transform-[translateY(calc(var(--toast-swipe-movement-y)+100%+var(--toast-inset)))]",
+                toast.data?.onClick && clickableToastRootClass,
               )}
               data-position={position}
               key={toast.id}
+              {...toastBodyClickProps(toast.data?.onClick)}
               style={
                 {
                   "--toast-index": visibleIndex,
@@ -643,10 +683,15 @@ function Toasts({ position }: { position: ToastPosition }) {
                 className={cn(
                   // `overflow-x: clip` avoids the CSS quirk where pairing `hidden` + `y: visible`
                   // forces `y` to `auto`. Expandable detail panels can extend below without being cut off.
-                  "pointer-events-auto min-h-0 overflow-y-visible pl-3.5 text-sm transition-opacity duration-250 [overflow-x:clip] data-expanded:opacity-100",
+                  "pointer-events-auto min-h-0 overflow-y-visible text-sm transition-opacity duration-250 [overflow-x:clip] data-expanded:opacity-100",
+                  toast.data?.onClick ? clickableToastContentClass : "pl-3.5",
                   stackedActionLayout
                     ? "flex flex-col gap-2 py-2.5 pr-3.5"
-                    : cn("py-3", "flex items-center justify-between gap-1.5", inlineContentEndPad),
+                    : cn(
+                        toast.data?.onClick ? "py-2" : "py-3",
+                        "flex items-center justify-between gap-1.5",
+                        inlineContentEndPad,
+                      ),
                   hideCollapsedContent &&
                     "not-data-expanded:pointer-events-none not-data-expanded:opacity-0",
                 )}
