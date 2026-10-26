@@ -48,7 +48,6 @@ export function useUsageLimitsPanel(input: {
     readonly threadKey: string;
     readonly now: number;
   } | null>(null);
-  // Drop the snapshot as soon as the thread or model changes so it cannot resurface stale.
   if (panel !== null && panelKey !== null && panel.key !== panelKey) {
     setPanel(null);
   }
@@ -74,7 +73,6 @@ export function useUsageLimitsPanel(input: {
   const offered =
     providerDriver !== null && hasProviderUsageLimits(providerDriver, providers, sources);
 
-  // Answered locally from the last Limits snapshot; the agent never sees it.
   const open = useStableCallback(() => {
     const now = Date.now();
     const nextReport =
@@ -89,7 +87,7 @@ export function useUsageLimitsPanel(input: {
     toastManager.add({ type: "info", title: "Usage limits are unavailable for this provider" });
     return false;
   });
-  // Responses can resolve after navigating away; only the originating thread's panel clears.
+  // Async responses may clear only their originating thread's panel.
   const clearFor = useStableCallback((originThreadKey: string) =>
     setPanel((current) =>
       current !== null && current.threadKey === originThreadKey ? null : current,

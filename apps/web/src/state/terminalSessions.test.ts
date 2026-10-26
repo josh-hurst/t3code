@@ -1,13 +1,36 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ThreadId, type TerminalSummary } from "@t3tools/contracts";
 import { selectRunningSubprocessTerminalIds } from "@t3tools/client-runtime/state/terminal";
+import { AtomRegistry } from "effect/reactivity";
 
 import {
+  attachedTerminalSessionAtom,
   selectKnownTerminalSessions,
   selectSharedProjectTerminalSessions,
 } from "./terminalSessions";
 
-vi.mock("./terminal", () => ({ terminalEnvironment: {} }));
+const attachCalls = vi.hoisted(() => [] as unknown[]);
+vi.mock("./terminal", async () => {
+  const { AsyncResult, Atom } = await import("effect/reactivity");
+  return {
+    terminalEnvironment: {
+      attach: (request: unknown) => {
+        attachCalls.push(request);
+        return Atom.make(AsyncResult.initial(true));
+      },
+      metadata: () => Atom.make(AsyncResult.initial(true)),
+    },
+  };
+});
+vi.mock("./session", async () => {
+  const { AsyncResult, Atom } = await import("effect/reactivity");
+  const granted = Atom.make(AsyncResult.success({}));
+  return {
+    environmentSession: { sessionStateAtom: () => granted },
+    sessionHasScope: () => true,
+    useEnvironmentScope: () => true,
+  };
+});
 
 const environmentA = EnvironmentId.make("environment-a");
 const threadA = ThreadId.make("thread-a");
@@ -104,5 +127,23 @@ describe("selectSharedProjectTerminalSessions", () => {
     expect(shared.map((session) => session.target)).toEqual([
       { environmentId: environmentA, threadId: threadB, terminalId: "terminal-1" },
     ]);
+  });
+});
+
+describe("attachedTerminalSessionAtom", () => {
+  it("attaches with the launch input it was keyed by", () => {
+    attachCalls.length = 0;
+    const input = {
+      threadId: threadA,
+      terminalId: "terminal-1",
+      cwd: "/repo",
+      worktreePath: null,
+      env: { T3CODE_PROJECT_ROOT: "/repo" },
+    };
+    const atom = attachedTerminalSessionAtom(environmentA, input);
+    expect(attachedTerminalSessionAtom(environmentA, { ...input })).toBe(atom);
+
+    AtomRegistry.make().get(atom);
+    expect(attachCalls).toEqual([{ environmentId: environmentA, input }]);
   });
 });
