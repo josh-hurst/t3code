@@ -112,6 +112,13 @@ export function startThreadNotifications(
         description: thread.title,
         data: {
           hideCopyButton: true,
+          onClick: () => {
+            toastManager.close(toastId);
+            void router.navigate({
+              to: "/$environmentId/$threadId",
+              params: { environmentId, threadId: thread.id },
+            });
+          },
           leadingIcon:
             kind === "completion" ? (
               <CircleCheckIcon aria-hidden className="size-4 text-success-foreground" />
@@ -122,16 +129,6 @@ export function startThreadNotifications(
             ) : (
               <MessageCircleQuestionIcon aria-hidden className="size-4 text-info-foreground" />
             ),
-        },
-        actionProps: {
-          children: "Open thread",
-          onClick: () => {
-            toastManager.close(toastId);
-            void router.navigate({
-              to: "/$environmentId/$threadId",
-              params: { environmentId, threadId: thread.id },
-            });
-          },
         },
       });
       return;

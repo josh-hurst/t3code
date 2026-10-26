@@ -59,6 +59,7 @@ export interface BranchNameGenerationResult {
 export interface ThreadTitleGenerationInput {
   linkedContext?: string | undefined;
   cwd: string;
+  projectName?: string | undefined;
   message: string;
   previousTitle?: string | undefined;
   forkSource?: ThreadTitleForkSource | undefined;
