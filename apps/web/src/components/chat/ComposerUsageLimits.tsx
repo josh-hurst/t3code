@@ -96,7 +96,7 @@ function UsageLimitsBannerBody({
   const now = Date.parse(report.createdAt);
   return (
     <ComposerBanner.Scroll>
-      <ComposerBanner.Body className="flex flex-col gap-2 pt-1 pb-1.5 pe-2">
+      <ComposerBanner.Body className="flex flex-col gap-2 ps-2 pt-1 pe-2 pb-1.5 sm:ps-1.5">
         {report.accounts.map((account) => {
           const resetCreditInput =
             account.resetCreditInput ??
