@@ -76,6 +76,8 @@ export interface AggregateOptions {
   readonly resolution?: UsageResolution;
   readonly sinceTimeMs?: number;
   readonly untilTimeMs?: number;
+  /** Sees each record that counts toward the window, after dedupe, with its priced cost. */
+  readonly onCounted?: (record: UsageRecord, costUsd: number) => void;
 }
 
 export function resolveModelAliases(
@@ -206,6 +208,7 @@ export class UsageAggregator {
     if (priced.costSource === "unpriced") bucket.unpricedRecords += 1;
     if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;
     if (record.sessionId.length > 0) bucket.sessions.add(record.sessionId);
+    this.#options.onCounted?.(record, priced.costUsd);
     return true;
   }
 

@@ -142,8 +142,30 @@ export const UsageSummaryInput = Schema.Struct({
   sinceTime: Schema.optional(TrimmedNonEmptyString),
   untilTime: Schema.optional(TrimmedNonEmptyString),
   awaitRefresh: Schema.optional(Schema.Boolean),
+  /** Also break down what spent this provider's usage in the window. */
+  drivers: Schema.optional(UsageProviderKind),
 });
 export type UsageSummaryInput = typeof UsageSummaryInput.Type;
+
+/**
+ * Shares of the window's API-priced usage. The measures overlap, so they do not add up to one.
+ * Sources are what the provider charged calls to: subagents, MCP servers and skills.
+ */
+export const UsageLimitDrivers = Schema.Struct({
+  costUsd: Schema.Number,
+  largeContextShare: Schema.Number,
+  subagentHeavyShare: Schema.Number,
+  parallelShare: Schema.Number,
+  longSessionShare: Schema.Number,
+  sources: Schema.Array(
+    Schema.Struct({
+      kind: Schema.Literals(["subagent", "mcp", "skill"]),
+      name: TrimmedNonEmptyString,
+      share: Schema.Number,
+    }),
+  ),
+});
+export type UsageLimitDrivers = typeof UsageLimitDrivers.Type;
 
 export const UsageSummary = Schema.Struct({
   contractVersion: Schema.Number,
@@ -155,6 +177,7 @@ export const UsageSummary = Schema.Struct({
   sources: ForwardCompatibleArray(UsageSource),
   pricing: UsagePricing,
   scanDurationMs: NonNegativeInt,
+  drivers: Schema.optional(UsageLimitDrivers),
 });
 export type UsageSummary = typeof UsageSummary.Type;
 

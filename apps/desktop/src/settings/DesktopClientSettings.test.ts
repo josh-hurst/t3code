@@ -74,6 +74,7 @@ const clientSettings: ClientSettings = {
   sharedProjectTerminals: false,
   sidebarCompactRows: false,
   sidebarRowDetail: "branch",
+  threadDetailsUsage: true,
   sidebarProjectSections: false,
   sidebarNeedsYouPlacement: "project",
   sidebarNeedsYouIncludesCompleted: true,

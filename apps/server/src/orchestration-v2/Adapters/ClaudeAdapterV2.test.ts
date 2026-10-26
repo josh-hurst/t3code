@@ -2040,6 +2040,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly apiErrorStatus?: number;
     // null omits the field, as the CLI does on a zero-turn result.
     readonly terminalReason?: SDKResultMessage["terminal_reason"] | null;
+    readonly totalCostUsd?: number;
     readonly usage?: {
       readonly input_tokens: number;
       readonly output_tokens: number;
@@ -2056,7 +2057,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       num_turns: input.numTurns ?? 1,
       result: input.result,
       stop_reason: "end_turn",
-      total_cost_usd: 0,
+      total_cost_usd: input.totalCostUsd ?? 0,
       usage: input.usage ?? {
         input_tokens: 1,
         output_tokens: 1,
@@ -3323,6 +3324,53 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  it.effect("bills each turn the growth in its process's running cost", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      const now = yield* DateTime.now;
+      const costs: Array<number | undefined> = [];
+      for (const [ordinal, totalCostUsd] of [
+        [1, 0.1],
+        [2, 0.25],
+      ] as const) {
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(`attempt-cost:${ordinal}`),
+            text: `Request ${ordinal}`,
+            attachments: [],
+            providerTurnOrdinal: ordinal,
+          }),
+        );
+        yield* harness.offerAndWait(
+          makeResultFrame({
+            uuid: `00000000-0000-4000-8000-00000000095${ordinal}`,
+            result: "Done.",
+            totalCostUsd,
+          }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+        const completed = harness.events.findLast(
+          (event) => event.type === "provider_turn.updated",
+        );
+        costs.push(
+          completed?.type === "provider_turn.updated"
+            ? completed.providerTurn.turnTokenUsage?.costUsd
+            : undefined,
+        );
+      }
+      assert.equal(costs[0], 0.1);
+      assert.closeTo(costs[1] ?? Number.NaN, 0.15, 1e-9);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(NodeServices.layer, IdAllocator.layer, McpProviderSessions.layer),
+      ),
+    ),
+  );
+
   it.effect.each(["completed", "interrupted"] as const)(
     "projects Claude thinking blocks when %s",
     (status) =>
@@ -3564,6 +3612,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             uuid: "00000000-0000-4000-8000-000000000901",
             result: "",
             terminalReason,
+            totalCostUsd: 0.2,
             usage: {
               input_tokens: 600,
               output_tokens: 40,
@@ -3579,6 +3628,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             makeResultFrame({
               uuid: "00000000-0000-4000-8000-000000000902",
               result: "Audit finished after the steer.",
+              // The process's running total, which already includes the steered segment.
+              totalCostUsd: 0.5,
               usage: {
                 input_tokens: 3,
                 output_tokens: 6,
@@ -3614,6 +3665,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               outputTokens: 46,
               cachedInputTokens: 11455,
               cacheCreationTokens: 2847,
+              costUsd: 0.5,
             },
           );
         }
@@ -5001,6 +5053,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             outputTokens: 1,
             cachedInputTokens: 0,
             cacheCreationTokens: 0,
+            costUsd: 0,
           });
         }
       }).pipe(

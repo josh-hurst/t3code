@@ -17,6 +17,7 @@ import {
   type OrchestrationV2Actor,
   type OrchestrationV2Command,
   type OrchestrationV2GetTurnItemResult,
+  type OrchestrationV2ThreadUsage,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2CreationSource,
@@ -50,6 +51,8 @@ import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { projectedRowEncodedBytes } from "./threadHistoryPaging.ts";
+import { summarizeThreadUsage, turnModelResolver } from "./threadUsage.ts";
+import { UsageService } from "../usage/UsageService.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimit.ts";
@@ -334,6 +337,9 @@ export interface ThreadManagementServiceShape {
     readonly itemId: TurnItemId;
   }) => Effect.Effect<OrchestrationV2GetTurnItemResult, Orchestrator.OrchestratorV2Error>;
   readonly getThreadRecords: Orchestrator.OrchestratorV2["Service"]["getThreadRecords"];
+  readonly getThreadUsage: (
+    threadId: ThreadId,
+  ) => Effect.Effect<OrchestrationV2ThreadUsage, Orchestrator.OrchestratorV2Error>;
   readonly getThreadProjection: (
     threadId: ThreadId,
   ) => Effect.Effect<OrchestrationV2ThreadProjection, Orchestrator.OrchestratorV2Error>;
@@ -1167,6 +1173,32 @@ const make = Effect.gen(function* () {
       ensureProjectionTranscript(threadId).pipe(
         Effect.andThen(orchestrator.getThreadRecords(threadId, fields, filter)),
       ),
+    getThreadUsage: Effect.fn("ThreadManagementService.getThreadUsage")(function* (threadId) {
+      yield* ensureProjectionTranscript(threadId);
+      const records = yield* orchestrator.getThreadRecords(threadId, [
+        "providerTurns",
+        "runs",
+        "attempts",
+      ]);
+      const { usage, uncosted } = summarizeThreadUsage(
+        records.providerTurns,
+        turnModelResolver({
+          runs: records.runs,
+          attempts: records.attempts,
+          fallback: records.thread.modelSelection,
+        }),
+      );
+      if (uncosted.length === 0) return usage;
+      // Optional so hosts without usage pricing (tests, embedded servers) still answer with tokens.
+      const pricing = yield* Effect.serviceOption(UsageService);
+      if (Option.isNone(pricing)) return { ...usage, partial: true };
+      const priced = yield* pricing.value.priceTokens(uncosted);
+      return {
+        ...usage,
+        costUsd: (usage.costUsd ?? 0) + priced.costUsd,
+        partial: usage.partial || priced.unpriced,
+      };
+    }),
     getThreadProjection,
     getCheckpointContext,
     getThreadSnapshot,

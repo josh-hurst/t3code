@@ -102,7 +102,9 @@ const makeHarness = Effect.fn("ServerUsageTest.makeHarness")(function* (
         return {
           contractVersion: USAGE_CONTRACT_VERSION,
           readAt: "2026-09-04T12:00:00Z",
-          ...input,
+          timeZone: input.timeZone,
+          sinceDay: input.sinceDay,
+          untilDay: input.untilDay,
           buckets: [
             {
               day: input.sinceDay,

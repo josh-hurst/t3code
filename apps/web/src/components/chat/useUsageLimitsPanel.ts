@@ -2,6 +2,7 @@ import type {
   EnvironmentId,
   ProviderInstanceId,
   ServerProvider,
+  ThreadId,
   UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
 import { collectProviderUsageLimits, hasProviderUsageLimits } from "@t3tools/shared/usageLimits";
@@ -11,7 +12,7 @@ import { toastManager } from "../ui/toast";
 import { usageLimitsBannerItem } from "./ComposerUsageLimits";
 
 /**
- * The open /usage-limits panel for one thread, model and turn. Only the open
+ * The open /usage panel for one thread, model and turn. Only the open
  * moment is stored: the rows read live provider data, so a redeemed reset
  * credit or refreshed probe shows through. Anything that spends quota closes
  * it: a new turn from any source, or the agent resuming after an approval or
@@ -24,6 +25,8 @@ import { usageLimitsBannerItem } from "./ComposerUsageLimits";
 export function useUsageLimitsPanel(input: {
   readonly environmentId: EnvironmentId;
   readonly threadKey: string;
+  /** Null for a draft, which has no usage of its own yet. */
+  readonly threadId: ThreadId | null;
   readonly panelKey: string | null;
   readonly providerInstanceId: ProviderInstanceId | null;
   readonly providerDriver: ServerProvider["driver"] | null;
@@ -33,6 +36,7 @@ export function useUsageLimitsPanel(input: {
   const {
     environmentId,
     threadKey,
+    threadId,
     panelKey,
     providerInstanceId,
     providerDriver,
@@ -55,11 +59,17 @@ export function useUsageLimitsPanel(input: {
   const banner =
     report !== null && panel !== null
       ? // A fresh id per opening: the stack keeps the last dismissed id as "exiting".
-        usageLimitsBannerItem(`usage-limits:${panel.key}:${panel.now}`, report, environmentId, () =>
-          setPanel(null),
+        usageLimitsBannerItem(
+          `usage-limits:${panel.key}:${panel.now}`,
+          report,
+          environmentId,
+          threadId,
+          // Only Claude Code records what it charges each call to.
+          providerDriver === "claudeAgent",
+          () => setPanel(null),
         )
       : null;
-  // T3 owns /usage-limits only where Limits has data for the selected provider;
+  // T3 owns /usage only where Limits has data for the selected provider;
   // elsewhere the name stays the provider's own and is sent through untouched.
   const offered =
     providerDriver !== null && hasProviderUsageLimits(providerDriver, providers, sources);

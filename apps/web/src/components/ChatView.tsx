@@ -1346,6 +1346,7 @@ export default function ChatView(props: ChatViewProps) {
   } = useUsageLimitsPanel({
     environmentId,
     threadKey: routeThreadKey,
+    threadId: serverThread?.id ?? null,
     panelKey: usageLimitsKey,
     providerInstanceId: activeProviderInstanceId,
     providerDriver: activeProviderStatus?.driver ?? null,
@@ -3774,6 +3775,8 @@ export default function ChatView(props: ChatViewProps) {
               worktreePath={activeThread.worktreePath}
               isServerThread={isServerThread}
               {...(draftId ? { draftId } : {})}
+              usageContext={activeContextWindow}
+              usageRevision={`${activeLatestRun?.runId ?? ""}:${latestRunSettled}`}
               activeProjectName={activeProject?.title}
               activeProjectScripts={activeProject ? activeProjectScripts : undefined}
               preferredScriptId={

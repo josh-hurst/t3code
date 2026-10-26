@@ -13,18 +13,23 @@ import {
 } from "./threadDetailsCardLayout";
 import { observeResize } from "../../lib/observeResize";
 
+const FOOTER_GAP = 8;
+
 export function ThreadDetailsCard({
   threadRef,
   anchor,
   handle,
   onPresentationChange,
   children,
+  footer,
 }: {
   threadRef: ScopedThreadRef;
   anchor: RefObject<Element | null>;
   handle: ReturnType<typeof PopoverCreateHandle>;
   onPresentationChange: (presentation: ThreadPanelPresentation) => void;
   children: (density: "full" | "compact" | "essential") => ReactNode;
+  /** A separate bubble under the card that moves with it. */
+  footer?: ReactNode;
 }) {
   const canvas = useChatCanvas();
   const preferredPlacement = canvas
@@ -61,8 +66,18 @@ export function ThreadDetailsCard({
   });
   const contentHeights =
     measurements.key === measurementKey ? measurements.heights : { full: 0, compact: 0 };
+  const [footerElement, setFooterElement] = useState<HTMLDivElement | null>(null);
+  const [footerHeight, setFooterHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (!footerElement) return;
+    const measure = () => setFooterHeight(footerElement.offsetHeight);
+    measure();
+    return observeResize(footerElement, measure);
+  }, [footerElement]);
+  // The bubble takes its height plus a gap from what the card can use.
+  const footerSpace = footer && footerElement ? footerHeight + FOOTER_GAP : 0;
   const height = placement?.height ?? Math.max(0, (canvas?.container.height ?? 0) - 52);
-  const density = resolveThreadDetailsCardDensity(height, contentHeights);
+  const density = resolveThreadDetailsCardDensity(height - footerSpace, contentHeights);
   const reportDetailsCard = canvas?.reportDetailsCard;
   const cardLeft = preferredPlacement?.x;
   const cardRight = preferredPlacement
@@ -70,7 +85,8 @@ export function ThreadDetailsCard({
     : undefined;
   const cardBottom =
     preferredPlacement && measurements.key === measurementKey && measurements.fullContentHeight > 0
-      ? preferredPlacement.y + Math.min(measurements.fullContentHeight, preferredPlacement.height)
+      ? preferredPlacement.y +
+        Math.min(measurements.fullContentHeight + footerSpace, preferredPlacement.height)
       : undefined;
   useLayoutEffect(() => {
     reportDetailsCard?.(
@@ -120,10 +136,10 @@ export function ThreadDetailsCard({
     measure();
     return observeResize(element, measure);
   }, [contentElement, density, measurementKey]);
-  const card = (
+  const mainCard = (
     <div
       className={cn(
-        "dropdown-glass isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden rounded-3xl",
+        "dropdown-glass isolate contain-paint grid max-h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-3xl",
         mode === "popover" &&
           "max-h-[min(calc(100dvh-6.5rem),calc(var(--available-height,100dvh)-1rem))]",
       )}
@@ -134,6 +150,22 @@ export function ThreadDetailsCard({
         <div ref={setContentElement}>{children(density)}</div>
       </ScrollArea>
     </div>
+  );
+  const card = footer ? (
+    <div
+      className="flex max-h-full min-h-0 flex-col"
+      style={{ gap: FOOTER_GAP, ...(placement ? { maxHeight: height } : {}) }}
+    >
+      {mainCard}
+      <div
+        ref={setFooterElement}
+        className="dropdown-glass isolate contain-paint shrink-0 overflow-hidden rounded-3xl"
+      >
+        {footer}
+      </div>
+    </div>
+  ) : (
+    mainCard
   );
   return (
     <Popover

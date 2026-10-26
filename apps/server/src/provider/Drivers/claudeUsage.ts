@@ -8,6 +8,7 @@ import {
   tokenCount,
   type ProviderUsageReader,
   type TranscriptUsageFormat,
+  type UsageAttribution,
   type UsageRecord,
 } from "@t3tools/provider-core/server/usage";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -56,6 +57,7 @@ function parseClaudeRecord(parsed: unknown): UsageRecord | null {
     messageId === null && requestId === null ? null : `${messageId ?? ""}:${requestId ?? ""}`;
 
   const cost = record["costUSD"];
+  const attribution = parseAttribution(record);
 
   return {
     provider: "claude",
@@ -72,7 +74,25 @@ function parseClaudeRecord(parsed: unknown): UsageRecord | null {
     },
     reportedCostUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : null,
     speed: usageRecord["speed"] === "fast" ? "fast" : "standard",
+    ...(attribution === null ? {} : { attribution }),
     dedupeKey,
+  };
+}
+
+const nonEmpty = (value: unknown): string | undefined =>
+  typeof value === "string" && value.length > 0 ? value : undefined;
+
+// Claude Code stamps each assistant record with the subagent, MCP server and skill it charges
+// the call to; its own /usage ranks them from these same fields.
+function parseAttribution(record: Record<string, unknown>): UsageAttribution | null {
+  const agent = nonEmpty(record["attributionAgent"]);
+  const mcpServer = nonEmpty(record["attributionMcpServer"]);
+  const skill = nonEmpty(record["attributionSkill"]);
+  if (agent === undefined && mcpServer === undefined && skill === undefined) return null;
+  return {
+    ...(agent === undefined ? {} : { agent }),
+    ...(mcpServer === undefined ? {} : { mcpServer }),
+    ...(skill === undefined ? {} : { skill }),
   };
 }
 
@@ -86,6 +106,9 @@ export const claudeUsageFormat: TranscriptUsageFormat<void> = {
     requestId: true,
     sessionId: true,
     costUSD: true,
+    attributionAgent: true,
+    attributionMcpServer: true,
+    attributionSkill: true,
     message: { id: true, model: true, usage: true },
   },
   usageMarkers: ['"usage"'],

@@ -471,6 +471,7 @@ export const ClientSettingsSchema = Schema.Struct({
   sharedProjectTerminals: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarCompactRows: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarRowDetail: SidebarRowDetail.pipe(Schema.withDecodingDefault(Effect.succeed("branch"))),
+  threadDetailsUsage: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarProjectSections: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarNeedsYouPlacement: SidebarNeedsYouPlacement.pipe(
     Schema.withDecodingDefault(Effect.succeed("project")),
@@ -1769,6 +1770,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sharedProjectTerminals: Schema.optionalKey(Schema.Boolean),
   sidebarCompactRows: Schema.optionalKey(Schema.Boolean),
   sidebarRowDetail: Schema.optionalKey(SidebarRowDetail),
+  threadDetailsUsage: Schema.optionalKey(Schema.Boolean),
   sidebarProjectSections: Schema.optionalKey(Schema.Boolean),
   sidebarNeedsYouPlacement: Schema.optionalKey(SidebarNeedsYouPlacement),
   sidebarNeedsYouIncludesCompleted: Schema.optionalKey(Schema.Boolean),
