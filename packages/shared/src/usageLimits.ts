@@ -579,13 +579,15 @@ export function formatResetsIn(window: ServerProviderUsageWindow, now: number): 
   return `resets in ${formatDuration(resetsAt - now)}`;
 }
 
+/** Takes over the provider's own `/usage`, which would answer inside the conversation. */
 export const USAGE_LIMITS_COMMAND = {
-  name: "usage-limits",
-  description: "Show this provider's usage limits",
+  name: "usage",
+  description: "Show usage limits and this thread's token use",
 } satisfies ServerProviderSlashCommand;
 
 export function isUsageLimitsCommand(prompt: string): boolean {
-  return prompt.trim().toLowerCase() === "/usage-limits";
+  const command = prompt.trim().toLowerCase();
+  return command === "/usage" || command === "/usage-limits";
 }
 
 export function hasProviderUsageLimits(

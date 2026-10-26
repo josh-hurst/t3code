@@ -456,6 +456,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarRowDetail !== DEFAULT_UNIFIED_SETTINGS.sidebarRowDetail
       ? ["Thread row details"]
       : []),
+    ...(settings.threadDetailsUsage !== DEFAULT_UNIFIED_SETTINGS.threadDetailsUsage
+      ? ["Thread usage in details"]
+      : []),
     ...(settings.sidebarProjectSections !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSections
       ? ["Project sections"]
       : []),
@@ -641,6 +644,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarCompactRows: DEFAULT_UNIFIED_SETTINGS.sidebarCompactRows,
       sidebarRowDetail: DEFAULT_UNIFIED_SETTINGS.sidebarRowDetail,
+      threadDetailsUsage: DEFAULT_UNIFIED_SETTINGS.threadDetailsUsage,
       sidebarProjectSections: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSections,
       sidebarNeedsYouPlacement: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement,
       sidebarNeedsYouIncludesCompleted: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouIncludesCompleted,
@@ -952,6 +956,32 @@ export function GeneralSettingsPanel() {
             }
           />
         )}
+
+        <SettingsRow
+          {...searchableSetting("thread-details-usage")}
+          description="Show the thread's context length, cost, and token use in the thread details panel."
+          resetAction={
+            settings.threadDetailsUsage !== DEFAULT_UNIFIED_SETTINGS.threadDetailsUsage ? (
+              <SettingResetButton
+                label="thread usage in details"
+                onClick={() =>
+                  updateSettings({
+                    threadDetailsUsage: DEFAULT_UNIFIED_SETTINGS.threadDetailsUsage,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.threadDetailsUsage}
+              onCheckedChange={(checked) =>
+                updateSettings({ threadDetailsUsage: Boolean(checked) })
+              }
+              aria-label="Thread usage in details"
+            />
+          }
+        />
 
         <SettingsRow
           {...searchableSetting("project-sections")}

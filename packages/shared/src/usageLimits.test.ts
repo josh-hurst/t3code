@@ -879,7 +879,7 @@ describe("pooled account columns", () => {
   });
 });
 
-describe("/usage-limits", () => {
+describe("/usage", () => {
   const limits = { checkedAt: "2026-09-03T11:00:00.000Z", windows: [window] };
   const selected = provider({
     usageLimits: limits,
@@ -1176,26 +1176,26 @@ describe("/usage-limits", () => {
       ],
     });
     const [supported] = withUsageLimitsCommands([withWorkspace], sources);
-    expect(supported?.slashCommands.map((command) => command.name)).toEqual(["usage-limits"]);
+    expect(supported?.slashCommands.map((command) => command.name)).toEqual(["usage"]);
     expect(
       supported?.workspaceSnapshots?.[0]?.slashCommands.map((command) => command.name),
-    ).toEqual(["usage-limits"]);
+    ).toEqual(["usage"]);
     expect(withUsageLimitsCommands([withWorkspace], [])[0]?.slashCommands).toEqual([]);
     const ownCommand = provider({
-      slashCommands: [{ name: "usage-limits", description: "Provider's own" }],
+      slashCommands: [{ name: "usage", description: "Provider's own" }],
     });
     expect(withUsageLimitsCommands([ownCommand], [])[0]?.slashCommands).toEqual([
-      { name: "usage-limits", description: "Provider's own" },
+      { name: "usage", description: "Provider's own" },
     ]);
     const unreadable = { ...sources[0]!, accounts: [], error: "token expired" };
     expect(
       withUsageLimitsCommands([withWorkspace], [unreadable])[0]?.slashCommands.map(
         (command) => command.name,
       ),
-    ).toEqual(["usage-limits"]);
+    ).toEqual(["usage"]);
     expect(
       withUsageLimitsCommands([selected], [])[0]?.slashCommands.map((command) => command.name),
-    ).toEqual(["usage-limits"]);
+    ).toEqual(["usage"]);
   });
 });
 

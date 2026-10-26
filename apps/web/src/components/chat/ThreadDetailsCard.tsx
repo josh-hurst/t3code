@@ -11,16 +11,21 @@ import {
 } from "./threadDetailsCardLayout";
 import { observeResize } from "../../lib/observeResize";
 
+const FOOTER_GAP = 8;
+
 export function ThreadDetailsCard({
   threadRef,
   anchor,
   handle,
   children,
+  footer,
 }: {
   threadRef: ScopedThreadRef;
   anchor: RefObject<Element | null>;
   handle: ReturnType<typeof PopoverCreateHandle>;
   children: (density: "full" | "compact" | "essential") => ReactNode;
+  /** A separate bubble under the card that moves with it. */
+  footer?: ReactNode;
 }) {
   const canvas = useChatCanvas();
   const preferredPlacement = canvas?.preferredDetailsCard ?? null;
@@ -40,8 +45,18 @@ export function ThreadDetailsCard({
   });
   const contentHeights =
     measurements.key === measurementKey ? measurements.heights : { full: 0, compact: 0 };
+  const [footerElement, setFooterElement] = useState<HTMLDivElement | null>(null);
+  const [footerHeight, setFooterHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (!footerElement) return;
+    const measure = () => setFooterHeight(footerElement.offsetHeight);
+    measure();
+    return observeResize(footerElement, measure);
+  }, [footerElement]);
+  // The bubble takes its height plus a gap from what the card can use.
+  const footerSpace = footer && footerElement ? footerHeight + FOOTER_GAP : 0;
   const height = placement?.height ?? Math.max(0, (canvas?.container.height ?? 0) - 52);
-  const density = resolveThreadDetailsCardDensity(height, contentHeights);
+  const density = resolveThreadDetailsCardDensity(height - footerSpace, contentHeights);
   const measureDetailsCard = canvas?.measureDetailsCard;
   const cardWidth = preferredPlacement?.width;
   // The mode derives from canvas measurements, the preview frame and the
@@ -81,7 +96,8 @@ export function ThreadDetailsCard({
         measureDetailsCard?.({
           threadRef: { environmentId, threadId },
           width: cardWidth,
-          fullContentHeight: next,
+          // The usage bubble moves with the card, so frames clear it too.
+          fullContentHeight: next + footerSpace,
         });
       }
     };
@@ -95,11 +111,12 @@ export function ThreadDetailsCard({
     measureDetailsCard,
     environmentId,
     threadId,
+    footerSpace,
   ]);
-  const card = (
+  const mainCard = (
     <div
       className={cn(
-        "dropdown-glass isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden rounded-2xl",
+        "dropdown-glass isolate contain-paint grid max-h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-2xl",
         mode === "popover" &&
           "max-h-[min(calc(100dvh-6.5rem),calc(var(--available-height,100dvh)-1rem))]",
       )}
@@ -110,6 +127,22 @@ export function ThreadDetailsCard({
         <div ref={setContentElement}>{children(density)}</div>
       </ScrollArea>
     </div>
+  );
+  const card = footer ? (
+    <div
+      className="flex max-h-full min-h-0 flex-col"
+      style={{ gap: FOOTER_GAP, ...(placement ? { maxHeight: height } : {}) }}
+    >
+      {mainCard}
+      <div
+        ref={setFooterElement}
+        className="dropdown-glass isolate contain-paint shrink-0 overflow-hidden rounded-2xl"
+      >
+        {footer}
+      </div>
+    </div>
+  ) : (
+    mainCard
   );
   return (
     <Popover

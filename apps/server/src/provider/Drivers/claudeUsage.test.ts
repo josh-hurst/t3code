@@ -48,6 +48,32 @@ describe("parseClaudeLine", () => {
     expect(record?.speed).toBe("standard");
   });
 
+  it("keeps what Claude Code charged the call to", () => {
+    const line = JSON.parse(claudeLine({ messageId: "msg_a", contentType: "tool_use" }));
+    const attributed = {
+      ...line,
+      attributionAgent: "Explore",
+      attributionMcpServer: "Roblox_Studio",
+      attributionMcpTool: "execute_luau",
+      attributionSkill: "",
+    };
+    expect(parseClaudeLine(JSON.stringify(attributed))?.attribution).toEqual({
+      agent: "Explore",
+      mcpServer: "Roblox_Studio",
+    });
+    // The fast reader only hands the parser the fields the format selects.
+    expect(claudeUsageFormat.parseProjected(attributed, undefined)[0]?.attribution).toEqual({
+      agent: "Explore",
+      mcpServer: "Roblox_Studio",
+    });
+    expect(claudeUsageFormat.selectFields).toMatchObject({
+      attributionAgent: true,
+      attributionMcpServer: true,
+      attributionSkill: true,
+    });
+    expect(parseClaudeLine(JSON.stringify(line))?.attribution).toBeUndefined();
+  });
+
   it("gives every content block of one message the same dedupe key", () => {
     // Content-block records repeat full parent usage; summing them overcounts.
     const text = parseClaudeLine(claudeLine({ messageId: "msg_2", contentType: "text" }));

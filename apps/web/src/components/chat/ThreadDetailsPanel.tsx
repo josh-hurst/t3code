@@ -8,6 +8,8 @@ import type {
 } from "@t3tools/contracts";
 
 import type { DraftId } from "../../composerDraftStore";
+import { usePrimarySettings } from "../../hooks/useSettings";
+import type { ContextWindowSnapshot } from "../../lib/contextWindow";
 import { useT3ProjectFileScripts } from "../../hooks/useT3ProjectFileScripts";
 import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
 import { BranchToolbar } from "../BranchToolbar";
@@ -22,6 +24,7 @@ import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
+import { ThreadUsageDetails } from "./ThreadUsageDetails";
 
 const GitActionsControl = memo(BaseGitActionsControl);
 
@@ -36,6 +39,9 @@ export interface ThreadDetailsPanelProps extends Pick<
   worktreePath: string | null;
   isServerThread: boolean;
   draftId?: DraftId;
+  usageContext: ContextWindowSnapshot | null;
+  /** Changes when a turn starts or settles, so the usage totals refetch. */
+  usageRevision: string;
   activeProjectName: string | undefined;
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
   preferredScriptId: string | null;
@@ -69,6 +75,7 @@ export interface ThreadDetailsPanelProps extends Pick<
 }
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
+  const showUsage = usePrimarySettings((settings) => settings.threadDetailsUsage);
   const fileScripts = useT3ProjectFileScripts(
     props.environmentId,
     props.activeProjectScripts ? props.gitCwd : null,
@@ -105,6 +112,16 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       threadRef={{ environmentId: props.environmentId, threadId: props.threadId }}
       anchor={props.anchor}
       handle={props.handle}
+      footer={
+        showUsage && props.isServerThread && !props.draftId ? (
+          <ThreadUsageDetails
+            environmentId={props.environmentId}
+            threadId={props.threadId}
+            revision={props.usageRevision}
+            context={props.usageContext}
+          />
+        ) : undefined
+      }
     >
       {(density) => (
         <>

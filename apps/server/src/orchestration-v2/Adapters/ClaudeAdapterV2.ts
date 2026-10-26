@@ -3838,6 +3838,9 @@ interface ClaudeLiveQueryContext {
   permissionMode: PermissionMode;
   stopping: boolean;
   readonly subagentsFromEarlierProcesses: ReadonlySet<ActiveClaudeSubagent>;
+  // Each result's total_cost_usd is this CLI process's running total, so a turn costs the
+  // difference from the highest total already reported.
+  reportedCostUsd: number;
 }
 
 interface ActiveClaudeToolCall {
@@ -7034,6 +7037,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly failure?: OrchestrationV2ProviderFailure;
           readonly threadDisposition?: "reusable" | "broken";
           readonly result?: SDKResultMessage;
+          readonly costUsd?: number;
         }) {
           yield* reasoningDeltas.flushTurn(input.context.nativeTurnId);
           if (input.context.compaction?.status === "running") {
@@ -7217,13 +7221,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     status: input.status,
                     completedAt: input.completedAt,
                   }),
-                  turnTokenUsage: normalizeClaudeTurnTokenUsage(
-                    input.result,
-                    input.context.subagentsByTaskId.size > 0 ||
-                      input.context.subagentsByToolUseId.size > 0,
-                    input.status,
-                    input.context.steeredSegmentUsage,
-                  ),
+                  turnTokenUsage: {
+                    ...normalizeClaudeTurnTokenUsage(
+                      input.result,
+                      input.context.subagentsByTaskId.size > 0 ||
+                        input.context.subagentsByToolUseId.size > 0,
+                      input.status,
+                      input.context.steeredSegmentUsage,
+                    ),
+                    ...(input.costUsd === undefined ? {} : { costUsd: input.costUsd }),
+                  },
                 },
               }),
               // Emit the roster before root settlement so writeFinalRunEvents preserves it.
@@ -9050,6 +9057,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               resultFailure?.class === "usage_limit"
                 ? { ...resultFailure, resetAt: resetAt ?? resultFailure.resetAt ?? null }
                 : resultFailure;
+            let costUsd: number | undefined;
+            if (Number.isFinite(message.total_cost_usd)) {
+              costUsd = Math.max(0, message.total_cost_usd - liveQuery.reportedCostUsd);
+              liveQuery.reportedCostUsd = Math.max(
+                liveQuery.reportedCostUsd,
+                message.total_cost_usd,
+              );
+            }
             yield* finalizeActiveTurn({
               context,
               status: interrupted
@@ -9059,6 +9074,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   : terminalStatusFromResult(message, failureHint),
               completedAt,
               result: message,
+              ...(costUsd === undefined ? {} : { costUsd }),
               ...(terminalFailure === null ? {} : { failure: terminalFailure }),
             });
           }
@@ -9804,6 +9820,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             receivedInit: false,
             permissionMode: queryOptions.permissionMode,
             stopping: false,
+            reportedCostUsd: 0,
             subagentsFromEarlierProcesses: new Set(
               [...(yield* Ref.get(sessionSubagentsByTaskId)).values()].filter(
                 (subagent) => subagent.task.status === "running",

@@ -2,6 +2,7 @@ import type {
   EnvironmentId,
   ProviderInstanceId,
   ServerProvider,
+  ThreadId,
   UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
 import { collectProviderUsageLimits, hasProviderUsageLimits } from "@t3tools/shared/usageLimits";
@@ -14,6 +15,8 @@ import { usageLimitsBannerItem } from "./ComposerUsageLimits";
 export function useUsageLimitsPanel(input: {
   readonly environmentId: EnvironmentId;
   readonly threadKey: string;
+  /** Null for a draft, which has no usage of its own yet. */
+  readonly threadId: ThreadId | null;
   readonly panelKey: string | null;
   readonly providerInstanceId: ProviderInstanceId | null;
   readonly providerDriver: ServerProvider["driver"] | null;
@@ -23,6 +26,7 @@ export function useUsageLimitsPanel(input: {
   const {
     environmentId,
     threadKey,
+    threadId,
     panelKey,
     providerInstanceId,
     providerDriver,
@@ -44,11 +48,17 @@ export function useUsageLimitsPanel(input: {
   const banner =
     report !== null && panel !== null
       ? // A fresh id per opening: the stack keeps the last dismissed id as "exiting".
-        usageLimitsBannerItem(`usage-limits:${panel.key}:${panel.now}`, report, environmentId, () =>
-          setPanel(null),
+        usageLimitsBannerItem(
+          `usage-limits:${panel.key}:${panel.now}`,
+          report,
+          environmentId,
+          threadId,
+          // Only Claude Code records what it charges each call to.
+          providerDriver === "claudeAgent",
+          () => setPanel(null),
         )
       : null;
-  // Intercept /usage-limits only when Limits has selected-provider data.
+  // Intercept /usage only when Limits has selected-provider data.
   const offered =
     providerDriver !== null && hasProviderUsageLimits(providerDriver, providers, sources);
 

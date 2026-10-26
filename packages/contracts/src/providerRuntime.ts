@@ -320,11 +320,14 @@ const TurnStartedPayload = Schema.Struct({
 export type TurnStartedPayload = typeof TurnStartedPayload.Type;
 
 // Input includes cache reads/writes; output includes the optional reasoningTokens subset.
+// Token counts cover the main agent only, while costUsd is whatever the provider billed for
+// the turn, subagents included.
 const TurnTokenUsageCommonFields = {
   usageScope: Schema.Literal("main_agent"),
   cachedInputTokens: Schema.optional(NonNegativeInt),
   cacheCreationTokens: Schema.optional(NonNegativeInt),
   reasoningTokens: Schema.optional(NonNegativeInt),
+  costUsd: Schema.optional(Schema.Number.check(Schema.isFinite())),
   hasSubagents: Schema.Boolean,
 };
 export const TurnTokenUsage = Schema.Union([
