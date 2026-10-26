@@ -3,41 +3,28 @@
     {
       "layers": [
         {
-          "image-name": "text.svg",
-          "name": "J6",
+          "image-name": "face.svg",
+          "name": "Face",
           "position": {
             "scale": 8.5,
             "translation-in-points": [0, 0]
-          },
-          "fill-specializations": [
-            {
-              "value": {
-                "solid": "srgb:0.10980,0.10980,0.11765,1.00000"
-              }
-            },
-            {
-              "appearance": "dark",
-              "value": {
-                "solid": "srgb:1.00000,1.00000,1.00000,1.00000"
-              }
-            }
-          ]
+          }
         }
       ],
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.5
+        "opacity": 0
       },
       "translucency": {
-        "enabled": true,
+        "enabled": false,
         "value": 0.5
       }
     },
     {
       "layers": [
         {
-          "image-name": "brackets.svg",
-          "name": "Brackets",
+          "image-name": "text.svg",
+          "name": "Agent",
           "position": {
             "scale": 8.5,
             "translation-in-points": [0, 0]
@@ -45,13 +32,7 @@
           "fill-specializations": [
             {
               "value": {
-                "solid": "srgb:0.10196,0.45098,0.90980,1.00000"
-              }
-            },
-            {
-              "appearance": "dark",
-              "value": {
-                "solid": "srgb:0.23922,0.60784,1.00000,1.00000"
+                "solid": "srgb:0.85098,0.46667,0.34118,1.00000"
               }
             }
           ]
@@ -62,7 +43,7 @@
         "opacity": 0.5
       },
       "translucency": {
-        "enabled": true,
+        "enabled": false,
         "value": 0.5
       }
     }
