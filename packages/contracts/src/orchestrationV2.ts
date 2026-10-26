@@ -3806,6 +3806,8 @@ export const OrchestrationV2GetThreadUsageInput = Schema.Struct({
   threadId: ThreadId,
   /** Ignored by the server; a new value makes clients fetch again after a turn. */
   revision: Schema.optional(Schema.String),
+  /** Count only turns that finished at or after this instant, such as a limit window's start. */
+  since: Schema.optional(IsoDateTime),
 });
 export type OrchestrationV2GetThreadUsageInput = typeof OrchestrationV2GetThreadUsageInput.Type;
 

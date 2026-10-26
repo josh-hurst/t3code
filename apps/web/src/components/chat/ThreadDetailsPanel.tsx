@@ -4,7 +4,9 @@ import type {
   ProjectId,
   ProjectScript,
   ResolvedKeybindingsConfig,
+  ServerProviderUsageWindow,
   ThreadId,
+  UsageProviderKind,
 } from "@t3tools/contracts";
 
 import type { DraftId } from "../../composerDraftStore";
@@ -40,6 +42,8 @@ export interface ThreadDetailsPanelProps extends Pick<
   isServerThread: boolean;
   draftId?: DraftId;
   usageContext: ContextWindowSnapshot | null;
+  usageWeeklyWindow: ServerProviderUsageWindow | null;
+  usageProvider: UsageProviderKind | null;
   /** Changes when a turn starts or settles, so the usage totals refetch. */
   usageRevision: string;
   activeProjectName: string | undefined;
@@ -119,6 +123,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
             threadId={props.threadId}
             revision={props.usageRevision}
             context={props.usageContext}
+            weeklyWindow={props.usageWeeklyWindow}
+            usageProvider={props.usageProvider}
           />
         ) : undefined
       }

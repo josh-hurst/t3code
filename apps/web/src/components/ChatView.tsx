@@ -290,6 +290,7 @@ import {
 } from "./chat/PanelLayoutControls";
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
+import { usageProviderForDriver, weeklyLimitWindow } from "./chat/threadWeeklyShare";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   resolveEffectiveEnvMode,
@@ -3747,6 +3748,8 @@ export default function ChatView(props: ChatViewProps) {
               isServerThread={isServerThread}
               {...(draftId ? { draftId } : {})}
               usageContext={activeContextWindow}
+              usageWeeklyWindow={weeklyLimitWindow(activeProviderStatus?.usageLimits?.windows)}
+              usageProvider={usageProviderForDriver(activeProviderStatus?.driver ?? null)}
               usageRevision={`${activeLatestRun?.runId ?? ""}:${latestRunSettled}`}
               activeProjectName={activeProject?.title}
               activeProjectScripts={activeProject ? activeProjectScripts : undefined}

@@ -1,12 +1,19 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ServerProviderUsageWindow,
+  ThreadId,
+  UsageProviderKind,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { ChevronDownIcon, GaugeIcon } from "lucide-react";
+import { useState } from "react";
 
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
 import { cn } from "~/lib/utils";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { useEnvironmentQuery } from "~/state/query";
+import { serverEnvironment } from "~/state/server";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import {
   THREAD_DETAILS_PANEL_CHEVRON_CLASS,
@@ -14,11 +21,17 @@ import {
   THREAD_DETAILS_PANEL_LABEL_CLASS,
 } from "./threadDetailsPanelStyles";
 import { formatUsd, threadUsageRows } from "./threadUsageFormat";
+import {
+  formatLimitShare,
+  limitWindowStartMs,
+  providerCostUsd,
+  usageDaysSince,
+  weeklyLimitShare,
+} from "./threadWeeklyShare";
 
 const EXPANDED_STORAGE_KEY = "t3code.threadDetailsUsageExpanded";
 
-// Lines details up under the row label: the row's inset, its icon, and the gap after it.
-const DETAIL_INSET_CLASS = "ps-9 pe-2.5";
+const DETAIL_INSET_CLASS = "px-2.5";
 
 function contextPercent(context: ContextWindowSnapshot | null): number | null {
   const used = context?.usedPercentage;
@@ -43,11 +56,15 @@ export function ThreadUsageDetails({
   threadId,
   revision,
   context,
+  weeklyWindow,
+  usageProvider,
 }: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly revision: string;
   readonly context: ContextWindowSnapshot | null;
+  readonly weeklyWindow: ServerProviderUsageWindow | null;
+  readonly usageProvider: UsageProviderKind | null;
 }) {
   const [expanded, setExpanded] = useLocalStorage(EXPANDED_STORAGE_KEY, true, Schema.Boolean);
   const { data: usage } = useEnvironmentQuery(
@@ -121,6 +138,15 @@ export function ThreadUsageDetails({
                 <DetailRow key={label} label={label} value={value} />
               ))
             : null}
+          {weeklyWindow !== null && usageProvider !== null ? (
+            <WeeklyShareRow
+              environmentId={environmentId}
+              threadId={threadId}
+              revision={revision}
+              window={weeklyWindow}
+              provider={usageProvider}
+            />
+          ) : null}
           {usage?.partial ? (
             <p className={cn("pt-1 text-2xs text-muted-foreground", DETAIL_INSET_CLASS)}>
               Some turns are missing from these totals.
@@ -130,4 +156,46 @@ export function ThreadUsageDetails({
       ) : null}
     </section>
   );
+}
+
+// Reads the provider's whole history for the window, so it mounts only while the bubble is open.
+function WeeklyShareRow({
+  environmentId,
+  threadId,
+  revision,
+  window,
+  provider,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly revision: string;
+  readonly window: ServerProviderUsageWindow;
+  readonly provider: UsageProviderKind;
+}) {
+  const startMs = limitWindowStartMs(window);
+  const [now] = useState(() => new Date());
+  const since = startMs === null ? null : new Date(startMs).toISOString();
+  const { data: threadUsage } = useEnvironmentQuery(
+    since === null
+      ? null
+      : orchestrationEnvironment.threadUsage({
+          environmentId,
+          input: { threadId, revision, since },
+        }),
+  );
+  const { data: summary } = useEnvironmentQuery(
+    startMs === null
+      ? null
+      : serverEnvironment.usageSummary({ environmentId, input: usageDaysSince(startMs, now) }),
+  );
+  const share =
+    threadUsage?.costUsd == null || summary === null
+      ? null
+      : weeklyLimitShare({
+          usedPercent: window.usedPercent,
+          threadCostUsd: threadUsage.costUsd,
+          totalCostUsd: providerCostUsd(summary, provider),
+        });
+  if (share === null) return null;
+  return <DetailRow label="Weekly limit" value={formatLimitShare(share)} />;
 }

@@ -47,6 +47,7 @@ export function ThreadDetailsCard({
     measurements.key === measurementKey ? measurements.heights : { full: 0, compact: 0 };
   const [footerElement, setFooterElement] = useState<HTMLDivElement | null>(null);
   const [footerHeight, setFooterHeight] = useState(0);
+  // oxlint-disable-next-line t3code/react-effect-budget -- tracks the bubble's DOM size, which React cannot know
   useLayoutEffect(() => {
     if (!footerElement) return;
     const measure = () => setFooterHeight(footerElement.offsetHeight);

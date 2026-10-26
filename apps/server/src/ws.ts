@@ -1967,7 +1967,7 @@ export const layerWsRpc = (
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.getThreadUsage]: (input) =>
-          threadManagement.getThreadUsage(input.threadId).pipe(
+          threadManagement.getThreadUsage(input.threadId, input.since).pipe(
             Effect.provideService(UsageService.UsageService, usage),
             Effect.mapError(
               (cause) =>

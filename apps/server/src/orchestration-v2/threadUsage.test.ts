@@ -11,7 +11,11 @@ import {
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 
-import { summarizeThreadUsage as summarize, turnModelResolver } from "./threadUsage.ts";
+import {
+  summarizeThreadUsage as summarize,
+  turnModelResolver,
+  turnsFinishedSince,
+} from "./threadUsage.ts";
 
 const opus: ModelSelection = {
   instanceId: ProviderInstanceId.make("claudeAgent"),
@@ -144,5 +148,11 @@ describe("summarizeThreadUsage", () => {
         },
       },
     ]);
+  });
+
+  it("keeps only turns that finished inside a limit window", () => {
+    // Turn n runs from n minutes for two seconds.
+    const turns = [turn(1, {}), turn(2, {}), turn(3, { status: "running", completedAt: null })];
+    expect(turnsFinishedSince(turns, 2 * 60_000).map((kept) => kept.ordinal)).toEqual([2]);
   });
 });

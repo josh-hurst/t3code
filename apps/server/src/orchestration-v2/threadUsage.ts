@@ -37,6 +37,15 @@ export function turnModelResolver(input: {
   };
 }
 
+export function turnsFinishedSince(
+  turns: ReadonlyArray<OrchestrationV2ProviderTurn>,
+  sinceMs: number,
+): ReadonlyArray<OrchestrationV2ProviderTurn> {
+  return turns.filter(
+    (turn) => turn.completedAt !== null && DateTime.toEpochMillis(turn.completedAt) >= sinceMs,
+  );
+}
+
 export function summarizeThreadUsage(
   turns: ReadonlyArray<OrchestrationV2ProviderTurn>,
   modelOf: (turn: OrchestrationV2ProviderTurn) => ModelSelection,
