@@ -6,7 +6,7 @@ import type {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { ChevronDownIcon, GaugeIcon } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
@@ -20,7 +20,7 @@ import {
   THREAD_DETAILS_PANEL_ICON_CLASS,
   THREAD_DETAILS_PANEL_LABEL_CLASS,
 } from "./threadDetailsPanelStyles";
-import { formatUsd, threadUsageRows } from "./threadUsageFormat";
+import { formatUsd, threadSpendRows, threadTokenRows } from "./threadUsageFormat";
 import {
   formatLimitShare,
   limitWindowStartMs,
@@ -43,6 +43,30 @@ function DetailRow({ label, value }: { readonly label: string; readonly value: s
     <div className={cn("flex h-6 items-center justify-between gap-3 text-xs", DETAIL_INSET_CLASS)}>
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium text-foreground/80 tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+function DetailGroup({
+  title,
+  children,
+}: {
+  readonly title?: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col border-border/60 py-1 not-first:border-t">
+      {title ? (
+        <span
+          className={cn(
+            "pt-1 pb-0.5 text-2xs font-medium text-muted-foreground/70",
+            DETAIL_INSET_CLASS,
+          )}
+        >
+          {title}
+        </span>
+      ) : null}
+      {children}
     </div>
   );
 }
@@ -105,50 +129,61 @@ export function ThreadUsageDetails({
         />
       </ThreadDetailsControl>
       {expanded ? (
-        <div className="flex flex-col pt-1 pb-0.5">
-          <DetailRow
-            label="Context"
-            value={
-              context === null
-                ? "Not reported yet"
-                : context.maxTokens == null
-                  ? formatContextWindowTokens(context.usedTokens)
-                  : `${formatContextWindowTokens(context.usedTokens)} / ${formatContextWindowTokens(context.maxTokens)}`
-            }
-          />
-          {percent === null ? null : (
-            <div className={cn("pt-0.5 pb-1.5", DETAIL_INSET_CLASS)}>
-              <div
-                className="h-1 w-full overflow-hidden rounded-full bg-muted"
-                role="progressbar"
-                aria-label="Context window used"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(percent)}
-              >
-                <div
-                  className={cn("h-full", percent > 90 ? "bg-destructive" : "bg-foreground/40")}
-                  style={{ width: `${percent}%` }}
-                />
-              </div>
-            </div>
-          )}
-          {hasTotals
-            ? threadUsageRows(usage).map(([label, value]) => (
-                <DetailRow key={label} label={label} value={value} />
-              ))
-            : null}
-          {weeklyWindow !== null && usageProvider !== null ? (
-            <WeeklyShareRow
-              environmentId={environmentId}
-              threadId={threadId}
-              revision={revision}
-              window={weeklyWindow}
-              provider={usageProvider}
+        <div className="flex flex-col pt-1">
+          <DetailGroup>
+            <DetailRow
+              label="Context"
+              value={
+                context === null
+                  ? "Not reported yet"
+                  : context.maxTokens == null
+                    ? formatContextWindowTokens(context.usedTokens)
+                    : `${formatContextWindowTokens(context.usedTokens)} / ${formatContextWindowTokens(context.maxTokens)}`
+              }
             />
+            {percent === null ? null : (
+              <div className={cn("pt-0.5 pb-1", DETAIL_INSET_CLASS)}>
+                <div
+                  className="h-1 w-full overflow-hidden rounded-full bg-muted"
+                  role="progressbar"
+                  aria-label="Context window used"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(percent)}
+                >
+                  <div
+                    className={cn("h-full", percent > 90 ? "bg-destructive" : "bg-foreground/40")}
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </DetailGroup>
+          {hasTotals ? (
+            <>
+              <DetailGroup title="Spend">
+                {threadSpendRows(usage).map(([label, value]) => (
+                  <DetailRow key={label} label={label} value={value} />
+                ))}
+                {weeklyWindow !== null && usageProvider !== null ? (
+                  <WeeklyShareRow
+                    environmentId={environmentId}
+                    threadId={threadId}
+                    revision={revision}
+                    window={weeklyWindow}
+                    provider={usageProvider}
+                  />
+                ) : null}
+              </DetailGroup>
+              <DetailGroup title="Tokens">
+                {threadTokenRows(usage).map(([label, value]) => (
+                  <DetailRow key={label} label={label} value={value} />
+                ))}
+              </DetailGroup>
+            </>
           ) : null}
           {usage?.partial ? (
-            <p className={cn("pt-1 text-2xs text-muted-foreground", DETAIL_INSET_CLASS)}>
+            <p className={cn("pt-1 pb-1 text-2xs text-muted-foreground", DETAIL_INSET_CLASS)}>
               Some turns are missing from these totals.
             </p>
           ) : null}
