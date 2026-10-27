@@ -95,17 +95,15 @@ export function startThreadNotifications(
               : status === "request"
                 ? "Guest request"
                 : "Input needed";
-    if (hasNotificationSound(mode)) {
+    const onScreen = document.visibilityState === "visible" && document.hasFocus();
+    const viewingThread =
+      onScreen && active.environmentId === environmentId && active.threadId === thread.id;
+    if (hasNotificationSound(mode) && !(kind === "completion" && viewingThread)) {
       void playNotificationSound(kind, () =>
         hasNotificationSound(getClientSettings().notificationMode),
       );
     }
-    if (
-      inAppNotificationsEnabled &&
-      document.visibilityState === "visible" &&
-      document.hasFocus() &&
-      (active.environmentId !== environmentId || active.threadId !== thread.id)
-    ) {
+    if (inAppNotificationsEnabled && onScreen && !viewingThread) {
       const toastId = toastManager.add({
         type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
         title,
@@ -135,7 +133,7 @@ export function startThreadNotifications(
     }
     if (
       !hasDesktopNotifications(mode) ||
-      (document.visibilityState === "visible" && document.hasFocus()) ||
+      onScreen ||
       typeof Notification === "undefined" ||
       Notification.permission !== "granted"
     )
