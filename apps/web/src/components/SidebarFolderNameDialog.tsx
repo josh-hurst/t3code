@@ -42,7 +42,7 @@ function finish(name: string | null) {
 
 export function SidebarFolderNameDialogHost() {
   const request = useRequest((state) => state.request);
-  // oxlint-disable-next-line t3code/react-effect-budget -- a prompt still open when the host unmounts resolves as cancelled
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a prompt still open when the host unmounts resolves as cancelled
   useEffect(() => () => finish(null), []);
   return request ? <SidebarFolderNameDialog request={request} /> : null;
 }

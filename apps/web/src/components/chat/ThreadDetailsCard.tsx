@@ -1,3 +1,4 @@
+import { workspaceAreaProps } from "../../lib/workspaceFocus";
 import { useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { ScrollArea } from "../ui/scroll-area";
@@ -10,6 +11,7 @@ import {
   resolveThreadDetailsCardDensity,
 } from "./threadDetailsCardLayout";
 import { observeResize } from "../../lib/observeResize";
+import { requestWorkspaceFocus } from "../../lib/workspaceFocus";
 
 const FOOTER_GAP = 8;
 
@@ -27,6 +29,7 @@ export function ThreadDetailsCard({
   /** A separate bubble under the card that moves with it. */
   footer?: ReactNode;
 }) {
+  const detailsArea = workspaceAreaProps("details", 3, "Thread details");
   const canvas = useChatCanvas();
   const preferredPlacement = canvas?.preferredDetailsCard ?? null;
   const placement = canvas?.detailsCardPlacement ?? null;
@@ -47,7 +50,7 @@ export function ThreadDetailsCard({
     measurements.key === measurementKey ? measurements.heights : { full: 0, compact: 0 };
   const [footerElement, setFooterElement] = useState<HTMLDivElement | null>(null);
   const [footerHeight, setFooterHeight] = useState(0);
-  // oxlint-disable-next-line t3code/react-effect-budget -- tracks the bubble's DOM size, which React cannot know
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks the bubble's DOM size, which React cannot know
   useLayoutEffect(() => {
     if (!footerElement) return;
     const measure = () => setFooterHeight(footerElement.offsetHeight);
@@ -64,6 +67,7 @@ export function ThreadDetailsCard({
   // inline flag, which live in three stores, so no single write site sees the
   // card leave popover mode. A flag left set would reopen the popover unasked
   // when the card returns to popover mode.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the popover flag in the right panel store when the derived mode turns inline
   useLayoutEffect(() => {
     if (mode === "inline" && popoverOpen)
       useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", false);
@@ -72,6 +76,7 @@ export function ThreadDetailsCard({
   const { environmentId, threadId } = threadRef;
   // Re-measures when the density or measurement key changes, so each density's
   // height is measured once it renders.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the card's DOM height via ResizeObserver and reports it to the canvas
   useLayoutEffect(() => {
     const element = contentElement;
     if (!element || density === "essential") return;
@@ -165,7 +170,8 @@ export function ThreadDetailsCard({
     >
       {placement && inlineOpen ? (
         <aside
-          aria-label="Thread details"
+          {...detailsArea}
+          data-workspace-focus-key={`details:${threadRef.environmentId}:${threadRef.threadId}`}
           // Skip the return transition to avoid overlapping the rising preview.
           className={cn(
             "absolute z-20",
@@ -187,6 +193,13 @@ export function ThreadDetailsCard({
           mounted, because its exit animation never finishes. Staying in the tree
           lets it close cleanly when the card switches inline. */}
       <PopoverPopup
+        {...(mode === "popover" ? detailsArea : {})}
+        role="dialog"
+        data-workspace-focus-key={`details:${threadRef.environmentId}:${threadRef.threadId}`}
+        initialFocus={() => {
+          requestWorkspaceFocus({ area: "details" });
+          return false;
+        }}
         anchor={anchor}
         align="end"
         // Account for the find panel's 8px card padding.

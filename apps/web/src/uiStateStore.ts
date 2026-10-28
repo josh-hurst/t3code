@@ -1,7 +1,7 @@
 import { Debouncer } from "@tanstack/react-pacer";
 import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import { create } from "zustand";
-import { normalizeProjectPathForComparison } from "./lib/projectPaths";
+import { normalizeProjectPathForComparison } from "@t3tools/client-runtime/state/projects";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
 const THREAD_CHANGED_FILES_EXPANSION_VERSION = 2;
@@ -27,6 +27,7 @@ export interface PersistedUiState {
   projectOrderCwds?: string[];
   defaultAdvertisedEndpointKey?: string | null;
   sidebarProjectScopeKey?: string | null;
+  sidebarProjectScopeKeys?: string[];
   sidebarHiddenProjectKeys?: string[];
   sidebarFolders?: SidebarFolder[];
   sidebarThreadFolderById?: Record<string, string>;
@@ -38,7 +39,7 @@ export interface PersistedUiState {
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
   projectOrder: string[];
-  sidebarProjectScopeKey: string | null;
+  sidebarProjectScopeKeys: string[];
   sidebarHiddenProjectKeys: string[];
   /** Folders group the active list when project sections are off, in this order. */
   sidebarFolders: SidebarFolder[];
@@ -70,7 +71,7 @@ export interface UiState
 const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
-  sidebarProjectScopeKey: null,
+  sidebarProjectScopeKeys: [],
   sidebarHiddenProjectKeys: [],
   sidebarFolders: [],
   sidebarThreadFolderById: {},
@@ -195,7 +196,9 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
         ? sanitizePersistedThreadChangedFilesExpanded(parsed.threadChangedFilesExpandedById)
         : {},
     defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
-    sidebarProjectScopeKey: sanitizeOptionalKey(parsed.sidebarProjectScopeKey),
+    sidebarProjectScopeKeys: sanitizeStringArray(
+      parsed.sidebarProjectScopeKeys ?? [parsed.sidebarProjectScopeKey],
+    ),
     sidebarHiddenProjectKeys: sanitizeStringArray(parsed.sidebarHiddenProjectKeys),
     sidebarFolders,
     sidebarThreadFolderById: sanitizeThreadFolders(parsed.sidebarThreadFolderById, sidebarFolders),
@@ -272,7 +275,12 @@ export function persistState(state: UiState): void {
         projectOrder: state.projectOrder,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
-        sidebarProjectScopeKey: state.sidebarProjectScopeKey,
+        sidebarProjectScopeKeys: state.sidebarProjectScopeKeys,
+        // Older clients read only this field.
+        sidebarProjectScopeKey:
+          state.sidebarProjectScopeKeys.length === 1
+            ? (state.sidebarProjectScopeKeys[0] ?? null)
+            : null,
         sidebarHiddenProjectKeys: state.sidebarHiddenProjectKeys,
         sidebarFolders: state.sidebarFolders,
         sidebarThreadFolderById: state.sidebarThreadFolderById,
@@ -374,14 +382,17 @@ function setDefaultAdvertisedEndpointKey(state: UiState, key: string | null): Ui
   };
 }
 
-function setSidebarProjectScopeKey(state: UiState, projectKey: string | null): UiState {
-  const nextKey = sanitizeOptionalKey(projectKey);
-  if (state.sidebarProjectScopeKey === nextKey) {
+function setSidebarProjectScopeKeys(state: UiState, projectKeys: readonly string[]): UiState {
+  const nextKeys = sanitizeStringArray(projectKeys);
+  if (
+    nextKeys.length === state.sidebarProjectScopeKeys.length &&
+    nextKeys.every((key, index) => key === state.sidebarProjectScopeKeys[index])
+  ) {
     return state;
   }
   return {
     ...state,
-    sidebarProjectScopeKey: nextKey,
+    sidebarProjectScopeKeys: nextKeys,
   };
 }
 
@@ -547,7 +558,7 @@ interface UiStateStore extends UiState {
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
-  setSidebarProjectScopeKey: (projectKey: string | null) => void;
+  setSidebarProjectScopeKeys: (projectKeys: readonly string[]) => void;
   setSidebarProjectHidden: (projectKey: string, hidden: boolean) => void;
   createSidebarFolder: (folder: SidebarFolder) => void;
   renameSidebarFolder: (folderId: string, name: string) => void;
@@ -574,8 +585,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
-  setSidebarProjectScopeKey: (projectKey) =>
-    set((state) => setSidebarProjectScopeKey(state, projectKey)),
+  setSidebarProjectScopeKeys: (projectKeys) =>
+    set((state) => setSidebarProjectScopeKeys(state, projectKeys)),
   setSidebarProjectHidden: (projectKey, hidden) =>
     set((state) => setSidebarProjectHidden(state, projectKey, hidden)),
   createSidebarFolder: (folder) => set((state) => createSidebarFolder(state, folder)),

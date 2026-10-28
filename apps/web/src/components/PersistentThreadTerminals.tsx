@@ -197,7 +197,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     sharedTerminalTarget !== null &&
     activeSharedTerminal === null &&
     (!sharedProjectTerminalsEnabled || environmentTerminalSessions !== null);
-  // oxlint-disable-next-line t3code/react-effect-budget -- clears a stored shared tab when its shell ends elsewhere
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears a stored shared tab when its shell ends elsewhere
   useEffect(() => {
     if (sharedTerminalGone) storeShowSharedTerminal(threadRef, null);
   }, [sharedTerminalGone, storeShowSharedTerminal, threadRef]);
@@ -211,6 +211,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   const storeCloseTerminal = useTerminalUiStateStore((state) => state.closeTerminal);
   const reconcileTerminalIds = useTerminalUiStateStore((state) => state.reconcileTerminalIds);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reconciles the terminal UI store's ids with the server's terminal list when they diverge
   useEffect(() => {
     if (terminalIdListsEqual(serverOrderedTerminalIds, terminalUiState.terminalIds)) {
       return;
