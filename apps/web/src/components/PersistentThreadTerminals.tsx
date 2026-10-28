@@ -197,6 +197,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     sharedTerminalTarget !== null &&
     activeSharedTerminal === null &&
     (!sharedProjectTerminalsEnabled || environmentTerminalSessions !== null);
+  // oxlint-disable-next-line t3code/react-effect-budget -- clears a stored shared tab when its shell ends elsewhere
   useEffect(() => {
     if (sharedTerminalGone) storeShowSharedTerminal(threadRef, null);
   }, [sharedTerminalGone, storeShowSharedTerminal, threadRef]);

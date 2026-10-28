@@ -2192,6 +2192,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeSection,
       targetSection: activeSection,
       contextDrag: false,
+      // oxlint-disable-next-line react/purity -- runs in the drag-start handler, not render
       occurredAt: new Date().toISOString(),
       activationY:
         event.activatorEvent instanceof PointerEvent ? event.activatorEvent.clientY : null,
@@ -2291,12 +2292,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     );
   };
   const sortableIds = sidebarListItems.map(sidebarListItemId);
-  // Keep non-drag orders constant to preserve sorting strategy and row identity during streaming.
-  // Working and folder sections derive the active order, so drops into
-  // active land where the sort puts them instead of where they were dropped.
-  // Project sections keep a hand order within each project, even beside the
-  // Working shelf; rows arriving from another shelf still land where the
-  // sort puts them.
+  // Constant orders outside a drag keep row identity while shells stream in.
+  // Working and folder sections sort active drops; project sections keep a
+  // hand order per project, except rows arriving from another shelf.
   const activeTimeOrdered =
     workingShelfEnabled || (activeGrouping !== null && activeGrouping.kind !== "flat");
   const projectHandOrdered = activeGrouping?.kind === "projects";
