@@ -356,6 +356,7 @@ type SidebarOptimisticDrop = {
   readonly order: readonly string[] | null;
   readonly keysAtDrop: ReadonlyMap<string, string | null>;
   readonly assignedKeys: ReadonlyMap<string, string>;
+  readonly projectId?: ProjectId;
 };
 
 interface SidebarThreadPartitionInput {
@@ -376,36 +377,45 @@ interface SidebarThreadPartitionInput {
   readonly clockKey: string;
 }
 
-// Project sections, or folders when those are off. Without either, a flat
-// list is grouped only to lift Needs you above it.
+interface SidebarFolderGrouping {
+  readonly folderIdOf: (thread: EnvironmentThreadShell) => string | undefined;
+  readonly folderOrder: readonly string[];
+}
+
+// Project sections, with folders above them, or folders alone. Without either,
+// a flat list is grouped only to lift Needs you above it.
 type SidebarActiveGrouping = {
   // Null when nothing collects in Needs you.
   readonly needsYou: { readonly onTop: boolean; readonly includeCompleted: boolean } | null;
 } & (
-  | {
+  | ({
       readonly kind: "projects";
       readonly projectKeyOf: (thread: EnvironmentThreadShell) => string;
       readonly projectOrder: readonly string[];
-    }
-  | {
-      readonly kind: "folders";
-      readonly folderIdOf: (thread: EnvironmentThreadShell) => string | undefined;
-      readonly folderOrder: readonly string[];
-    }
+    } & SidebarFolderGrouping)
+  | ({ readonly kind: "folders" } & SidebarFolderGrouping)
   | { readonly kind: "flat" }
 );
 
 const NEEDS_YOU_GROUP_KEY = "needs-you";
 
-// The Working shelf orders the inbox by return, except under project sections,
-// which keep the hand order; returned threads surface there through Needs you.
+// The Working shelf orders the inbox by return, except under project sections
+// or Needs you above a flat list, which keep the hand order; returned threads
+// surface there through Needs you.
+function activeReturnOrdered(
+  workingShelfEnabled: boolean,
+  grouping: SidebarActiveGrouping | null,
+): boolean {
+  return workingShelfEnabled && grouping?.kind !== "projects" && grouping?.kind !== "flat";
+}
+
 function sortActiveThreads(
   threads: readonly EnvironmentThreadShell[],
   workingShelfEnabled: boolean,
   grouping: SidebarActiveGrouping | null,
   returnedAt: (thread: EnvironmentThreadShell) => number | undefined = inboxReturns.returnedAt,
 ): EnvironmentThreadShell[] {
-  return workingShelfEnabled && grouping?.kind !== "projects"
+  return activeReturnOrdered(workingShelfEnabled, grouping)
     ? sortInboxThreadsByReturn(threads, returnedAt)
     : sortThreadsForSidebar(threads);
 }
@@ -432,6 +442,8 @@ function groupActiveThreads(
       needsYouOnTop: needsYou?.onTop ?? false,
       projectKeyOf: sections.projectKeyOf,
       projectOrder: sections.projectOrder,
+      folderIdOf: sections.folderIdOf,
+      folderOrder: sections.folderOrder,
     });
   } else {
     const lifted: EnvironmentThreadShell[] = [];
@@ -553,7 +565,7 @@ function resolveDraggedOrders(input: {
       ...others(settledThreads),
       applySidebarThreadDrop(thread, "settled", drag.occurredAt),
     ]).map(threadShellKey),
-    activeOrder: workingShelfEnabled
+    activeOrder: activeReturnOrdered(workingShelfEnabled, input.activeGrouping)
       ? sortInboxThreadsByReturn(landedActive, inboxReturns.returnedAt).map(threadShellKey)
       : undefined,
     activeItems: resolveDraggedActiveItems(input, landedActive),
@@ -577,7 +589,9 @@ function resolveDraggedActiveItems(
         [input.routeThreadKey, drag.activeKey],
       ),
     );
-  if (activeGrouping.kind === "projects") return itemsFor(activeGrouping);
+  if (activeGrouping.kind === "projects" && activeGrouping.folderOrder.length === 0) {
+    return itemsFor(activeGrouping);
+  }
   const byFolder = new Map<string | null, readonly SidebarListItem[]>();
   return (folderId) => {
     const cached = byFolder.get(folderId);
@@ -643,14 +657,13 @@ function useSidebarThreads(input: {
       needsYouPlacement === "top" || (projectSectionsEnabled && needsYouPlacement === "project")
         ? { onTop: needsYouPlacement === "top", includeCompleted: completedNeedsYou }
         : null;
+    const folderGrouping: SidebarFolderGrouping = {
+      folderIdOf: (thread) => threadFolderById[threadShellKey(thread)],
+      folderOrder: folders.map((folder) => folder.id),
+    };
     if (!projectSectionsEnabled) {
       if (folders.length === 0) return needsYou === null ? null : { kind: "flat", needsYou };
-      return {
-        kind: "folders",
-        needsYou,
-        folderIdOf: (thread) => threadFolderById[threadShellKey(thread)],
-        folderOrder: folders.map((folder) => folder.id),
-      };
+      return { kind: "folders", needsYou, ...folderGrouping };
     }
     const groupKeyByProject = new Map(
       projectGroups.flatMap((group) =>
@@ -665,6 +678,7 @@ function useSidebarThreads(input: {
       projectKeyOf: (thread) =>
         groupKeyByProject.get(`${thread.environmentId}:${thread.projectId}`) ?? "",
       projectOrder: projectGroups.map((group) => group.projectKey),
+      ...folderGrouping,
     };
   })();
   const inboxReturnsVersion = useSyncExternalStore(
@@ -896,12 +910,16 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
       draggable.add(threadKey);
     }
     if (optimisticDrop?.key === threadKey) {
-      const projected = applySidebarThreadDrop(
+      const dropped = applySidebarThreadDrop(
         thread,
         optimisticDrop.section,
         optimisticDrop.occurredAt,
         optimisticDrop.assignedKeys.get(threadKey),
       );
+      const projected =
+        optimisticDrop.projectId === undefined
+          ? dropped
+          : { ...dropped, projectId: optimisticDrop.projectId };
       (optimisticDrop.section === "pinned"
         ? pinned
         : optimisticDrop.section === "settled"
@@ -1007,6 +1025,9 @@ function isOptimisticDropReleased(input: {
   const thread = canonicalByKey.get(optimisticDrop.key);
   if (thread === undefined || thread.archivedAt !== null) {
     return true;
+  }
+  if (optimisticDrop.projectId !== undefined && thread.projectId !== optimisticDrop.projectId) {
+    return false;
   }
   const canonicalSection = effectiveSnoozed(thread, { now })
     ? "snoozed"
@@ -1612,16 +1633,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
 
   const setProjectOrder = useUiStateStore((store) => store.setProjectOrder);
   const projectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
+  const folderSectionKeys =
+    activeGrouping === null || activeGrouping.kind === "flat" ? [] : activeGrouping.folderOrder;
   // Shown sections that belong to a known project; threads whose project has
   // not loaded yet gather under "Other", which has no order to save.
-  const movableSectionKeys =
-    activeGrouping?.kind === "folders"
-      ? activeGrouping.folderOrder
-      : (activeGroups ?? []).flatMap((group) =>
-          group.projectKey !== null && projectGroupByScopeKey.has(group.projectKey)
-            ? [group.projectKey]
-            : [],
-        );
+  const projectSectionKeys = (activeGroups ?? []).flatMap((group) =>
+    group.projectKey !== null && projectGroupByScopeKey.has(group.projectKey)
+      ? [group.projectKey]
+      : [],
+  );
+  // Folders and projects each reorder only among their own kind.
+  const sectionKeysLike = (key: string) =>
+    folderSectionKeys.includes(key) ? folderSectionKeys : projectSectionKeys;
   const sidebarFolders = useUiStateStore((store) => store.sidebarFolders);
   const renameSidebarFolder = useUiStateStore((store) => store.renameSidebarFolder);
   const deleteSidebarFolder = useUiStateStore((store) => store.deleteSidebarFolder);
@@ -1630,11 +1653,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // Project sections follow the project order, so moving one saves a manual
   // order that the project filter and the legacy sidebar share.
   const moveProjectSection = (projectKey: string, targetKey: string) => {
-    if (activeGrouping?.kind === "folders") {
-      setSidebarFolderOrder(moveSidebarSection(movableSectionKeys, projectKey, targetKey));
+    if (sectionKeysLike(projectKey) !== sectionKeysLike(targetKey)) return;
+    if (folderSectionKeys.includes(projectKey)) {
+      setSidebarFolderOrder(moveSidebarSection(folderSectionKeys, projectKey, targetKey));
       return;
     }
-    const shownOrder = moveSidebarSection(movableSectionKeys, projectKey, targetKey);
+    const shownOrder = moveSidebarSection(projectSectionKeys, projectKey, targetKey);
     const groupOrder = applySidebarSectionOrder(
       projectGroups.map((group) => group.projectKey),
       shownOrder,
@@ -1662,7 +1686,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         const api = readLocalApi();
         const folder = sidebarFolderById.get(folderId);
         if (!api || !folder) return;
-        const index = movableSectionKeys.indexOf(folderId);
+        const index = folderSectionKeys.indexOf(folderId);
         const collapsed = collapsedProjectKeys.has(folderId);
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
@@ -1671,7 +1695,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               {
                 id: "move-down",
                 label: "Move folder down",
-                disabled: index === -1 || index === movableSectionKeys.length - 1,
+                disabled: index === -1 || index === folderSectionKeys.length - 1,
               },
               { id: "toggle", label: collapsed ? "Expand folder" : "Collapse folder" },
               { id: "rename", label: "Rename folder", separatorBefore: true },
@@ -1684,7 +1708,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         switch (clicked.value) {
           case "move-up":
           case "move-down": {
-            const neighbor = movableSectionKeys[index + (clicked.value === "move-up" ? -1 : 1)];
+            const neighbor = folderSectionKeys[index + (clicked.value === "move-up" ? -1 : 1)];
             if (neighbor !== undefined) moveProjectSection(folderId, neighbor);
             return;
           }
@@ -1718,7 +1742,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       void (async () => {
         const api = readLocalApi();
         if (!api) return;
-        const sectionKeys = movableSectionKeys;
+        const sectionKeys = projectSectionKeys;
         const index = sectionKeys.indexOf(projectKey);
         const collapsed = collapsedProjectKeys.has(projectKey);
         const clicked = await settlePromise(() =>
@@ -2441,7 +2465,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // Working and folder sections sort active drops; project sections keep a
   // hand order per project, except rows arriving from another shelf.
   const activeTimeOrdered =
-    workingShelfEnabled || (activeGrouping !== null && activeGrouping.kind !== "flat");
+    activeReturnOrdered(workingShelfEnabled, activeGrouping) ||
+    activeGrouping?.kind === "folders" ||
+    activeGrouping?.kind === "projects";
   const projectHandOrdered = activeGrouping?.kind === "projects";
   // Needs you rows hold their place and drops order only the rows below them.
   const activeFixedKeys =
@@ -2454,16 +2480,42 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       : undefined;
   const sidebarThreadFolderById = useUiStateStore((store) => store.sidebarThreadFolderById);
   const setSidebarThreadFolder = useUiStateStore((store) => store.setSidebarThreadFolder);
+  // The project a drop under another project's section moves the thread to:
+  // that project's member in the thread's own environment.
+  const projectMoveOf = (activeKey: string, overId: string): ProjectId | undefined => {
+    if (activeGrouping?.kind !== "projects") return undefined;
+    const thread = threadByKey.get(activeKey);
+    const landing = resolveSidebarActiveDrop(sidebarListItems, activeKey, overId)?.groupKey;
+    if (thread === undefined || !landing?.startsWith("project:")) return undefined;
+    if (
+      serverConfigs.get(thread.environmentId)?.environment.capabilities.threadProjectMove !== true
+    )
+      return undefined;
+    const projectKey = landing.slice("project:".length);
+    if (projectKey === activeGrouping.projectKeyOf(thread)) return undefined;
+    return projectGroupByScopeKey
+      .get(projectKey)
+      ?.memberProjectRefs.find((ref) => ref.environmentId === thread.environmentId)?.projectId;
+  };
   // The folder a dragged thread would end up in; a drop outside the active
-  // section keeps its folder.
+  // section keeps its folder. Under project sections, only its own project's
+  // section or one it moves to takes it out of a folder.
+  const folderDropOf = (activeKey: string, overId: string): string | null | undefined => {
+    if (folderSectionKeys.length === 0) return undefined;
+    const folderId = resolveSidebarFolderDrop(sidebarListItems, activeKey, overId);
+    if (folderId !== null || activeGrouping?.kind !== "projects") return folderId;
+    const thread = threadByKey.get(activeKey);
+    const landing = resolveSidebarActiveDrop(sidebarListItems, activeKey, overId)?.groupKey;
+    return thread !== undefined &&
+      (landing === `project:${activeGrouping.projectKeyOf(thread)}` ||
+        projectMoveOf(activeKey, overId) !== undefined)
+      ? null
+      : undefined;
+  };
   const folderAfterDrop = (activeKey: string, overId: string): string | null =>
-    (activeGrouping?.kind === "folders"
-      ? resolveSidebarFolderDrop(sidebarListItems, activeKey, overId)
-      : undefined) ??
-    sidebarThreadFolderById[activeKey] ??
-    null;
+    folderDropOf(activeKey, overId) ?? sidebarThreadFolderById[activeKey] ?? null;
   const dropChangesFolder = (activeKey: string, overId: string) =>
-    activeGrouping?.kind === "folders" &&
+    folderSectionKeys.length > 0 &&
     folderAfterDrop(activeKey, overId) !== (sidebarThreadFolderById[activeKey] ?? null);
   const activeGroupByKey = projectHandOrdered
     ? new Map(
@@ -2483,6 +2535,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             byKey: activeGroupByKey,
             landing:
               resolveSidebarActiveDrop(sidebarListItems, activeKey, overId)?.groupKey ?? null,
+            moves: projectMoveOf(activeKey, overId) !== undefined,
           },
         };
   const {
@@ -2536,9 +2589,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       const indexById = new Map(
         sidebarListItems.map((item, index) => [sidebarListItemId(item), index] as const),
       );
+      const draggedKinds = sectionKeysLike(draggedSectionKey);
       return createSidebarCollisionDetection((id) => {
         const index = indexById.get(id);
-        return index !== undefined && sidebarProjectBlockAt(blocks, index) !== undefined;
+        const block = index === undefined ? undefined : sidebarProjectBlockAt(blocks, index);
+        return block !== undefined && sectionKeysLike(block.sectionKey) === draggedKinds;
       });
     }
     if (draggedThreadKey === undefined || draggedFromSection === undefined)
@@ -2624,6 +2679,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     });
     if (plan.kind === "none") return;
     if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
+    const projectMove =
+      plan.kind === "move-active" && event.over !== null
+        ? projectMoveOf(activeKey, String(event.over.id))
+        : undefined;
     const assignments =
       plan.kind === "pin"
         ? [
@@ -2654,6 +2713,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       order: plan.kind === "settle" ? null : plan.order,
       keysAtDrop: target.section === "active" ? activeKeysById : pinnedKeysById,
       assignedKeys: new Map(assignments.map(({ id, orderKey }) => [id, orderKey])),
+      ...(projectMove === undefined ? {} : { projectId: projectMove }),
     };
     setOptimisticDrop(drop);
     void (async () => {
@@ -2704,6 +2764,17 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           )
             return;
           if (plan.unsnooze && !(await run(unsnoozeThread(threadRef), "Failed to wake thread")))
+            return;
+          if (
+            projectMove !== undefined &&
+            !(await run(
+              updateThreadMetadata({
+                environmentId: threadRef.environmentId,
+                input: { threadId: threadRef.threadId, projectId: projectMove },
+              }),
+              "Failed to move thread to project",
+            ))
+          )
             return;
           break;
         case "pin":
@@ -2839,14 +2910,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         selectedThreads[0]!.environmentId,
       );
       // Checks the selection's folder only when every selected thread shares it.
-      const folderMenus = threadKeys.map((key) =>
-        readSidebarFolderMenuState(key, activeGrouping?.kind === "projects"),
-      );
+      const folderMenus = threadKeys.map((key) => readSidebarFolderMenuState(key));
       const firstFolderMenu = folderMenus[0] ?? null;
       const multiSelectFolders =
         firstFolderMenu == null
           ? null
-          : folderMenus.every((menu) => menu?.currentFolderId === firstFolderMenu.currentFolderId)
+          : folderMenus.every((menu) => menu.currentFolderId === firstFolderMenu.currentFolderId)
             ? firstFolderMenu
             : { ...firstFolderMenu, currentFolderId: null };
       const clicked = await settlePromise(() =>
@@ -3189,7 +3258,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 titleRegeneration: configLoaded,
               },
               snoozePresets,
-              folders: readSidebarFolderMenuState(threadKey, activeGrouping?.kind === "projects"),
+              folders: readSidebarFolderMenuState(threadKey),
             }),
             position,
           ),

@@ -93,7 +93,7 @@ export interface ThreadActionMenuState {
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
   /** Guest links need their own grant, so the caller checks it instead of `canOperate`. */
   readonly canShareWithGuest?: boolean;
-  /** Sidebar folders, or null while project sections group the list instead. */
+  /** Sidebar folders, or null where the menu offers none. */
   readonly folders?: SidebarFolderMenuState | null;
 }
 

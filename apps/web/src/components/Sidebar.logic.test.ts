@@ -1375,14 +1375,23 @@ describe("Working shelf (beta)", () => {
         { id: "a1", orderKey: expect.any(String) },
       ]);
       expect(plan.kind === "move-active" && plan.assignments[0]!.orderKey > "t").toBe(true);
-      // A row cannot leave its project.
+      // A row leaves its project only for one it can move to.
+      const intoB = {
+        ...base,
+        target: { section: "active" as const, pinnedOrder: [], activeOrder: ["a2", "b1", "a1"] },
+      };
       expect(
-        planSidebarThreadDrop({
-          ...base,
-          target: { section: "active", pinnedOrder: [], activeOrder: ["a2", "b1", "a1"] },
-          activeGroups: { byKey, landing: "project:b" },
-        }),
+        planSidebarThreadDrop({ ...intoB, activeGroups: { byKey, landing: "project:b" } }),
       ).toEqual({ kind: "none" });
+      const moved = planSidebarThreadDrop({
+        ...intoB,
+        activeGroups: { byKey, landing: "project:b", moves: true },
+      });
+      // Ordered after b1, its new neighbor, regardless of a2's key.
+      expect(moved.kind === "move-active" && moved.assignments).toEqual([
+        { id: "a1", orderKey: expect.any(String) },
+      ]);
+      expect(moved.kind === "move-active" && moved.assignments[0]!.orderKey > "m").toBe(true);
     });
   });
 
@@ -1699,6 +1708,40 @@ describe("project sections", () => {
       [null, ["a2", "b2"], 2],
       ["a", ["a1"], 0],
       ["b", ["b1"], 0],
+    ]);
+  });
+
+  it("lists folders above projects and takes filed threads out of their projects", () => {
+    const filed = new Map([
+      ["a2", "f1"],
+      ["b1", "f1"],
+      ["a3", "missing"],
+    ]);
+    expect(
+      groupSidebarActiveThreads({
+        threads: [
+          thread("a1", "a"),
+          thread("a2", "a"),
+          thread("b1", "b", true),
+          thread("a3", "a"),
+          thread("b2", "b"),
+        ],
+        needsYou: (entry) => entry.needsYou,
+        needsYouOnTop: false,
+        projectKeyOf: (entry) => entry.project,
+        projectOrder: ["a", "b"],
+        folderIdOf: (entry) => filed.get(entry.id),
+        folderOrder: ["f1", "f2"],
+      }).map((entry) => [
+        entry.folderId ?? entry.projectKey,
+        entry.threads.map(({ id }) => id),
+        entry.needsYouCount,
+      ]),
+    ).toEqual([
+      ["f1", ["b1", "a2"], 1],
+      ["f2", [], 0],
+      ["a", ["a1", "a3"], 0],
+      ["b", ["b2"], 0],
     ]);
   });
 

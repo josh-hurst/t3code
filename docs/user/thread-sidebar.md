@@ -137,7 +137,8 @@ or **Settings → General → Working section** on iOS and Android. Each device 
 choice.
 
 While this is on, the active list is ordered by when each thread last came back to you, so you
-cannot drag or move threads within it. Your saved order returns when you turn it off.
+cannot drag or move threads within it. Your saved order returns when you turn it off, or when
+**Project sections** or a **Needs you** section above the list is on.
 
 ### Group threads by project (beta)
 
@@ -164,8 +165,11 @@ approval or an answer, with a plan ready, or with a finished or failed run you h
 move to a **Needs you** section at the top of their project. Set **Needs you section** to
 **Above all projects** to collect them in one section above every project instead, or **Off** to
 leave them in their projects. The thread you have open stays where it was until you leave it.
-Drag a thread within its project section to reorder it; threads cannot be dragged into another
-project. Each device keeps its own choice. Turn off **Finished threads in Needs you** to keep threads with a finished run in
+Drag a thread within its project section to reorder it, or into another project's section to
+move it to that project. A moved thread keeps its conversation, but its next turn starts in the
+new project's folder rather than its old worktree, and its earlier checkpoints can no longer be
+restored. Stop a running thread before moving it; threads cannot move to a project on another
+environment. Each device keeps its own choice. Turn off **Finished threads in Needs you** to keep threads with a finished run in
 their project section.
 
 Click a project heading to collapse or expand its section; a collapsed section shows how many
@@ -175,8 +179,7 @@ Moving a section saves a manual project order, which the project filter also use
 
 ### Group active threads into folders
 
-With **Project sections** off, you can sort active threads into your own folders instead.
-Right-click a thread, or select several, and choose **Move to folder → New folder…** to create
+You can sort active threads into your own folders. Right-click a thread, or select several, and choose **Move to folder → New folder…** to create
 one, or pick an existing folder. Threads outside any folder stay at the top of the active list,
 and **Remove from folder** returns a thread there. A thread keeps its folder while it is pinned,
 snoozed, or settled, and goes back into it when it returns to the active list.
@@ -188,7 +191,11 @@ keep their usual order, so you cannot drag them into a different position.
 
 Click a folder heading to collapse or expand it. Drag a heading, or right-click it, to reorder,
 rename, or delete the folder. Deleting a folder keeps its threads and moves them back to the top
-of the list. Folders are saved on each device and are hidden while Project sections is on.
+of the list. Folders are saved on each device.
+
+With **Project sections** on, folders list above the project sections, and a thread in a folder
+shows there instead of in its project. Drag it into its own project's section to take it out, or
+within the folder to reorder it.
 
 **Above all projects** also works with **Project sections** off: Needs you collects above your
 folders, or above the rest of the active list. Without folders, the threads below it keep your

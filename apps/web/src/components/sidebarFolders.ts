@@ -3,12 +3,8 @@ import { useUiStateStore } from "../uiStateStore";
 import { requestSidebarFolderName } from "./SidebarFolderNameDialog";
 import type { SidebarFolderMenuState } from "./threadActionMenu.logic";
 
-/** The thread menu's folder choices; folders only group the list while project sections are off. */
-export function readSidebarFolderMenuState(
-  threadKey: string,
-  projectSectionsEnabled: boolean,
-): SidebarFolderMenuState | null {
-  if (projectSectionsEnabled) return null;
+/** The thread menu's folder choices. */
+export function readSidebarFolderMenuState(threadKey: string): SidebarFolderMenuState {
   const state = useUiStateStore.getState();
   return {
     items: state.sidebarFolders,

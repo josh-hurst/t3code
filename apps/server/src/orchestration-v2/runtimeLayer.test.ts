@@ -2095,6 +2095,66 @@ it.layer(layerLegacyImportTest)("OrchestrationV2 legacy import", (it) => {
 });
 
 it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
+  it.effect("moves an idle thread to another project and resets its workspace", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("runtime-layer-move-thread");
+      const sourceId = ProjectId.make("runtime-layer-move-source");
+      const targetId = ProjectId.make("runtime-layer-move-target");
+      for (const [projectId, workspaceRoot] of [
+        [sourceId, "/workspace/source"],
+        [targetId, "/workspace/target"],
+      ] as const) {
+        yield* seedProject({
+          projectId,
+          title: workspaceRoot,
+          workspaceRoot,
+          defaultModelSelection: null,
+          createdAt: "2026-09-07T00:00:00.000Z",
+        });
+      }
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("runtime-layer-move-create"),
+        threadId,
+        projectId: sourceId,
+        title: "Moving thread",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: "feature/source",
+        worktreePath: "/tmp/source-worktree",
+      });
+
+      const missing = yield* orchestrator
+        .dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make("runtime-layer-move-missing"),
+          threadId,
+          projectId: ProjectId.make("runtime-layer-move-missing-project"),
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(missing, Orchestrator.OrchestratorDispatchError);
+
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("runtime-layer-move"),
+        threadId,
+        projectId: targetId,
+      });
+      const { thread } = yield* orchestrator.getThreadProjection(threadId);
+      assert.equal(thread.projectId, targetId);
+      assert.isNull(thread.worktreePath);
+      assert.isNull(thread.branch);
+      const shell = (yield* orchestrator.getShellSnapshot()).threads.find(
+        (candidate) => candidate.id === threadId,
+      );
+      assert.equal(shell?.projectId, targetId);
+    }),
+  );
+
   it.effect("applies lifecycle commands idempotently and emits archive/removal shell deltas", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

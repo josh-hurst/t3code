@@ -230,10 +230,9 @@ export interface SidebarActiveGroup<T> {
 }
 
 /**
- * Splits the active list into one group per project in `projectOrder`.
- * Projects missing from it follow in first-seen order. Threads that need you
- * lead their own project's group, or with `needsYouOnTop` form one headless
- * group above every project. Each part keeps the input's relative order.
+ * One group per folder in `folderOrder` (even empty), then per project in
+ * `projectOrder`, then unlisted projects in first-seen order. Needs you leads
+ * its own group, or with `needsYouOnTop` forms one headless group above all.
  */
 export function groupSidebarActiveThreads<T>(input: {
   readonly threads: readonly T[];
@@ -241,13 +240,23 @@ export function groupSidebarActiveThreads<T>(input: {
   readonly needsYouOnTop: boolean;
   readonly projectKeyOf: (thread: T) => string;
   readonly projectOrder: readonly string[];
+  readonly folderIdOf?: (thread: T) => string | undefined;
+  readonly folderOrder?: readonly string[];
 }): SidebarActiveGroup<T>[] {
   const needsYouOnTop: T[] = [];
+  const folderOrder = input.folderOrder ?? [];
+  const byFolder = new Map(folderOrder.map((id) => [id, { needsYou: [] as T[], rest: [] as T[] }]));
   const byProject = new Map<string, { needsYou: T[]; rest: T[] }>();
   for (const thread of input.threads) {
     const needsYou = input.needsYou(thread);
     if (needsYou && input.needsYouOnTop) {
       needsYouOnTop.push(thread);
+      continue;
+    }
+    const folderId = input.folderIdOf?.(thread);
+    const folder = folderId === undefined ? undefined : byFolder.get(folderId);
+    if (folder !== undefined) {
+      (needsYou ? folder.needsYou : folder.rest).push(thread);
       continue;
     }
     const key = input.projectKeyOf(thread);
@@ -270,6 +279,15 @@ export function groupSidebarActiveThreads<T>(input: {
           },
         ]
       : [];
+  for (const [folderId, group] of byFolder) {
+    groups.push({
+      key: `folder:${folderId}`,
+      projectKey: null,
+      folderId,
+      threads: [...group.needsYou, ...group.rest],
+      needsYouCount: group.needsYou.length,
+    });
+  }
   for (const key of [...input.projectOrder, ...byProject.keys()]) {
     const group = byProject.get(key);
     if (group === undefined) continue;
@@ -616,6 +634,8 @@ export function planSidebarThreadDrop(input: {
   readonly activeGroups?: {
     readonly byKey: ReadonlyMap<string, string | null>;
     readonly landing: string | null;
+    // The landing section is another project the row can move to.
+    readonly moves?: boolean;
   };
 }): SidebarThreadDropPlan {
   const {
@@ -678,13 +698,17 @@ export function planSidebarThreadDrop(input: {
             };
       }
       const group = groups?.byKey.get(activeKey);
-      if (groups !== undefined && (group === undefined || group !== groups.landing)) {
+      if (
+        groups !== undefined &&
+        (group === undefined || (group !== groups.landing && groups.moves !== true))
+      ) {
         return { kind: "none" };
       }
       const movable = (keys: readonly string[]) =>
         keys.filter(
           (key) =>
-            fixed?.has(key) !== true && (groups === undefined || groups.byKey.get(key) === group),
+            fixed?.has(key) !== true &&
+            (groups === undefined || key === activeKey || groups.byKey.get(key) === groups.landing),
         );
       const order = movable(target.activeOrder);
       const currentOrder = movable(activeOrder);

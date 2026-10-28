@@ -58,6 +58,37 @@ the version.
   - nightly releases are aliased to the `nightly` hosted app channel
 - Signing is optional and auto-detected per platform from secrets.
 
+## Testing a fork release before publishing
+
+`vp run release:fork` builds the fork's signed, notarized Apple Silicon app and Windows x64
+installer, then uploads a **draft** GitHub Release. Installed apps keep receiving the previous
+published release until you explicitly publish the draft. Build from a clean, committed checkout
+whose HEAD is pushed to the fork; signing and repository configuration are listed in
+[`scripts/release-fork.ts`](../../scripts/release-fork.ts).
+
+To build and switch your installed Mac app to the candidate in one command:
+
+```sh
+vp run release:fork --install
+```
+
+The command prints the candidate version. To install it later, publish it after testing, or
+return to the previous installed app:
+
+```sh
+vp run release:fork install <version>
+vp run release:fork publish <version>
+vp run release:fork rollback
+```
+
+Installation quits and relaunches the app automatically and keeps the previous application for
+rollback. It defaults to `/Applications/J6 Code (Beta).app`; pass `--app "/path/to/App.app"` to
+install or roll back another location. The installer prints its log path before quitting the app.
+Your application data stays in place, so test against a copy if the candidate changes its format;
+rolling back the application does not roll back data migrations. Publishing verifies the saved
+artifact hashes and promotes the same candidate without rebuilding. Keep its `release-fork/<version>`
+directory until publication.
+
 ## Pull request macOS previews
 
 Labeling a PR `preview:mac` publishes a signed, notarized Apple Silicon DMG with T3 Connect enabled
