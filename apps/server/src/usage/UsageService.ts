@@ -8,6 +8,7 @@ import {
   type UsagePricing,
   type UsageSummary,
   type UsageSummaryInput,
+  type UsageTokenTotals,
   UsageReadError,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -38,9 +39,16 @@ import type {
   ProviderUsageInstance,
   TranscriptUsageFormat,
   UsageRecord,
+  UsageSpeed,
 } from "@t3tools/provider-core/server/usage";
 import { canonicalModelFilter, resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";
-import { createOverrideRateTable, parseRateTable, type RateTable } from "./usagePricing.ts";
+import { UsageDriversCollector } from "./usageDrivers.ts";
+import {
+  createOverrideRateTable,
+  parseRateTable,
+  priceUsage,
+  type RateTable,
+} from "./usagePricing.ts";
 import {
   listTranscriptFiles,
   readDirectoryVolumeId,
@@ -144,8 +152,18 @@ export class UsageService extends Context.Service<
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
     readonly refreshRates: Effect.Effect<UsagePricing>;
+    /** API list price of these tokens. `unpriced` is set when a model has no known rate. */
+    readonly priceTokens: (
+      usage: ReadonlyArray<TokenPriceInput>,
+    ) => Effect.Effect<{ readonly costUsd: number; readonly unpriced: boolean }>;
   }
 >()("t3/usage/UsageService") {}
+
+export interface TokenPriceInput {
+  readonly model: string;
+  readonly speed: UsageSpeed;
+  readonly totals: UsageTokenTotals;
+}
 
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
@@ -715,6 +733,7 @@ export const make = Effect.gen(function* () {
       { concurrency: 2 },
     );
 
+    const drivers = input.drivers === undefined ? null : new UsageDriversCollector();
     const aggregator = new UsageAggregator({
       timeZone: input.timeZone,
       sinceDay: input.sinceDay,
@@ -725,6 +744,13 @@ export const make = Effect.gen(function* () {
       priceOverrides: createOverrideRateTable(settings.usagePriceOverrides),
       modelAliases: resolveModelAliases(settings.usageModelAliases),
       ...(input.modelFilter === undefined ? {} : { modelFilter: input.modelFilter }),
+      ...(drivers === null
+        ? {}
+        : {
+            onCounted: (record: UsageRecord, costUsd: number) => {
+              if (record.provider === input.drivers) drivers.add(record, costUsd);
+            },
+          }),
     });
 
     const sources: UsageSource[] = [];
@@ -884,6 +910,7 @@ export const make = Effect.gen(function* () {
       pricing: pricing(),
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
       ...(input.modelFilter === undefined ? {} : { modelFilter: input.modelFilter }),
+      ...(drivers === null ? {} : { drivers: drivers.finish() }),
     } satisfies UsageSummary;
   });
 
@@ -900,6 +927,7 @@ export const make = Effect.gen(function* () {
       settings,
       input.awaitRefresh === true,
       input.modelFilter ?? null,
+      input.drivers ?? null,
     ]);
 
   const readSummary = Effect.fn("UsageService.readSummary")(function* (
@@ -935,7 +963,25 @@ export const make = Effect.gen(function* () {
     return yield* Deferred.await(deferred);
   });
 
-  return { readSummary, refreshRates, awaitPersisted } as const;
+  const priceTokens = Effect.fn("UsageService.priceTokens")(function* (
+    usage: ReadonlyArray<TokenPriceInput>,
+  ) {
+    yield* ensureRates(false);
+    const overrides = yield* settingsService.getSettings.pipe(
+      Effect.map((settings) => createOverrideRateTable(settings.usagePriceOverrides)),
+      Effect.orElseSucceed((): RateTable => new Map()),
+    );
+    let costUsd = 0;
+    let unpriced = false;
+    for (const { model, speed, totals } of usage) {
+      const priced = priceUsage(rates, { model, speed, totals, reportedCostUsd: null }, overrides);
+      if (priced.costSource === "unpriced") unpriced = true;
+      costUsd += priced.costUsd;
+    }
+    return { costUsd, unpriced };
+  });
+
+  return { readSummary, refreshRates, priceTokens, awaitPersisted } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

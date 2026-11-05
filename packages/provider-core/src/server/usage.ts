@@ -11,6 +11,12 @@ import type * as Schema from "effect/Schema";
 
 export type UsageSpeed = "standard" | "fast" | "ultrafast";
 
+export interface UsageAttribution {
+  readonly agent?: string;
+  readonly mcpServer?: string;
+  readonly skill?: string;
+}
+
 export interface UsageRecord {
   readonly provider: UsageProviderKind;
   readonly timestampMs: number;
@@ -20,6 +26,8 @@ export interface UsageRecord {
   readonly totals: UsageTokenTotals;
   readonly reportedCostUsd: number | null;
   readonly speed: UsageSpeed;
+  /** What the provider charged this call to, where it records that (Claude Code does). */
+  readonly attribution?: UsageAttribution;
   readonly unresolvedServiceTierTurnId?: string;
   readonly dedupeKey: string | null;
 }
