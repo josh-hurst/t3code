@@ -76,12 +76,16 @@ type TypographySettings = Pick<
   UnifiedSettings,
   | "fontFamilySans"
   | "fontFamilyComposer"
+  | "fontFamilySidebar"
+  | "fontFamilyChat"
   | "fontFamilyCode"
   | "fontFamilyTerminal"
   | "fontSizeInterface"
   | "fontSizePrompt"
   | "fontSizeCode"
   | "fontSizeTerminal"
+  | "fontSizeSidebar"
+  | "fontSizeChat"
 >;
 
 export function getChangedTypographySettingLabels(settings: TypographySettings): string[] {
@@ -89,6 +93,14 @@ export function getChangedTypographySettingLabels(settings: TypographySettings):
     ...(settings.fontFamilySans !== DEFAULT_UNIFIED_SETTINGS.fontFamilySans ||
     settings.fontSizeInterface !== DEFAULT_UNIFIED_SETTINGS.fontSizeInterface
       ? ["Interface font"]
+      : []),
+    ...(settings.fontFamilyChat !== DEFAULT_UNIFIED_SETTINGS.fontFamilyChat ||
+    settings.fontSizeChat !== DEFAULT_UNIFIED_SETTINGS.fontSizeChat
+      ? ["Chat font"]
+      : []),
+    ...(settings.fontFamilySidebar !== DEFAULT_UNIFIED_SETTINGS.fontFamilySidebar ||
+    settings.fontSizeSidebar !== DEFAULT_UNIFIED_SETTINGS.fontSizeSidebar
+      ? ["Sidebar font"]
       : []),
     ...(settings.fontFamilyComposer !== DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer ||
     settings.fontSizePrompt !== DEFAULT_UNIFIED_SETTINGS.fontSizePrompt

@@ -95,6 +95,8 @@ vi.mock("../state/projects", async () => {
     },
   };
 });
+// Shared terminal titles read thread shells, whose atoms would connect a client.
+vi.mock("../state/entities", () => ({ useQuietThreadShell: () => null }));
 vi.mock("../editorPreferences", () => ({ useOpenInPreferredEditor: () => () => {} }));
 vi.mock("./preview/openTerminalLinkInPreview", () => ({ openTerminalLinkInPreview: () => {} }));
 vi.mock("~/localApi", () => ({ readLocalApi: () => null }));

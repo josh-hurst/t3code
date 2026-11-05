@@ -62,9 +62,13 @@ export interface AppearanceFontPreferences {
   readonly sans: string;
   readonly code: string;
   readonly composer: string;
+  readonly sidebar: string;
+  readonly chat: string;
   readonly sizeInterface: number;
   readonly sizePrompt: number;
   readonly sizeCode: number;
+  readonly sizeSidebar: number | null;
+  readonly sizeChat: number | null;
   readonly smoothing: boolean;
   readonly separate: boolean;
 }
@@ -78,6 +82,8 @@ export function applyAppearanceFontVariables(
     ["--font-sans", preferences.sans, DEFAULT_SANS_FONT_STACK],
     ["--font-mono", preferences.code, DEFAULT_CODE_FONT_STACK],
     ["--font-composer", preferences.separate ? preferences.composer : "", "var(--font-sans)"],
+    ["--font-sidebar", preferences.sidebar, "var(--font-sans)"],
+    ["--font-chat", preferences.chat, "var(--font-sans)"],
   ];
   for (const [variable, custom, fallback] of families) {
     const list = cssFontFamilies(custom);
@@ -96,6 +102,19 @@ export function applyAppearanceFontVariables(
   const code = clampCodeFontSize(preferences.sizeCode);
   root.style.setProperty("--font-size-code", `${code}px`);
   root.style.setProperty("--diffs-font-size", `${code}px`);
+  if (preferences.sizeSidebar === null) {
+    root.style.removeProperty("--sidebar-font-size");
+  } else {
+    root.style.setProperty(
+      "--sidebar-font-size",
+      `${clampInterfaceFontSize(preferences.sizeSidebar)}px`,
+    );
+  }
+  if (preferences.sizeChat === null) {
+    root.style.removeProperty("--font-size-chat");
+  } else {
+    root.style.setProperty("--font-size-chat", `${clampPromptFontSize(preferences.sizeChat)}px`);
+  }
 
   if (preferences.smoothing) {
     root.style.setProperty("-webkit-font-smoothing", "antialiased");

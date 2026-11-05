@@ -374,6 +374,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["typography family size system sans"],
   },
   {
+    id: "chat-font",
+    title: "Chat font",
+    to: "/settings/appearance",
+    searchTerms: [
+      "typography family size response assistant agent user my message reply output llm",
+    ],
+  },
+  {
+    id: "sidebar-font",
+    title: "Sidebar font",
+    to: "/settings/appearance",
+    searchTerms: ["typography family text size sidebar threads navigation"],
+  },
+  {
     id: "prompt-font",
     title: "Prompt font",
     to: "/settings/appearance",
@@ -544,6 +558,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Time format",
     to: "/settings/general",
     searchTerms: ["timestamp clock locale system browser os 12 hour 24 hour"],
+  },
+  {
+    id: "shared-project-terminals",
+    title: "Shared project terminals",
+    to: "/settings/general",
+    searchTerms: ["terminal drawer tabs other threads switch shell"],
   },
   {
     id: "response-streaming",

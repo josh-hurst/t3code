@@ -25,28 +25,80 @@ const touchComposerFontSize = () =>
     probe.style.fontSize = "var(--font-size-prompt-touch)";
   });
 
+const basePreferences = {
+  sans: "",
+  code: "",
+  composer: "",
+  sidebar: "",
+  chat: "",
+  sizeInterface: 20,
+  sizePrompt: 14,
+  sizeCode: 13,
+  sizeSidebar: null,
+  sizeChat: null,
+  smoothing: true,
+  separate: false,
+};
+
+function nestedFontSize(markup: string): string {
+  const host = document.createElement("div");
+  host.innerHTML = markup;
+  document.body.append(host);
+  try {
+    const probe = host.querySelector<HTMLElement>("[data-probe]");
+    if (probe === null) throw new Error("missing probe");
+    return getComputedStyle(probe).fontSize;
+  } finally {
+    host.remove();
+  }
+}
+
+const chatFontSize = () =>
+  nestedFontSize(
+    '<div data-chat-message=""><div class="chat-markdown text-sm" data-probe></div></div>',
+  );
+
+const chatHeadingFontSize = () =>
+  nestedFontSize(
+    '<div data-chat-message=""><div class="chat-markdown text-sm"><h1 data-probe></h1></div></div>',
+  );
+
+const sidebarFontSize = () =>
+  nestedFontSize('<div data-app-sidebar=""><span class="text-xs" data-probe></span></div>');
+
 describe("applyAppearanceFontVariables", () => {
   it("sizes the composer from the interface size until fonts are set separately", () => {
     const root = document.documentElement;
     const style = root.getAttribute("style");
-    const preferences = {
-      sans: "",
-      code: "",
-      composer: "",
-      sizeInterface: 20,
-      sizePrompt: 14,
-      sizeCode: 13,
-      smoothing: true,
-    };
     try {
-      applyAppearanceFontVariables(root, { ...preferences, separate: false });
+      applyAppearanceFontVariables(root, { ...basePreferences, separate: false });
       expect(composerFontSize()).toBe("17.5px");
       expect(touchComposerFontSize()).toBe("17.5px");
 
-      applyAppearanceFontVariables(root, { ...preferences, separate: true });
+      applyAppearanceFontVariables(root, { ...basePreferences, separate: true });
       expect(composerFontSize()).toBe("14px");
       // iOS zooms into inputs under 16px.
       expect(touchComposerFontSize()).toBe("16px");
+    } finally {
+      if (style === null) root.removeAttribute("style");
+      else root.setAttribute("style", style);
+    }
+  });
+
+  it("sizes chat and sidebar text from the interface size until set", () => {
+    const root = document.documentElement;
+    const style = root.getAttribute("style");
+    try {
+      applyAppearanceFontVariables(root, basePreferences);
+      expect(chatFontSize()).toBe("17.5px");
+      expect(chatHeadingFontSize()).toBe("25px");
+      expect(sidebarFontSize()).toBe("15px");
+
+      applyAppearanceFontVariables(root, { ...basePreferences, sizeChat: 16, sizeSidebar: 12 });
+      expect(chatFontSize()).toBe("16px");
+      // Headings keep their ratio to the chat size.
+      expect(Number.parseFloat(chatHeadingFontSize())).toBeCloseTo((16 * 1.25) / 0.875, 1);
+      expect(sidebarFontSize()).toBe("9px");
     } finally {
       if (style === null) root.removeAttribute("style");
       else root.setAttribute("style", style);

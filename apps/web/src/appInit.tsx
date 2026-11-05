@@ -93,9 +93,13 @@ function startClientAppearance(): void {
       previous?.fontFamilySans !== settings.fontFamilySans ||
       previous.fontFamilyCode !== settings.fontFamilyCode ||
       previous.fontFamilyComposer !== settings.fontFamilyComposer ||
+      previous.fontFamilySidebar !== settings.fontFamilySidebar ||
+      previous.fontFamilyChat !== settings.fontFamilyChat ||
       previous.fontSizeInterface !== settings.fontSizeInterface ||
       previous.fontSizePrompt !== settings.fontSizePrompt ||
       previous.fontSizeCode !== settings.fontSizeCode ||
+      previous.fontSizeSidebar !== settings.fontSizeSidebar ||
+      previous.fontSizeChat !== settings.fontSizeChat ||
       previous.fontSmoothing !== settings.fontSmoothing ||
       previousSeparateFonts !== separateFonts
     ) {
@@ -103,9 +107,13 @@ function startClientAppearance(): void {
         sans: settings.fontFamilySans,
         code: settings.fontFamilyCode,
         composer: settings.fontFamilyComposer,
+        sidebar: settings.fontFamilySidebar,
+        chat: settings.fontFamilyChat,
         sizeInterface: settings.fontSizeInterface,
         sizePrompt: settings.fontSizePrompt,
         sizeCode: settings.fontSizeCode,
+        sizeSidebar: settings.fontSizeSidebar,
+        sizeChat: settings.fontSizeChat,
         smoothing: settings.fontSmoothing,
         separate: separateFonts,
       });

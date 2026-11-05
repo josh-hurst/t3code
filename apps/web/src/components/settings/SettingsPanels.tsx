@@ -468,6 +468,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
       ? ["Time format"]
       : []),
+    ...(settings.sharedProjectTerminals !== DEFAULT_UNIFIED_SETTINGS.sharedProjectTerminals
+      ? ["Shared project terminals"]
+      : []),
     ...(settings.notificationMode !== DEFAULT_UNIFIED_SETTINGS.notificationMode
       ? ["Thread notifications"]
       : []),
@@ -633,6 +636,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       effortDisplay: DEFAULT_UNIFIED_SETTINGS.effortDisplay,
       mathRenderingEnabled: DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
+      sharedProjectTerminals: DEFAULT_UNIFIED_SETTINGS.sharedProjectTerminals,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
@@ -683,6 +687,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
       fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
       fontSizeTerminal: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
+      fontFamilySidebar: DEFAULT_UNIFIED_SETTINGS.fontFamilySidebar,
+      fontSizeSidebar: DEFAULT_UNIFIED_SETTINGS.fontSizeSidebar,
+      fontFamilyChat: DEFAULT_UNIFIED_SETTINGS.fontFamilyChat,
+      fontSizeChat: DEFAULT_UNIFIED_SETTINGS.fontSizeChat,
       browserDefaultViewport: DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport,
       browserDefaultZoomFactor: DEFAULT_UNIFIED_SETTINGS.browserDefaultZoomFactor,
       browserDefaultAppearance: DEFAULT_UNIFIED_SETTINGS.browserDefaultAppearance,
@@ -1069,6 +1077,31 @@ export function GeneralSettingsPanel() {
                 </SelectItem>
               </SelectPopup>
             </Select>
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("shared-project-terminals")}
+          description="List the running terminals of a project's other threads in each thread's terminal drawer, so you can switch to them."
+          resetAction={
+            settings.sharedProjectTerminals !== DEFAULT_UNIFIED_SETTINGS.sharedProjectTerminals ? (
+              <SettingResetButton
+                label="shared project terminals"
+                onClick={() =>
+                  updateSettings({
+                    sharedProjectTerminals: DEFAULT_UNIFIED_SETTINGS.sharedProjectTerminals,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sharedProjectTerminals}
+              onCheckedChange={(checked) =>
+                updateSettings({ sharedProjectTerminals: Boolean(checked) })
+              }
+              aria-label="Shared project terminals"
+            />
           }
         />
       </SettingsSection>

@@ -26,6 +26,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthTerminalOperateScope,
   type ContextMenuItem,
+  type EnvironmentId,
   type ProviderInstanceId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
@@ -85,6 +86,7 @@ import { useClientSettings } from "../hooks/useSettings";
 import { getFileMetadataQueryAtom } from "../hooks/useFileMetadata";
 import { FileMetadataThreadContext } from "../hooks/FileMetadataThreadProvider";
 import { useLocalStorage } from "../hooks/useLocalStorage";
+import { useQuietThreadShell } from "../state/entities";
 import { attachedTerminalSessionAtom } from "../state/terminalSessions";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { serverEnvironment } from "../state/server";
@@ -479,6 +481,8 @@ interface TerminalViewportProps {
   worktreePath?: string | null;
   runtimeEnv?: Record<string, string>;
   providerInstanceId?: ProviderInstanceId;
+  /** Attach only; a missing session errors instead of starting a shell in another thread. */
+  existingSessionOnly?: boolean;
   onSessionExited: () => void;
   onAddTerminalContext?: (selection: TerminalContextSelection) => void;
   /** Focuses the viewport when it mounts; otherwise focus arrives through `focusTerminal`. */
@@ -515,6 +519,7 @@ function TerminalSessionViewport({
   worktreePath,
   runtimeEnv,
   providerInstanceId,
+  existingSessionOnly = false,
   onSessionExited,
   onAddTerminalContext,
   autoFocus = false,
@@ -613,14 +618,19 @@ function TerminalSessionViewport({
   );
   const terminalFontRef = useRef({ family: terminalFontFamily, size: terminalFontSize });
   // Keyed by the launch (see TerminalViewport), so the atom is fixed for this surface.
-  const terminalSessionAtom = attachedTerminalSessionAtom(environmentId, {
-    threadId,
-    terminalId,
-    cwd,
-    ...(worktreePath !== undefined ? { worktreePath } : {}),
-    ...(runtimeEnv ? { env: runtimeEnv } : {}),
-    ...(providerInstanceId ? { providerInstanceId } : {}),
-  });
+  const terminalSessionAtom = attachedTerminalSessionAtom(
+    environmentId,
+    existingSessionOnly
+      ? { threadId, terminalId }
+      : {
+          threadId,
+          terminalId,
+          cwd,
+          ...(worktreePath !== undefined ? { worktreePath } : {}),
+          ...(runtimeEnv ? { env: runtimeEnv } : {}),
+          ...(providerInstanceId ? { providerInstanceId } : {}),
+        },
+  );
   // Attaching starts with the viewport, while the WASM surface is still loading;
   // the surface reads the session itself, so output chunks never re-render here.
   useAtomMount(terminalSessionAtom);
@@ -1222,6 +1232,14 @@ function TerminalSessionViewport({
   );
 }
 
+/** A live terminal that another thread of the same project owns. */
+export interface SharedTerminalTab {
+  readonly threadId: ThreadId;
+  readonly terminalId: string;
+  readonly label: string;
+  readonly cwd: string;
+}
+
 interface ThreadTerminalDrawerProps {
   mode?: "drawer" | "panel";
   threadRef: ScopedThreadRef;
@@ -1251,6 +1269,10 @@ interface ThreadTerminalDrawerProps {
   keybindings: ResolvedKeybindingsConfig;
   terminalLabelsById?: ReadonlyMap<string, string>;
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
+  sharedTerminals?: ReadonlyArray<SharedTerminalTab>;
+  activeSharedTerminal?: SharedTerminalTab | null;
+  onShowSharedTerminal?: (terminal: SharedTerminalTab) => void;
+  onCloseSharedTerminal?: (terminal: SharedTerminalTab) => void;
 }
 
 interface TerminalActionButtonProps {
@@ -1479,6 +1501,88 @@ function TerminalSidebarGroup({
   );
 }
 
+function SharedTerminalThreadTitle({ threadRef }: { threadRef: ScopedThreadRef }) {
+  const title = useQuietThreadShell(threadRef)?.title ?? "Thread";
+  return (
+    <div className="flex h-[22px] items-center px-1.5 text-2xs text-muted-foreground">
+      <span className="min-w-0 truncate">{title}</span>
+    </div>
+  );
+}
+
+function SharedTerminalSidebarSection({
+  environmentId,
+  sharedTerminals,
+  activeSharedTerminal,
+  canOperateTerminal,
+  onShowSharedTerminal,
+  onCloseSharedTerminal,
+}: {
+  environmentId: EnvironmentId;
+  sharedTerminals: ReadonlyArray<SharedTerminalTab>;
+  activeSharedTerminal: SharedTerminalTab | null;
+  canOperateTerminal: boolean;
+  onShowSharedTerminal: (terminal: SharedTerminalTab) => void;
+  onCloseSharedTerminal: (terminal: SharedTerminalTab) => void;
+}) {
+  const terminalsByThreadId = new Map<ThreadId, SharedTerminalTab[]>();
+  for (const terminal of sharedTerminals) {
+    const group = terminalsByThreadId.get(terminal.threadId);
+    if (group) group.push(terminal);
+    else terminalsByThreadId.set(terminal.threadId, [terminal]);
+  }
+  return (
+    <div className="mt-1 border-t border-border/70 pt-1">
+      <div className="px-1.5 pb-0.5 text-3xs font-medium text-muted-foreground/70">
+        Other threads
+      </div>
+      {[...terminalsByThreadId].map(([threadId, terminals]) => (
+        <div key={threadId} className="pb-0.5">
+          <SharedTerminalThreadTitle threadRef={{ environmentId, threadId }} />
+          <div className="flex flex-col gap-0.5">
+            {terminals.map((terminal) => {
+              const isActive =
+                activeSharedTerminal?.threadId === terminal.threadId &&
+                activeSharedTerminal.terminalId === terminal.terminalId;
+              const closeLabel = `Close ${terminal.label}`;
+              return (
+                <div
+                  key={terminal.terminalId}
+                  className={cn(
+                    "group/tab flex h-6 w-full items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
+                    isActive
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                  )}
+                >
+                  {canOperateTerminal ? (
+                    <PanelTabCloseButton
+                      label={closeLabel}
+                      onClick={() => onCloseSharedTerminal(terminal)}
+                      tooltip={closeLabel}
+                    >
+                      <TerminalSquare className="size-3 shrink-0" />
+                    </PanelTabCloseButton>
+                  ) : (
+                    <TerminalSquare className="size-3 shrink-0" />
+                  )}
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
+                    onClick={() => onShowSharedTerminal(terminal)}
+                  >
+                    <span className="truncate">{terminal.label}</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ThreadTerminalDrawer({
   mode = "drawer",
   threadRef,
@@ -1507,6 +1611,10 @@ export default function ThreadTerminalDrawer({
   keybindings,
   terminalLabelsById,
   terminalLaunchLocationsById,
+  sharedTerminals = [],
+  activeSharedTerminal = null,
+  onShowSharedTerminal,
+  onCloseSharedTerminal,
 }: ThreadTerminalDrawerProps) {
   const canOperateTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
   const terminalArea = workspaceAreaProps("terminal", 5, "Terminal");
@@ -1649,7 +1757,9 @@ export default function ThreadTerminalDrawer({
     (normalizedTerminalIds.length > 0 ? [resolvedActiveTerminalId] : []);
   const splitDirection =
     resolvedTerminalGroups[resolvedActiveGroupIndex]?.splitDirection ?? "horizontal";
-  const hasTerminalSidebar = normalizedTerminalIds.length > 1;
+  const hasTerminalSidebar = normalizedTerminalIds.length > 1 || sharedTerminals.length > 0;
+  // While another thread's terminal is showing, none of this thread's tabs is active.
+  const sidebarActiveTerminalId = activeSharedTerminal ? "" : resolvedActiveTerminalId;
   const showGroupHeaders =
     resolvedTerminalGroups.length > 1 ||
     resolvedTerminalGroups.some((terminalGroup) => terminalGroup.terminalIds.length > 1);
@@ -1696,6 +1806,18 @@ export default function ThreadTerminalDrawer({
         onCloseTerminal(terminalId, threadRef);
       }
     });
+  };
+  const confirmCloseSharedTerminal = (terminal: SharedTerminalTab) => {
+    if (!canOperateTerminal || !onCloseSharedTerminal) return;
+    void confirmTerminalClose([terminal.label]).then((confirmed) => {
+      if (confirmed && readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope)) {
+        onCloseSharedTerminal(terminal);
+      }
+    });
+  };
+  const confirmCloseActiveTerminal = () => {
+    if (activeSharedTerminal) confirmCloseSharedTerminal(activeSharedTerminal);
+    else confirmCloseTerminal(resolvedActiveTerminalId);
   };
 
   const handleResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1892,7 +2014,7 @@ export default function ThreadTerminalDrawer({
             <TerminalActionButton
               disabled={!canOperateTerminal}
               className="p-1 text-foreground/90 transition-colors hover:bg-accent"
-              onClick={() => confirmCloseTerminal(resolvedActiveTerminalId)}
+              onClick={confirmCloseActiveTerminal}
               label={closeTerminalActionLabel}
             >
               <Trash2 className="size-3.25" />
@@ -1909,21 +2031,40 @@ export default function ThreadTerminalDrawer({
           )}
         >
           <div className="min-w-0 flex-1">
-            <TerminalSplitPanes
-              terminalIds={visibleTerminalIds}
-              splitDirection={splitDirection}
-              activeTerminalId={resolvedActiveTerminalId}
-              terminalLabelById={terminalLabelById}
-              resolveLaunchLocation={resolveTerminalLaunchLocation}
-              onActiveTerminalChange={onActiveTerminalChange}
-              onCloseTerminal={onCloseTerminal}
-              advancedTypography={advancedTypography}
-              threadRef={threadRef}
-              threadId={threadId}
-              onAddTerminalContext={onAddTerminalContext}
-              visible={visible}
-              keybindings={keybindings}
-            />
+            {activeSharedTerminal ? (
+              <div className="h-full">
+                <TerminalViewport
+                  advancedTypography={advancedTypography}
+                  threadRef={threadRef}
+                  threadId={activeSharedTerminal.threadId}
+                  terminalId={activeSharedTerminal.terminalId}
+                  terminalLabel={activeSharedTerminal.label}
+                  cwd={activeSharedTerminal.cwd}
+                  existingSessionOnly
+                  onSessionExited={() => onCloseSharedTerminal?.(activeSharedTerminal)}
+                  onAddTerminalContext={onAddTerminalContext}
+                  autoFocus
+                  visible={visible}
+                  keybindings={keybindings}
+                />
+              </div>
+            ) : (
+              <TerminalSplitPanes
+                terminalIds={visibleTerminalIds}
+                splitDirection={splitDirection}
+                activeTerminalId={resolvedActiveTerminalId}
+                terminalLabelById={terminalLabelById}
+                resolveLaunchLocation={resolveTerminalLaunchLocation}
+                onActiveTerminalChange={onActiveTerminalChange}
+                onCloseTerminal={onCloseTerminal}
+                advancedTypography={advancedTypography}
+                threadRef={threadRef}
+                threadId={threadId}
+                onAddTerminalContext={onAddTerminalContext}
+                visible={visible}
+                keybindings={keybindings}
+              />
+            )}
           </div>
 
           {hasTerminalSidebar && (
@@ -1965,7 +2106,7 @@ export default function ThreadTerminalDrawer({
                   <TerminalActionButton
                     disabled={!canOperateTerminal}
                     className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
-                    onClick={() => confirmCloseTerminal(resolvedActiveTerminalId)}
+                    onClick={confirmCloseActiveTerminal}
                     label={closeTerminalActionLabel}
                   >
                     <Trash2 className="size-3.25" />
@@ -1978,7 +2119,7 @@ export default function ThreadTerminalDrawer({
                   <TerminalSidebarGroup
                     key={terminalGroup.id}
                     terminalGroup={terminalGroup}
-                    activeTerminalId={resolvedActiveTerminalId}
+                    activeTerminalId={sidebarActiveTerminalId}
                     showHeader={showGroupHeaders}
                     terminalLabelById={terminalLabelById}
                     closeShortcutLabel={closeShortcutLabel}
@@ -1987,6 +2128,16 @@ export default function ThreadTerminalDrawer({
                     onCloseTerminal={confirmCloseTerminal}
                   />
                 ))}
+                {sharedTerminals.length > 0 && onShowSharedTerminal && (
+                  <SharedTerminalSidebarSection
+                    environmentId={threadRef.environmentId}
+                    sharedTerminals={sharedTerminals}
+                    activeSharedTerminal={activeSharedTerminal}
+                    canOperateTerminal={canOperateTerminal}
+                    onShowSharedTerminal={onShowSharedTerminal}
+                    onCloseSharedTerminal={confirmCloseSharedTerminal}
+                  />
+                )}
               </div>
             </aside>
           )}
