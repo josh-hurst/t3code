@@ -10,6 +10,7 @@ import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/proje
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { memo, useEffect } from "react";
 import { useComposerDraftStore } from "../composerDraftStore";
+import { useClientSettings } from "../hooks/useSettings";
 import { useStableCallback } from "../hooks/useStableCallback";
 import type { TerminalContextSelection } from "../lib/terminalContext";
 import { focusActiveDrawerTerminal, focusTerminal } from "../lib/terminalFocus";
@@ -21,10 +22,17 @@ import {
 } from "../rightPanelStore";
 import { useProject, useQuietThreadShell } from "../state/entities";
 import { useEnvironmentScope } from "../state/session";
-import { useKnownTerminalSessions } from "../state/terminalSessions";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import {
+  useKnownTerminalSessions,
+  useSharedProjectTerminalSessions,
+} from "../state/terminalSessions";
+import {
+  selectSharedTerminal,
+  selectThreadTerminalUiState,
+  useTerminalUiStateStore,
+} from "../terminalUiStateStore";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
-import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
+import ThreadTerminalDrawer, { type SharedTerminalTab } from "./ThreadTerminalDrawer";
 import { resolveTerminalWorktreePath } from "./ChatView.logic";
 
 /** Where a drawer or panel opens new terminals when a script run overrides the thread's own. */
@@ -152,6 +160,43 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   const serverOrderedTerminalIds = drawerTerminalSessions.map(
     (session) => session.target.terminalId,
   );
+  const sharedProjectTerminalsEnabled = useClientSettings(
+    (settings) => settings.sharedProjectTerminals,
+  );
+  const sharedTerminalSessions = useSharedProjectTerminalSessions(
+    sharedProjectTerminalsEnabled && projectRef
+      ? { environmentId: projectRef.environmentId, projectId: projectRef.projectId, threadId }
+      : null,
+  );
+  const sharedTerminals: SharedTerminalTab[] = (sharedTerminalSessions ?? []).map((session) => ({
+    threadId: session.target.threadId,
+    terminalId: session.target.terminalId,
+    label: resolveTerminalSessionLabel(session.target.terminalId, session.state.summary),
+    cwd: session.state.summary?.cwd ?? project?.workspaceRoot ?? "",
+  }));
+  const sharedTerminalTarget = useTerminalUiStateStore((state) =>
+    selectSharedTerminal(state.sharedTerminalByThreadKey, threadRef),
+  );
+  // A shared terminal that closed or exited elsewhere falls back to this thread's own tabs.
+  const activeSharedTerminal =
+    sharedTerminalTarget === null
+      ? null
+      : (sharedTerminals.find(
+          (terminal) =>
+            terminal.threadId === sharedTerminalTarget.threadId &&
+            terminal.terminalId === sharedTerminalTarget.terminalId,
+        ) ?? null);
+  const storeShowSharedTerminal = useTerminalUiStateStore((state) => state.showSharedTerminal);
+  // Keeps the stored view in step with what renders, so the close shortcut never targets a
+  // terminal that already ended elsewhere.
+  const sharedTerminalGone =
+    sharedTerminalTarget !== null &&
+    activeSharedTerminal === null &&
+    (!sharedProjectTerminalsEnabled || sharedTerminalSessions !== null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the stored shared terminal view once that terminal is gone from the environment
+  useEffect(() => {
+    if (sharedTerminalGone) storeShowSharedTerminal(threadRef, null);
+  }, [sharedTerminalGone, storeShowSharedTerminal, threadRef]);
   const storeSetTerminalHeight = useTerminalUiStateStore((state) => state.setTerminalHeight);
   const storeSplitTerminal = useTerminalUiStateStore((state) => state.splitTerminal);
   const storeSplitTerminalVertical = useTerminalUiStateStore(
@@ -227,6 +272,18 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     if (visible) focusActiveDrawerTerminal(threadRef);
   });
 
+  const showSharedTerminal = (terminal: SharedTerminalTab) => {
+    storeShowSharedTerminal(threadRef, {
+      threadId: terminal.threadId,
+      terminalId: terminal.terminalId,
+    });
+  };
+
+  const closeSharedTerminal = useStableCallback((terminal: SharedTerminalTab) => {
+    terminalActions.closeSharedTerminal(terminal);
+    if (visible) focusActiveDrawerTerminal(threadRef);
+  });
+
   const handleAddTerminalContext = (selection: TerminalContextSelection) => {
     if (!visible) {
       return;
@@ -277,6 +334,10 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
           onAddTerminalContext={handleAddTerminalContext}
           terminalLabelsById={terminalLabelsById}
           terminalLaunchLocationsById={terminalLaunchLocationsById}
+          sharedTerminals={sharedTerminals}
+          activeSharedTerminal={activeSharedTerminal}
+          onShowSharedTerminal={showSharedTerminal}
+          onCloseSharedTerminal={closeSharedTerminal}
         />
       </div>
     </div>

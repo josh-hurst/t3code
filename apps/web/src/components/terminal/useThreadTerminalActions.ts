@@ -16,7 +16,11 @@ import { readEnvironmentScope } from "../../state/session";
 import { terminalEnvironment } from "../../state/terminal";
 import { useKnownTerminalSessions } from "../../state/terminalSessions";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../../terminalUiStateStore";
+import {
+  selectThreadTerminalUiState,
+  useTerminalUiStateStore,
+  type SharedTerminalTarget,
+} from "../../terminalUiStateStore";
 
 /** Where a new terminal starts. Omitted fields fall back to the thread's project and worktree. */
 export interface TerminalLaunchLocation {
@@ -132,6 +136,16 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     })();
   };
 
+  /** Ends another thread's terminal from this thread's drawer and drops it from both drawers. */
+  const closeSharedTerminal = (target: SharedTerminalTarget) => {
+    if (!threadRef || !canWrite()) return;
+    const ownerRef = { environmentId: threadRef.environmentId, threadId: target.threadId };
+    closeTerminalSession(target.terminalId, ownerRef);
+    const store = useTerminalUiStateStore.getState();
+    store.closeTerminal(ownerRef, target.terminalId);
+    store.showSharedTerminal(threadRef, null);
+  };
+
   const writeToTerminal = (terminalId: string, data: string) => {
     if (!threadRef || !canWrite()) return null;
     return writeTerminal({
@@ -145,6 +159,7 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     allocateTerminalId: useStableCallback(allocateTerminalId),
     launchTerminal: useStableCallback(launchTerminal),
     closeTerminalSession: useStableCallback(closeTerminalSession),
+    closeSharedTerminal: useStableCallback(closeSharedTerminal),
     writeToTerminal: useStableCallback(writeToTerminal),
   };
 }

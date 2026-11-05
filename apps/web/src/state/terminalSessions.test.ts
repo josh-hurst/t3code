@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ThreadId, type TerminalSummary } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ThreadId,
+  type ScopedThreadRef,
+  type TerminalSummary,
+} from "@t3tools/contracts";
 import { selectRunningSubprocessTerminalIds } from "@t3tools/client-runtime/state/terminal";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
@@ -9,6 +15,7 @@ import {
   attachedTerminalSessionAtom,
   knownTerminalSessionsAtom,
   selectKnownTerminalSessions,
+  sharedProjectTerminalSessionsAtom,
 } from "./terminalSessions";
 
 const attachCalls = vi.hoisted(() => [] as unknown[]);
@@ -30,6 +37,15 @@ vi.mock("./terminal", async () => {
     },
   };
 });
+const threadRefsByProjectAtom = await vi.hoisted(async () => {
+  const { Atom } = await import("effect/reactivity");
+  return Atom.make<ReadonlyMap<string, ReadonlyArray<ScopedThreadRef>>>(new Map());
+});
+vi.mock("./threads", () => ({
+  environmentThreadShells: {
+    environmentThreadRefsByProjectAtom: () => threadRefsByProjectAtom,
+  },
+}));
 vi.mock("./session", async () => {
   const { AsyncResult, Atom } = await import("effect/reactivity");
   const granted = Atom.make(AsyncResult.success({}));
@@ -139,6 +155,56 @@ describe("knownTerminalSessionsAtom", () => {
     const previousSuccess = Option.some(metadataResult(first));
     registry.set(metadataAtom, AsyncResult.failure(Cause.die("unavailable"), { previousSuccess }));
     expect(registry.get(sessions)).toBeNull();
+    unsubscribe();
+  });
+});
+
+describe("sharedProjectTerminalSessionsAtom", () => {
+  it("lists live terminals of the project's other threads and ignores the rest", () => {
+    const registry = AtomRegistry.make();
+    const projectId = ProjectId.make("project-a");
+    const otherProjectThread = ThreadId.make("thread-c");
+    registry.set(
+      threadRefsByProjectAtom,
+      new Map([
+        [
+          projectId,
+          [
+            { environmentId: environmentA, threadId: threadA },
+            { environmentId: environmentA, threadId: threadB },
+          ],
+        ],
+        ["project-b", [{ environmentId: environmentA, threadId: otherProjectThread }]],
+      ]),
+    );
+    const own = summary(threadA, "terminal-1");
+    const shared = summary(threadB, "terminal-1");
+    const exited = summary(threadB, "terminal-2", { status: "exited" });
+    const otherProject = summary(otherProjectThread, "terminal-1");
+    registry.set(
+      metadataAtom,
+      AsyncResult.success<ReadonlyArray<TerminalSummary>>([own, shared, exited, otherProject]),
+    );
+    const sessions = sharedProjectTerminalSessionsAtom(environmentA, projectId, threadA);
+    const notified: unknown[] = [];
+    const unsubscribe = registry.subscribe(sessions, (value) => notified.push(value));
+    const before = registry.get(sessions);
+    expect(before?.map((session) => session.target)).toEqual([
+      { environmentId: environmentA, threadId: threadB, terminalId: "terminal-1" },
+    ]);
+
+    // The thread's own and other projects' terminals do not notify the drawer.
+    registry.set(
+      metadataAtom,
+      AsyncResult.success<ReadonlyArray<TerminalSummary>>([
+        { ...own, label: "Renamed" },
+        shared,
+        exited,
+        { ...otherProject, label: "Renamed" },
+      ]),
+    );
+    expect(notified).toEqual([]);
+    expect(registry.get(sessions)).toBe(before);
     unsubscribe();
   });
 });

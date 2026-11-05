@@ -7,8 +7,10 @@ import {
   type KnownTerminalSession,
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
+import { arrayElementsEqual } from "@t3tools/client-runtime/state/entities";
 import {
   EnvironmentId,
+  ProjectId,
   ThreadId,
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
@@ -23,6 +25,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { formatEnvironmentQueryError } from "./query";
 import { terminalEnvironment } from "./terminal";
 import { environmentSession, sessionHasScope, useEnvironmentScope } from "./session";
+import { environmentThreadShells } from "./threads";
 
 const EMPTY_KNOWN_TERMINAL_SESSIONS = Object.freeze<ReadonlyArray<KnownTerminalSession>>([]);
 
@@ -126,6 +129,28 @@ export function selectKnownTerminalSessions(
   return sessions;
 }
 
+/**
+ * Live terminals that other threads of the same project own, for shared project terminals.
+ * Exited shells stay out: there is nothing left to switch to.
+ */
+function selectSharedProjectTerminalSessions(
+  sessions: ReadonlyArray<KnownTerminalSession>,
+  projectThreadRefs: ReadonlyArray<{ readonly threadId: ThreadId }>,
+  threadId: ThreadId,
+): ReadonlyArray<KnownTerminalSession> {
+  if (sessions.length === 0 || projectThreadRefs.length === 0) {
+    return EMPTY_KNOWN_TERMINAL_SESSIONS;
+  }
+  const projectThreadIds = new Set<string>(projectThreadRefs.map((ref) => ref.threadId));
+  const shared = sessions.filter(
+    (session) =>
+      session.target.threadId !== threadId &&
+      projectThreadIds.has(session.target.threadId) &&
+      (session.state.status === "running" || session.state.status === "starting"),
+  );
+  return shared.length === 0 ? EMPTY_KNOWN_TERMINAL_SESSIONS : shared;
+}
+
 const EMPTY_TERMINAL_SESSION_ATOM = Atom.make(EMPTY_TERMINAL_SESSION_STATE).pipe(
   Atom.withLabel("web-terminal-session:empty"),
 );
@@ -217,6 +242,56 @@ export function knownTerminalSessionsAtom(
   threadId: ThreadId | null,
 ): Atom.Atom<ReadonlyArray<KnownTerminalSession> | null> {
   return knownTerminalSessionsFamily(JSON.stringify([environmentId, threadId]));
+}
+
+const decodeSharedSessionsKey = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Tuple([EnvironmentId, ProjectId, ThreadId])),
+);
+
+// Derived per thread, so terminal updates outside the project's other threads notify no one here.
+const sharedProjectTerminalSessionsFamily = Atom.family((key: string) => {
+  const [environmentId, projectId, threadId] = Option.getOrThrow(decodeSharedSessionsKey(key));
+  let previous = EMPTY_KNOWN_TERMINAL_SESSIONS;
+  return Atom.make((get) => {
+    const metadata = get(terminalEnvironment.metadata({ environmentId, input: null }));
+    if (metadata._tag !== "Success") return null;
+    const projectThreadRefs =
+      get(environmentThreadShells.environmentThreadRefsByProjectAtom(environmentId)).get(
+        projectId,
+      ) ?? [];
+    const next = selectSharedProjectTerminalSessions(
+      selectKnownTerminalSessions(metadata.value, environmentId, null),
+      projectThreadRefs,
+      threadId,
+    );
+    if (arrayElementsEqual(next, previous)) return previous;
+    previous = next;
+    return next;
+  }).pipe(Atom.withLabel(`web-shared-project-terminal-sessions:${key}`));
+});
+
+export function sharedProjectTerminalSessionsAtom(
+  environmentId: EnvironmentId,
+  projectId: ProjectId,
+  threadId: ThreadId,
+): Atom.Atom<ReadonlyArray<KnownTerminalSession> | null> {
+  return sharedProjectTerminalSessionsFamily(JSON.stringify([environmentId, projectId, threadId]));
+}
+
+/** `null` input turns the lookup off; a `null` result means metadata has not loaded. */
+export function useSharedProjectTerminalSessions(
+  input: {
+    readonly environmentId: EnvironmentId;
+    readonly projectId: ProjectId;
+    readonly threadId: ThreadId;
+  } | null,
+): ReadonlyArray<KnownTerminalSession> | null {
+  const canRead = useEnvironmentScope(input?.environmentId ?? null, AuthTerminalReadScope);
+  return useAtomValue(
+    input === null || !canRead
+      ? NO_KNOWN_TERMINAL_SESSIONS_ATOM
+      : sharedProjectTerminalSessionsAtom(input.environmentId, input.projectId, input.threadId),
+  );
 }
 
 export function useKnownTerminalSessions(input: {

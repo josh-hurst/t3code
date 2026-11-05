@@ -560,6 +560,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["timestamp clock locale system browser os 12 hour 24 hour"],
   },
   {
+    id: "shared-project-terminals",
+    title: "Shared project terminals",
+    to: "/settings/general",
+    searchTerms: ["terminal drawer tabs other threads switch shell"],
+  },
+  {
     id: "response-streaming",
     title: "Response streaming",
     to: "/settings/threads",

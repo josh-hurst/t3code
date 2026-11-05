@@ -17,6 +17,14 @@ then copy. Cmd+A on macOS and Ctrl+Shift+A elsewhere select the same output.
 Ctrl+A still moves to the beginning of shell input on Windows and Linux.
 Jump to latest in the context menu returns to the current output.
 
+## Shared project terminals
+
+On web and desktop, turn on **Settings → General → Shared project terminals** to list the
+running terminals of a project's other threads under **Other threads** in each thread's terminal
+drawer. Select one to use it from the thread you are in; select one of the thread's own terminals
+to switch back. Closing a shared terminal ends it for its own thread too. Each device keeps its
+own choice.
+
 ## fish
 
 T3 Code starts fish with `no-query-term`, avoiding startup waits for terminal
