@@ -2756,10 +2756,30 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
-export function resolveDesktopProductName(version: string): string {
+// Forks sign with their own Apple team and install beside the official app, so they
+// cannot reuse its bundle ID or name.
+const DesktopIdentityOverrides = Config.all({
+  appId: Config.String("T3CODE_DESKTOP_APP_ID").pipe(Config.withDefault(DESKTOP_APP_ID)),
+  productName: Config.String("T3CODE_DESKTOP_PRODUCT_NAME").pipe(Config.option),
+});
+
+export function resolveDesktopProductName(
+  version: string,
+  productNameOverride: Option.Option<string> = Option.none(),
+): string {
+  if (Option.isSome(productNameOverride)) return productNameOverride.value;
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? "T3 Code (Nightly)"
     : (desktopPackageJson.productName ?? "T3 Code");
+}
+
+// "T3 Code (Beta)" -> "T3-Code-${version}-${arch}.${ext}"
+export function resolveDesktopArtifactName(productName: string): string {
+  const base = productName
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .trim()
+    .replaceAll(/\s+/g, "-");
+  return `${base}-\${version}-\${arch}.\${ext}`;
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2778,11 +2798,13 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
 ) {
+  const identity = yield* DesktopIdentityOverrides;
+  const productName = resolveDesktopProductName(version, identity.productName);
   const buildConfig: Record<string, unknown> = {
     afterPack: (yield* Path.Path).join(yield* RepoRoot, "scripts/prepare-server-compile-cache.cjs"),
-    appId: DESKTOP_APP_ID,
-    productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    appId: identity.appId,
+    productName,
+    artifactName: resolveDesktopArtifactName(productName),
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
@@ -2877,7 +2899,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "mac" && target === "dmg") {
     buildConfig.dmg = {
       // Finder caches DMG backgrounds by volume name; give each installer its own.
-      title: `${resolveDesktopProductName(version)} ${version} Installer`,
+      title: `${productName} ${version} Installer`,
       background: `dmg/dmg-background-${updateChannel}.png`,
       window: {
         width: 640,
@@ -3743,6 +3765,15 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
 
   yield* Effect.log("[desktop-artifact] Staging release app...");
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));
+  // A concurrent dev watcher can clear dist-electron mid-copy; boot.cjs then
+  // fails at launch with "Cannot find module './main.cjs'".
+  if (!(yield* fs.exists(path.join(stageAppDir, "apps/desktop/dist-electron/main.cjs")))) {
+    return yield* new MissingDesktopBuildInputError({
+      artifact: "desktop-dist",
+      artifactPath: path.join(distDirs.desktopDist, "main.cjs"),
+      buildCommand: "vp run build:desktop",
+    });
+  }
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   if (options.platform === "linux") {
     const extensionDir = path.join(stageAppDir, "apps/desktop/gnome-extension");
@@ -3804,8 +3835,10 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
+  const identity = yield* DesktopIdentityOverrides;
+  // Passkey entitlements need a provisioning profile for the official bundle ID.
   const configuredMacPasskeySigning =
-    options.platform === "mac" && options.signed
+    options.platform === "mac" && options.signed && identity.appId === DESKTOP_APP_ID
       ? yield* Effect.try({
           try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
@@ -4052,7 +4085,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   if (options.platform === "win") {
     yield* validateWindowsPackagedPayload({
       stageDistDir,
-      appExecutableName: `${resolveDesktopProductName(appVersion)}.exe`,
+      appExecutableName: `${resolveDesktopProductName(appVersion, identity.productName)}.exe`,
       targetArch: options.arch,
       appVersion,
       expectWslRuntime: bundlesWslRuntime({
