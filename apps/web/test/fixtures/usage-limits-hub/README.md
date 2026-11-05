@@ -45,7 +45,7 @@ Reset times are minute offsets from `n0`.
 
    Then re-read the time:
    - On the Usage page, select Cost and then Limits again.
-   - Open the composer panel with `/usage-limits` after freezing.
+   - Open the composer panel with `/usage` after freezing.
    - The sidebar's relative timestamp picks up the frozen clock on its next minute tick.
 
 5. Viewports and themes: emulate `prefers-color-scheme` light and dark, and wait a few seconds after switching theme or size so transitions and overlay scrollbars settle.

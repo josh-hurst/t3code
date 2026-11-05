@@ -1,7 +1,11 @@
-import type { EnvironmentId, UsageLimitsReport } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId, UsageLimitsReport } from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { limitsNotice } from "@t3tools/shared/usageLimits";
 import { GaugeIcon } from "lucide-react";
+import { Fragment } from "react";
+
+import { orchestrationEnvironment } from "~/state/orchestration";
+import { useEnvironmentQuery } from "~/state/query";
 
 import { ensureLocalApi } from "../../localApi";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
@@ -10,6 +14,8 @@ import { providerClients } from "../settings/providerDriverMeta";
 import { RedactedSensitiveText } from "../settings/RedactedSensitiveText";
 import { LimitWindows, ResetCredits } from "../usage/UsageLimits";
 import { ComposerBanner } from "./ComposerBanner";
+import { ComposerLimitDrivers } from "./ComposerLimitDrivers";
+import { threadSpendRows, threadTokenRows } from "./threadUsageFormat";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 
 function accountLabel(account: UsageLimitsReport["accounts"][number]): string {
@@ -48,6 +54,8 @@ export function usageLimitsBannerItem(
   id: string,
   report: UsageLimitsReport,
   environmentId: EnvironmentId,
+  threadId: ThreadId | null,
+  showLimitDrivers: boolean,
   onDismiss: () => void,
 ): ComposerBannerStackItem {
   const [first] = report.accounts;
@@ -61,11 +69,18 @@ export function usageLimitsBannerItem(
     id,
     variant: "info",
     icon: <GaugeIcon />,
-    title: "Usage limits",
+    title: "Usage",
     description: summary,
-    dismissLabel: "Dismiss usage limits",
+    dismissLabel: "Dismiss usage",
     onDismiss,
-    children: <UsageLimitsBannerBody report={report} environmentId={environmentId} />,
+    children: (
+      <UsageLimitsBannerBody
+        report={report}
+        environmentId={environmentId}
+        threadId={threadId}
+        showLimitDrivers={showLimitDrivers}
+      />
+    ),
   };
 }
 
@@ -105,14 +120,18 @@ export function modelFallbackBannerItem({
 function UsageLimitsBannerBody({
   report,
   environmentId,
+  threadId,
+  showLimitDrivers,
 }: {
   readonly report: UsageLimitsReport;
   readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId | null;
+  readonly showLimitDrivers: boolean;
 }) {
   const now = Date.parse(report.createdAt);
   return (
     <ComposerBanner.Scroll>
-      <ComposerBanner.Body className="flex flex-col gap-2 pt-1 pb-1.5 pe-2">
+      <ComposerBanner.Body className="flex flex-col gap-2 ps-2 pt-1 pe-2 pb-1.5 sm:ps-1.5">
         {report.accounts.map((account) => {
           const resetCreditInput =
             account.resetCreditInput ??
@@ -163,7 +182,40 @@ function UsageLimitsBannerBody({
             {notice}
           </span>
         ))}
+        {threadId ? <ThreadUsageSection environmentId={environmentId} threadId={threadId} /> : null}
+        {showLimitDrivers ? <ComposerLimitDrivers environmentId={environmentId} /> : null}
       </ComposerBanner.Body>
     </ComposerBanner.Scroll>
+  );
+}
+
+function ThreadUsageSection({
+  environmentId,
+  threadId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}) {
+  const { data: usage, error } = useEnvironmentQuery(
+    orchestrationEnvironment.threadUsage({ environmentId, input: { threadId } }),
+  );
+  if (usage === null) {
+    return error ? <span className="text-xs text-muted-foreground">{error}</span> : null;
+  }
+  if (usage.turns === 0 && usage.costUsd === null) return null;
+  return (
+    <div className="flex min-w-0 flex-col gap-1 border-t border-border/60 pt-2">
+      <span className="text-xs text-muted-foreground">
+        This thread{usage.partial ? " · some turns are missing from these totals" : ""}
+      </span>
+      <div className="grid grid-cols-[auto_auto] justify-start gap-x-6 gap-y-0.5 text-xs sm:grid-cols-[auto_auto_auto_auto]">
+        {[...threadSpendRows(usage), ...threadTokenRows(usage)].map(([label, value]) => (
+          <Fragment key={label}>
+            <span className="text-muted-foreground">{label}</span>
+            <span className="text-end font-medium text-foreground tabular-nums">{value}</span>
+          </Fragment>
+        ))}
+      </div>
+    </div>
   );
 }

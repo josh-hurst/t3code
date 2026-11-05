@@ -1,8 +1,13 @@
 import type {
+  EnvironmentId,
+  OrchestrationV2ThreadUsage,
   ProviderInstanceId,
   ServerProvider,
+  ServerProviderUsageLimits,
   ServerProviderUsageWindow,
+  ThreadId,
   UsageLimitSourceSnapshots,
+  UsageProviderKind,
 } from "@t3tools/contracts";
 import {
   collectProviderUsageLimits,
@@ -12,17 +17,30 @@ import {
   paceOf,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import { formatContextWindowTokens } from "../../lib/contextWindow";
 import { cn } from "../../lib/utils";
+import { orchestrationEnvironment } from "../../state/orchestration";
+import { useEnvironmentQuery } from "../../state/query";
+import { serverEnvironment } from "../../state/server";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
+import { threadSpendRows, threadTokenRows } from "./threadUsageFormat";
+import {
+  formatLimitShare,
+  limitWindowStartMs,
+  providerCostUsd,
+  usageDaysSince,
+  usageProviderForDriver,
+  weeklyLimitShare,
+  weeklyLimitWindow,
+} from "./threadWeeklyShare";
 
 const PACE_LABEL: Record<LimitPace, string> = {
   ahead: "Ahead of pace",
@@ -35,6 +53,8 @@ export interface ThreadDetailsUsageInput {
   readonly providers: readonly ServerProvider[];
   readonly sources: UsageLimitSourceSnapshots;
   readonly contextWindow: ContextWindowSnapshot | null;
+  /** Changes when a turn starts or settles, so thread totals refetch. */
+  readonly revision: string;
 }
 
 type UsageTone = "error" | "warning" | null;
@@ -47,15 +67,7 @@ export function ThreadDetailsUsage({
 }: Omit<ThreadDetailsUsageInput, "contextWindow">) {
   const nowMinute = useNowMinute();
   const now = Date.parse(`${nowMinute}:00Z`);
-  const report =
-    providerInstanceId !== null
-      ? collectProviderUsageLimits(providerInstanceId, providers, sources, now)
-      : null;
-  // Only this instance's data: the report keeps one instance per login, and any other entry may be
-  // a different login or workspace, so fall back to the instance's own snapshot.
-  const limits =
-    report?.accounts.find((entry) => entry.instanceId === providerInstanceId)?.limits ??
-    providers.find((provider) => provider.instanceId === providerInstanceId)?.usageLimits;
+  const limits = instanceUsageLimits(providerInstanceId, providers, sources, now);
   if (!limits) return null;
   const notice = limitsNotice(limits);
 
@@ -79,6 +91,168 @@ export function ThreadDetailsUsage({
         )}
       </div>
     </ThreadDetailsSection>
+  );
+}
+
+function instanceUsageLimits(
+  providerInstanceId: ProviderInstanceId | null,
+  providers: readonly ServerProvider[],
+  sources: UsageLimitSourceSnapshots,
+  now: number,
+): ServerProviderUsageLimits | undefined {
+  if (providerInstanceId === null) return undefined;
+  const report = collectProviderUsageLimits(providerInstanceId, providers, sources, now);
+  // Only this instance's data: the report keeps one instance per login, and any other entry may be
+  // a different login or workspace, so fall back to the instance's own snapshot.
+  return (
+    report?.accounts.find((entry) => entry.instanceId === providerInstanceId)?.limits ??
+    providers.find((provider) => provider.instanceId === providerInstanceId)?.usageLimits
+  );
+}
+
+/** Cost and tokens over every turn of the thread, from the server's full history. */
+export function ThreadDetailsThreadUsage({
+  environmentId,
+  threadId,
+  providerInstanceId,
+  providers,
+  sources,
+  revision,
+}: Omit<ThreadDetailsUsageInput, "contextWindow"> & {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}) {
+  const nowMinute = useNowMinute();
+  const { data: usage } = useEnvironmentQuery(
+    orchestrationEnvironment.threadUsage({ environmentId, input: { threadId, revision } }),
+  );
+  if (usage === null || (usage.turns === 0 && usage.costUsd === null)) return null;
+  const weeklyWindow = weeklyLimitWindow(
+    instanceUsageLimits(providerInstanceId, providers, sources, Date.parse(`${nowMinute}:00Z`))
+      ?.windows,
+  );
+  const usageProvider = usageProviderForDriver(
+    providers.find((provider) => provider.instanceId === providerInstanceId)?.driver ?? null,
+  );
+  return (
+    <ThreadDetailsSection
+      headingId="thread-details-thread-usage-heading"
+      title="Thread cost and tokens"
+      showHeading={false}
+    >
+      <div className="grid grid-cols-[auto_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
+        <UsageGroupLabel>Spend</UsageGroupLabel>
+        <TotalsRows rows={threadSpendRows(usage)} usage={usage} />
+        {weeklyWindow !== null && usageProvider !== null ? (
+          <WeeklyShareRow
+            environmentId={environmentId}
+            threadId={threadId}
+            revision={revision}
+            window={weeklyWindow}
+            provider={usageProvider}
+          />
+        ) : null}
+        <UsageGroupLabel>Tokens</UsageGroupLabel>
+        <TotalsRows rows={threadTokenRows(usage)} usage={usage} />
+      </div>
+    </ThreadDetailsSection>
+  );
+}
+
+function UsageGroupLabel({ children }: { readonly children: ReactNode }) {
+  return (
+    <span className="col-span-3 px-2.5 pt-1.5 pb-0.5 text-2xs font-medium text-muted-foreground/70 select-none">
+      {children}
+    </span>
+  );
+}
+
+function TotalsRows({
+  rows,
+  usage,
+}: {
+  readonly rows: ReadonlyArray<readonly [label: string, value: string]>;
+  readonly usage: OrchestrationV2ThreadUsage;
+}) {
+  return rows.map(([label, value]) => (
+    <UsageRow
+      key={label}
+      label={label}
+      fill={null}
+      tone={null}
+      value={value}
+      tooltip={
+        <>
+          <span className="text-foreground">
+            {label}: {value}
+          </span>
+          <span className="text-muted-foreground">
+            {usage.turns} {usage.turns === 1 ? "turn" : "turns"} in this thread
+            {usage.partial ? "; some are missing from these totals" : ""}
+          </span>
+        </>
+      }
+    />
+  ));
+}
+
+// Reads the provider's whole history for the window, so it mounts only with the item shown.
+function WeeklyShareRow({
+  environmentId,
+  threadId,
+  revision,
+  window,
+  provider,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly revision: string;
+  readonly window: ServerProviderUsageWindow;
+  readonly provider: UsageProviderKind;
+}) {
+  const startMs = limitWindowStartMs(window);
+  const [now] = useState(() => new Date());
+  const { data: threadUsage } = useEnvironmentQuery(
+    startMs === null
+      ? null
+      : orchestrationEnvironment.threadUsage({
+          environmentId,
+          input: { threadId, revision, since: new Date(startMs).toISOString() },
+        }),
+  );
+  const { data: summary } = useEnvironmentQuery(
+    startMs === null
+      ? null
+      : serverEnvironment.usageSummary({ environmentId, input: usageDaysSince(startMs, now) }),
+  );
+  const share =
+    threadUsage?.costUsd == null || summary === null
+      ? null
+      : weeklyLimitShare({
+          usedPercent: window.usedPercent,
+          threadCostUsd: threadUsage.costUsd,
+          totalCostUsd: providerCostUsd(summary, provider),
+        });
+  if (share === null) return null;
+  return (
+    <UsageRow
+      label={window.label}
+      fill={Math.min(100, share)}
+      tone={null}
+      muted
+      value={formatLimitShare(share)}
+      ariaValue={`about ${Math.round(share)}% of the limit`}
+      tooltip={
+        <>
+          <span className="text-foreground">
+            This thread used {formatLimitShare(share)} of the {window.usedPercent}% used
+          </span>
+          <span className="text-muted-foreground">
+            Its share of this machine's estimated spend since the window began
+          </span>
+        </>
+      }
+    />
   );
 }
 
