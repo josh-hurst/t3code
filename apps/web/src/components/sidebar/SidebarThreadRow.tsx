@@ -27,7 +27,7 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 
-import type { TimestampFormat } from "@t3tools/contracts/settings";
+import type { SidebarRowDetail, TimestampFormat } from "@t3tools/contracts/settings";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
@@ -83,6 +83,7 @@ import {
   resolveThreadLastVisitedAt,
   shouldRecedeSidebarThread,
   resolveWorkingStartedAt,
+  sidebarMessagePreview,
   useRetainedValue,
   useSidebarRowSubscriptionLease,
   setFileDragActive,
@@ -563,6 +564,7 @@ type SidebarThreadRowProps = {
   scratchMachineLabel: string | null;
   project: EnvironmentProject | null;
   projectDisplayName: string | null;
+  rowDetail: SidebarRowDetail;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
   timestampFormat: TimestampFormat;
   onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
@@ -806,6 +808,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const isRemote = thread.environmentId !== props.currentEnvironmentId;
   const showsScratchMachine = !thread.branch && props.scratchMachineLabel !== null;
+  const showsBranch = props.rowDetail !== "message";
+  const messagePreview =
+    props.rowDetail === "branch" ? null : sidebarMessagePreview(thread.source.latestVisibleMessage);
+  const showsBranchDetail = showsBranch && (Boolean(thread.branch) || showsScratchMachine);
 
   const detailsTooltip = (
     <SidebarThreadTooltip
@@ -1138,30 +1144,46 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const diff = latestRunDiff(thread);
   // Only the trailing icons would remain, so the row moves them to the title line instead.
   const metaLineEmpty =
-    !thread.branch &&
-    !showsScratchMachine &&
+    messagePreview === null &&
+    !showsBranchDetail &&
     prBadge === null &&
     diff === null &&
     runningTerminalIds.length === 0;
   const metaLine = metaLineEmpty ? null : (
     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-      {thread.branch ? (
+      {showsBranch && thread.branch ? (
         <>
           <ThreadWorktreeIndicator thread={thread} />
-          <span className="flex min-w-0 flex-1">
+          {/* Beside a preview, the icon and code face mark the branch as a ref. */}
+          {messagePreview !== null && !thread.worktreePath ? (
+            <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+          ) : null}
+          <span
+            className={cn(
+              "flex min-w-0",
+              messagePreview === null ? "flex-1" : "max-w-[40%] font-mono text-2xs",
+            )}
+          >
             <MiddleTruncate value={thread.branch} showTitle={false} />
           </span>
         </>
-      ) : showsScratchMachine ? (
+      ) : showsBranch && showsScratchMachine ? (
         <>
           <EnvironmentMachineIcon
             aria-hidden
             kind={props.environmentMachine}
             className="size-3 shrink-0"
           />
-          <span className="min-w-0 flex-1 truncate">{props.scratchMachineLabel}</span>
+          <span
+            className={cn("min-w-0 truncate", messagePreview === null ? "flex-1" : "max-w-[45%]")}
+          >
+            {props.scratchMachineLabel}
+          </span>
         </>
-      ) : (
+      ) : null}
+      {messagePreview !== null ? (
+        <span className="min-w-0 flex-1 truncate">{messagePreview}</span>
+      ) : showsBranchDetail ? null : (
         <span className="flex-1" />
       )}
       {terminalStatusIcon}

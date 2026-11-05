@@ -159,6 +159,14 @@ needs you. Use the pen button on a folder, or right-click it, to start a thread 
 Pinned threads stay above the folders, and Snoozed and Settled stay below them. In this mode you
 cannot drag threads, and the Working section is off. Each device keeps its own choice.
 
+### Choose what shows under a thread's title
+
+**Settings → General → Thread row details** sets the line under each thread's title on web and
+desktop: its **Branch**, the start of its **Latest message**, or **Both**. It also applies to
+two-line folder rows in the boring sidebar. A thread started in your project's own checkout
+without picking a branch has no branch to show. While a run is going, the preview updates when
+the run ends.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list

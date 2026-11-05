@@ -22,6 +22,7 @@ import {
   type ResponseStreamingMode,
   type QuitConfirmationMode,
   SidebarProjectSortOrder,
+  SidebarRowDetail,
 } from "@t3tools/contracts/settings";
 import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -126,6 +127,12 @@ const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string>
   manual: "Manual",
 };
 const isSidebarProjectSortOrder = Schema.is(SidebarProjectSortOrder);
+const SIDEBAR_ROW_DETAIL_LABELS: Record<SidebarRowDetail, string> = {
+  branch: "Branch",
+  message: "Latest message",
+  both: "Both",
+};
+const isSidebarRowDetail = Schema.is(SidebarRowDetail);
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -483,6 +490,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
       : []),
+    ...(settings.sidebarRowDetail !== DEFAULT_UNIFIED_SETTINGS.sidebarRowDetail
+      ? ["Thread row details"]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-settle inactive threads"]
       : []),
@@ -652,6 +662,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+      sidebarRowDetail: DEFAULT_UNIFIED_SETTINGS.sidebarRowDetail,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -906,6 +917,39 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Working section"
             />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("sidebar-row-detail")}
+          description="Choose what shows under each thread's title: its branch, the start of its latest message, or both."
+          resetAction={
+            settings.sidebarRowDetail !== DEFAULT_UNIFIED_SETTINGS.sidebarRowDetail ? (
+              <SettingResetButton
+                label="thread row details"
+                onClick={() =>
+                  updateSettings({ sidebarRowDetail: DEFAULT_UNIFIED_SETTINGS.sidebarRowDetail })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.sidebarRowDetail}
+              onValueChange={(value) => {
+                if (isSidebarRowDetail(value)) updateSettings({ sidebarRowDetail: value });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Thread row details">
+                <SelectValue>{SIDEBAR_ROW_DETAIL_LABELS[settings.sidebarRowDetail]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {SidebarRowDetail.literals.map((detail) => (
+                  <SelectItem hideIndicator key={detail} value={detail}>
+                    {SIDEBAR_ROW_DETAIL_LABELS[detail]}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
       </SettingsSection>

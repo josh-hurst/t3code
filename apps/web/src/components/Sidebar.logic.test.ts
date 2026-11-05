@@ -34,6 +34,7 @@ import {
   groupSidebarThreadsByProject,
   resolveSidebarFolderDot,
   sidebarFolderExpansionKeys,
+  sidebarMessagePreview,
 } from "./Sidebar.logic";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
@@ -42,7 +43,14 @@ import {
 } from "@t3tools/client-runtime/state/thread-sort";
 import { resolveProjectExpanded } from "../uiStateStore";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
-import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  MessageId,
+  ProjectId,
+  ProviderInstanceId,
+  RunId,
+  ThreadId,
+} from "@t3tools/contracts";
 
 import {
   DEFAULT_INTERACTION_MODE,
@@ -58,6 +66,27 @@ import {
 } from "./sidebar/routeReveal";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+describe("sidebarMessagePreview", () => {
+  const message = (role: "user" | "assistant", text: string) => ({
+    id: MessageId.make("message:preview"),
+    role,
+    text,
+    updatedAt: DateTime.makeUnsafe("2026-10-25T00:00:00.000Z"),
+  });
+
+  it("flattens markdown onto one line and marks your own messages", () => {
+    expect(
+      sidebarMessagePreview(message("assistant", "## Done\n\nThe **sidebar** uses `rowDetail`.")),
+    ).toBe("Done The sidebar uses rowDetail.");
+    expect(sidebarMessagePreview(message("user", "Fix   it\nplease"))).toBe("You: Fix it please");
+  });
+
+  it("shows nothing when the message is only markup", () => {
+    expect(sidebarMessagePreview(message("assistant", "```"))).toBeNull();
+    expect(sidebarMessagePreview(null)).toBeNull();
+  });
+});
 
 describe("deleteSelectedThreadEntries", () => {
   const entries = [{ threadKey: "one" }, { threadKey: "two" }, { threadKey: "three" }] as const;
