@@ -140,17 +140,15 @@ export function startThreadNotifications(
               : status === "request"
                 ? "Guest request"
                 : "Input needed";
-    if (hasNotificationSound(mode)) {
+    const onScreen = document.visibilityState === "visible" && document.hasFocus();
+    const viewingThread =
+      onScreen && active.environmentId === environmentId && active.threadId === thread.id;
+    if (hasNotificationSound(mode) && !(kind === "completion" && viewingThread)) {
       void playNotificationSound(kind, () =>
         hasNotificationSound(getClientSettings().notificationMode),
       );
     }
-    if (
-      inAppNotificationsEnabled &&
-      document.visibilityState === "visible" &&
-      document.hasFocus() &&
-      (active.environmentId !== environmentId || active.threadId !== thread.id)
-    ) {
+    if (inAppNotificationsEnabled && onScreen && !viewingThread) {
       const toastKey = threadKey({ environmentId, threadId: thread.id });
       const toastId: ToastId = toastManager.add({
         onRemove: (): void => forgetToast(toastKey, toastId),
@@ -159,6 +157,13 @@ export function startThreadNotifications(
         description: thread.title,
         data: {
           hideCopyButton: true,
+          onClick: () => {
+            toastManager.close(toastId);
+            void router.navigate({
+              to: "/$environmentId/$threadId",
+              params: { environmentId, threadId: thread.id },
+            });
+          },
           leadingIcon:
             kind === "completion" ? (
               <CircleCheckIcon aria-hidden className="size-4 text-success-foreground" />
@@ -172,23 +177,13 @@ export function startThreadNotifications(
               <MessageCircleQuestionIcon aria-hidden className="size-4 text-info-foreground" />
             ),
         },
-        actionProps: {
-          children: "Open thread",
-          onClick: () => {
-            toastManager.close(toastId);
-            void router.navigate({
-              to: "/$environmentId/$threadId",
-              params: { environmentId, threadId: thread.id },
-            });
-          },
-        },
       });
       openToasts.set(toastKey, [...(openToasts.get(toastKey) ?? []), toastId]);
       return;
     }
     if (
       !hasDesktopNotifications(mode) ||
-      (document.visibilityState === "visible" && document.hasFocus()) ||
+      onScreen ||
       typeof Notification === "undefined" ||
       Notification.permission !== "granted"
     )

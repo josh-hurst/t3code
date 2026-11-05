@@ -169,6 +169,7 @@ const make = Effect.gen(function* () {
         (yield* fileSystem.exists(worktreePath).pipe(Effect.orElseSucceed(() => false)));
       const result = yield* textGeneration.generateThreadTitle({
         cwd: worktreeExists ? worktreePath : project.value.workspaceRoot,
+        projectName: project.value.title,
         message: context.message,
         attachments: context.attachments,
         ...(input.kind.type === "regenerate" ? { previousTitle: projection.thread.title } : {}),
