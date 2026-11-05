@@ -12,6 +12,7 @@ import {
   reorderProjects,
   resolveProjectExpanded,
   setProjectExpanded,
+  setSidebarProjectHidden,
   type UiState,
 } from "./uiStateStore";
 
@@ -20,6 +21,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectExpandedById: {},
     projectOrder: [],
     sidebarProjectScopeKeys: [],
+    sidebarHiddenProjectKeys: [],
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
@@ -126,6 +128,7 @@ describe("parsePersistedState", () => {
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKeys: [],
+      sidebarHiddenProjectKeys: [],
       pullRequestMergeMethod: "merge",
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
@@ -232,6 +235,7 @@ describe("uiStateStore persistence", () => {
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKeys: [],
       sidebarProjectScopeKey: null,
+      sidebarHiddenProjectKeys: [],
       threadChangedFilesExpansionVersion: 2,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
@@ -246,15 +250,29 @@ describe("uiStateStore persistence", () => {
     });
   });
 
-  it("restores the sidebar project scope across reloads", () => {
+  it("restores the sidebar project scope and hidden projects across reloads", () => {
     const keys = ["github.com/pingdotgg/t3code", "github.com/pingdotgg/uploadthing"];
-    persistState(makeUiState({ sidebarProjectScopeKeys: keys }));
+    const hidden = setSidebarProjectHidden(
+      setSidebarProjectHidden(makeUiState(), "github.com/pingdotgg/legacy", true),
+      "github.com/pingdotgg/docs",
+      true,
+    );
+    persistState(
+      setSidebarProjectHidden(
+        { ...hidden, sidebarProjectScopeKeys: keys },
+        "github.com/pingdotgg/docs",
+        false,
+      ),
+    );
 
     const persisted = JSON.parse(
       localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
     ) as PersistedUiState;
 
     expect(parsePersistedState(persisted).sidebarProjectScopeKeys).toEqual(keys);
+    expect(parsePersistedState(persisted).sidebarHiddenProjectKeys).toEqual([
+      "github.com/pingdotgg/legacy",
+    ]);
   });
 
   it("keeps a single-project scope readable by older clients", () => {

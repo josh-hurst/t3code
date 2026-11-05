@@ -68,6 +68,15 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+// What the detail line under a thread card's title shows.
+export const SidebarRowDetail = Schema.Literals(["branch", "message", "both"]);
+export type SidebarRowDetail = typeof SidebarRowDetail.Type;
+
+// Where threads that need you collect in the sidebar: off, at the top of each
+// project's folder, or in one section above the active list.
+export const SidebarNeedsYouPlacement = Schema.Literals(["off", "project", "top"]);
+export type SidebarNeedsYouPlacement = typeof SidebarNeedsYouPlacement.Type;
+
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
@@ -514,6 +523,13 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   sidebarThreadSortOrder: SidebarThreadSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
+  ),
+  sidebarRowDetail: SidebarRowDetail.pipe(Schema.withDecodingDefault(Effect.succeed("branch"))),
+  sidebarNeedsYouPlacement: SidebarNeedsYouPlacement.pipe(
+    Schema.withDecodingDefault(Effect.succeed("off")),
+  ),
+  sidebarNeedsYouIncludesCompleted: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
@@ -1846,6 +1862,9 @@ export const ClientSettingsPatch = Schema.Struct({
   ),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
+  sidebarRowDetail: Schema.optionalKey(SidebarRowDetail),
+  sidebarNeedsYouPlacement: Schema.optionalKey(SidebarNeedsYouPlacement),
+  sidebarNeedsYouIncludesCompleted: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   snapShotEnabled: Schema.optionalKey(Schema.Boolean),
   snapShotIncludeAccessibility: Schema.optionalKey(Schema.Boolean),

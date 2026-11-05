@@ -148,6 +148,28 @@ choice.
 While this is on, the active list is ordered by when each thread last came back to you, so you
 cannot drag or move threads within it. Your saved order returns when you turn it off.
 
+### Collect threads that need you
+
+Set **Settings → General → Needs you section** on web and desktop to gather threads waiting on an
+approval, an answer, or a guest, with a plan ready, or with a finished or failed run you haven't
+opened. **Above all projects** collects them in one **Needs you** section at the top of the active
+list, or above the project folders in the boring sidebar. **In each project** puts one at the top
+of each boring-sidebar folder, and a closed folder still lists them; without the boring sidebar it
+works like **Above all projects**. Pinned threads stay pinned and working threads stay in the
+Working section. The thread you have open stays where it was until you leave it, and leaves Needs
+you once you send it a message. Turn off **Finished threads in Needs you** to leave threads with a
+finished run where they are. With the Working section off, threads below Needs you keep your order
+and can still be dragged; the Needs you rows hold their place. Each device keeps its own choice.
+
+### Hide projects
+
+On web and desktop, hover a project in the sidebar's project filter and click its eye button to
+hide its threads from the sidebar, or choose **Hide** from a thread's menu or a boring-sidebar
+folder's menu. Hidden projects are crossed out in the filter, and **All projects** shows how many
+are hidden; click the eye again to show one. Picking a hidden project in the filter still shows
+it, and opening one of its threads from a link, history, or the command palette shows the project
+again. Each device keeps its own hidden projects.
+
 ### Group threads by project (beta)
 
 Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
@@ -158,6 +180,14 @@ close it. A closed folder shows how many threads it holds, and a dot when one of
 needs you. Use the pen button on a folder, or right-click it, to start a thread in that project.
 Pinned threads stay above the folders, and Snoozed and Settled stay below them. In this mode you
 cannot drag threads, and the Working section is off. Each device keeps its own choice.
+
+### Choose what shows under a thread's title
+
+**Settings → General → Thread row details** sets the line under each thread's title on web and
+desktop: its **Branch**, the start of its **Latest message**, or **Both**. It also applies to
+two-line folder rows in the boring sidebar. A thread started in your project's own checkout
+without picking a branch has no branch to show. While a run is going, the preview updates when
+the run ends.
 
 ## Settle finished work
 

@@ -4173,6 +4173,150 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     }),
   );
 
+  it.effect("previews the start of the latest finished message on the shell", () =>
+    Effect.gen(function* () {
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("thread:message-preview");
+      yield* projectionStore.apply({
+        id: EventId.make("event:message-preview:thread"),
+        type: "thread.created",
+        threadId,
+        occurredAt: now,
+        payload: {
+          createdBy: "user",
+          creationSource: "web",
+          id: threadId,
+          projectId: ProjectId.make("project:message-preview"),
+          title: "Message preview",
+          providerInstanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          activeProviderThreadId: null,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        },
+      });
+      const applyMessage = (input: {
+        readonly suffix: string;
+        readonly role: "user" | "assistant";
+        readonly text: string;
+        readonly streaming: boolean;
+        readonly seconds: number;
+        readonly runId?: RunId;
+      }) =>
+        projectionStore.apply({
+          id: EventId.make(`event:message-preview:${input.suffix}:${input.streaming}`),
+          type: "message.updated",
+          threadId,
+          occurredAt: DateTime.add(now, { seconds: input.seconds }),
+          payload: {
+            createdBy: input.role === "user" ? "user" : "agent",
+            creationSource: input.role === "user" ? "web" : "provider",
+            id: MessageId.make(`message:message-preview:${input.suffix}`),
+            threadId,
+            runId: input.runId ?? null,
+            nodeId: null,
+            role: input.role,
+            text: input.text,
+            attachments: [],
+            streaming: input.streaming,
+            createdAt: DateTime.add(now, { seconds: input.seconds }),
+            updatedAt: DateTime.add(now, { seconds: input.seconds }),
+          },
+        });
+      const preview = Effect.map(projectionStore.getShellSnapshot(), (snapshot) => {
+        const message = snapshot.threads.find(
+          (thread) => thread.id === threadId,
+        )?.latestVisibleMessage;
+        return message ? { role: message.role, text: message.text } : null;
+      });
+
+      yield* applyMessage({
+        suffix: "prompt",
+        role: "user",
+        text: "\n  Fix the sidebar",
+        streaming: false,
+        seconds: 0,
+      });
+      assert.deepEqual(yield* preview, { role: "user", text: "Fix the sidebar" });
+
+      yield* applyMessage({
+        suffix: "reply",
+        role: "assistant",
+        text: "Work",
+        streaming: true,
+        seconds: 1,
+      });
+      assert.deepEqual(yield* preview, { role: "user", text: "Fix the sidebar" });
+
+      yield* applyMessage({
+        suffix: "reply",
+        role: "assistant",
+        text: "y".repeat(500),
+        streaming: false,
+        seconds: 1,
+      });
+      assert.deepEqual(yield* preview, { role: "assistant", text: "y".repeat(200) });
+
+      const rolledBackRunId = RunId.make("run:message-preview:rolled-back");
+      const rootNodeId = NodeId.make("node:message-preview:rolled-back");
+      yield* projectionStore.apply({
+        id: EventId.make("event:message-preview:run-rolled-back"),
+        type: "run.created",
+        threadId,
+        runId: rolledBackRunId,
+        nodeId: rootNodeId,
+        driver,
+        providerInstanceId,
+        occurredAt: DateTime.add(now, { seconds: 2 }),
+        payload: {
+          id: rolledBackRunId,
+          threadId,
+          ordinal: 1,
+          providerInstanceId,
+          modelSelection,
+          providerThreadId: null,
+          userMessageId: MessageId.make("message:message-preview:undone"),
+          rootNodeId,
+          activeAttemptId: null,
+          status: "rolled_back",
+          requestedAt: DateTime.add(now, { seconds: 2 }),
+          startedAt: DateTime.add(now, { seconds: 2 }),
+          completedAt: DateTime.add(now, { seconds: 2 }),
+          checkpointId: null,
+          contextHandoffId: null,
+        },
+      });
+      yield* applyMessage({
+        suffix: "undone",
+        role: "user",
+        text: "Undo me",
+        streaming: false,
+        seconds: 2,
+        runId: rolledBackRunId,
+      });
+      assert.deepEqual(yield* preview, { role: "assistant", text: "y".repeat(200) });
+      // The projection path must agree with the SQL shell query.
+      assert.strictEqual(
+        ProjectionStore.threadShellFromProjection(
+          yield* projectionStore.getThreadProjection(threadId),
+        ).latestVisibleMessage?.text,
+        "y".repeat(200),
+      );
+    }),
+  );
+
   // regression: #17141 shell snapshot decoding blocked other database reads
   it.effect("reads the shell snapshot first and decodes it in a separate step", () =>
     Effect.gen(function* () {
