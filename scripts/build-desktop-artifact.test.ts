@@ -546,6 +546,48 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
+  it.effect("packages forks under their own bundle ID, name, and artifact names", () =>
+    Effect.gen(function* () {
+      const official = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "0.1.7",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.equal(official.appId, "com.t3tools.t3code");
+      assert.equal(official.productName, "T3 Code (Beta)");
+      assert.equal(official.artifactName, "T3-Code-${version}-${arch}.${ext}");
+
+      const fork = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.1.7001",
+        false,
+        false,
+        undefined,
+        undefined,
+      ).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: {
+                T3CODE_DESKTOP_APP_ID: "com.example.t3code",
+                T3CODE_DESKTOP_PRODUCT_NAME: "J6 Code (Beta)",
+              },
+            }),
+          ),
+        ),
+      );
+      assert.equal(fork.appId, "com.example.t3code");
+      assert.equal(fork.productName, "J6 Code (Beta)");
+      assert.equal(fork.artifactName, "J6-Code-${version}-${arch}.${ext}");
+      assert.equal((fork.dmg as { title: string }).title, "J6 Code (Beta) 0.1.7001 Installer");
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
   // pnpm writes "set this to true or false" placeholders into allowBuilds when a
   // tarball changes. pnpm ignores them, but the release build decode rejects them.
   it.effect("decodes the repo allowBuilds and every file: tarball it names exists", () =>
