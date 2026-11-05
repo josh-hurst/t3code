@@ -148,6 +148,15 @@ choice.
 While this is on, the active list is ordered by when each thread last came back to you, so you
 cannot drag or move threads within it. Your saved order returns when you turn it off.
 
+### Hide projects
+
+On web and desktop, hover a project in the sidebar's project filter and click its eye button to
+hide its threads from the sidebar, or choose **Hide** from a thread's menu or a boring-sidebar
+folder's menu. Hidden projects are crossed out in the filter, and **All projects** shows how many
+are hidden; click the eye again to show one. Picking a hidden project in the filter still shows
+it, and opening one of its threads from a link, history, or the command palette shows the project
+again. Each device keeps its own hidden projects.
+
 ### Group threads by project (beta)
 
 Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active

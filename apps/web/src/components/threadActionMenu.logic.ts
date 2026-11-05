@@ -5,6 +5,7 @@ export type ThreadActionMenuId =
   | "find"
   | "new-thread-on-branch"
   | "filter-by-project"
+  | "hide-project"
   | "turn-into-project"
   | "project-settings"
   | "pin"
@@ -102,6 +103,7 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
   return ![
     "find",
     "new-thread-on-branch",
+    "hide-project",
     "project-settings",
     "mark-unread",
     "share-guest",
@@ -190,6 +192,15 @@ export function buildThreadActionMenuItems(
               : `Filter by ${state.projectFilter.label}`,
             icon: "folder-tree",
           },
+          ...(state.projectFilter.isActive
+            ? []
+            : [
+                {
+                  id: "hide-project" as const,
+                  label: `Hide ${state.projectFilter.label}`,
+                  icon: "eye-off",
+                },
+              ]),
         ]
       : []),
     ...(state.canTurnIntoProject

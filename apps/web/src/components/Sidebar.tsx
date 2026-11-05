@@ -63,6 +63,8 @@ import type { OlderSettledScope } from "@t3tools/client-runtime/state/threads";
 import {
   CheckIcon,
   ChevronDownIcon,
+  EyeIcon,
+  EyeOffIcon,
   FolderIcon,
   ListFilterIcon,
   PlusIcon,
@@ -185,6 +187,7 @@ import {
   buildBulkUnpinContextMenuItem,
   deleteSelectedThreadEntries,
   filterSidebarProjectScopeItems,
+  resolveSidebarVisibleProjectKeys,
   firstValidTimestampMs,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
@@ -1006,6 +1009,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const projectGroupsRef = useRef(projectGroups);
   const persistedProjectScopeKeys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
   const setPersistedProjectScopeKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
+  const hiddenProjectKeyList = useUiStateStore((store) => store.sidebarHiddenProjectKeys);
+  const setPersistedProjectHidden = useUiStateStore((store) => store.setSidebarProjectHidden);
   const [projectScopeMenuState, dispatchProjectScopeMenu] = useReducer(
     reduceSidebarProjectScopeMenuState,
     { open: false, query: "" },
@@ -1071,6 +1076,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     setPersistedProjectScopeKeys(keys);
     scrollSidebarToTop(sidebarContentRef.current);
   };
+  const setProjectHidden = (key: string, hidden: boolean) => {
+    clearSelection();
+    setPersistedProjectHidden(key, hidden);
+  };
   // A scope whose project is gone reads as all projects once every snapshot has
   // loaded. The stored keys are left alone, so the scope returns with its project.
   // An archived project's scope reads as all projects, matching the menu.
@@ -1087,16 +1096,17 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const chosenProjectGroups = scopeGroups.filter((project) =>
     chosenProjectScopeKeys.includes(project.projectKey),
   );
-  const chosenScopeProjectKeys =
-    chosenProjectGroups.length === 0
-      ? null
-      : new Set(
-          chosenProjectGroups.flatMap((project) =>
-            project.memberProjectRefs.map(
-              (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
-            ),
-          ),
-        );
+  // Only projects the filter offers can be hidden, so an archived one always shows its threads.
+  const hiddenProjectKeys = new Set(
+    scopeGroups
+      .filter((project) => hiddenProjectKeyList.includes(project.projectKey))
+      .map((project) => project.projectKey),
+  );
+  const chosenScopeProjectKeys = resolveSidebarVisibleProjectKeys({
+    groups: projectGroups,
+    pickedKeys: chosenProjectGroups.map((project) => project.projectKey),
+    hiddenKeys: hiddenProjectKeys,
+  });
   const threads = useQuietThreadShells();
   const routeRowThreadKey =
     routeThreadRef === null
@@ -1175,9 +1185,37 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     matches: (item, query) =>
       projectScopeFilter.contains(item, query, (candidate) => candidate.label),
   });
+  // A widened scope also shows the open thread's project when it was hidden.
+  const revealedHiddenProjectKey = (() => {
+    if (!revealWidensScope || routeRowThreadKey === null) return null;
+    const thread = threads.find((candidate) => threadShellKey(candidate) === routeRowThreadKey);
+    if (thread === undefined) return null;
+    const group = scopeGroups.find((project) =>
+      project.memberProjectRefs.some(
+        (projectRef) =>
+          projectRef.environmentId === thread.environmentId &&
+          projectRef.projectId === thread.projectId,
+      ),
+    );
+    return group && hiddenProjectKeys.has(group.projectKey) ? group.projectKey : null;
+  })();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists the unhide a route reveal (history, link, palette) caused, like the widened scope above
+  useEffect(() => {
+    if (revealedHiddenProjectKey !== null) {
+      setPersistedProjectHidden(revealedHiddenProjectKey, false);
+    }
+  }, [revealedHiddenProjectKey, setPersistedProjectHidden]);
   const scopedProjectGroups = revealWidensScope ? [] : chosenProjectGroups;
   const scopedProjectRefs = scopedProjectGroups.flatMap((project) => project.memberProjectRefs);
-  const scopedProjectKeys = revealWidensScope ? null : chosenScopeProjectKeys;
+  const scopedProjectKeys = revealWidensScope
+    ? resolveSidebarVisibleProjectKeys({
+        groups: projectGroups,
+        pickedKeys: [],
+        hiddenKeys: new Set(
+          [...hiddenProjectKeys].filter((key) => key !== revealedHiddenProjectKey),
+        ),
+      })
+    : chosenScopeProjectKeys;
   const threadSearch = useThreadSearch(
     connectedEnvironmentIds,
     threadSearchQuery,
@@ -1262,6 +1300,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       : { id: "pin", label: "Pin project", icon: "pin" },
                   ]
                 : []),
+              ...(group.archived
+                ? []
+                : [{ id: "hide-project", label: "Hide project", icon: "eye-off" }]),
               { id: "project-settings", label: "Project settings", icon: "settings" },
             ],
             position,
@@ -1269,6 +1310,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         );
         if (clicked._tag === "Failure") return;
         switch (clicked.value) {
+          case "hide-project":
+            setProjectHidden(group.projectKey, true);
+            return;
           case "new-thread":
             startThreadInProjectFolder(group);
             return;
@@ -1335,7 +1379,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     folderGroups: boringSidebarEnabled
       ? scopedProjectGroups.length === 0
         ? // An archived project keeps a folder for its active threads, below the rest.
-          [...scopeGroups, ...projectGroups.filter((project) => project.archived)]
+          [
+            ...scopeGroups.filter(
+              (project) =>
+                !hiddenProjectKeys.has(project.projectKey) ||
+                project.projectKey === revealedHiddenProjectKey,
+            ),
+            ...projectGroups.filter((project) => project.archived),
+          ]
         : scopedProjectGroups
       : null,
     keepEmptyFolders: (group) =>
@@ -2654,6 +2705,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           return;
         }
         switch (clicked.value) {
+          case "hide-project":
+            if (threadProjectGroup) setProjectHidden(threadProjectGroup.projectKey, true);
+            return;
           case "filter-by-project":
             if (threadProjectGroup) {
               setProjectScopeKeys(
@@ -3016,7 +3070,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         label={
                           scopedProjectGroups.length > 0
                             ? `Filter threads by project: ${scopedProjectGroups.map((project) => project.displayName).join(", ")}`
-                            : "Filter threads by project"
+                            : hiddenProjectKeys.size > 0
+                              ? `Filter threads by project: ${hiddenProjectKeys.size} hidden`
+                              : "Filter threads by project"
                         }
                       />
                     }
@@ -3040,6 +3096,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       <span className="flex shrink-0">
                         <ProjectFavicon project={scopedProjectGroups[0]} className="size-4" />
                       </span>
+                    ) : hiddenProjectKeys.size > 0 ? (
+                      <EyeOffIcon className="size-4" />
                     ) : (
                       <ListFilterIcon className="size-4" />
                     )}
@@ -3105,6 +3163,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         const isSelected = project
                           ? projectScopeKeys.includes(item.value)
                           : projectScopeKeys.length === 0;
+                        const isHidden = project !== null && hiddenProjectKeys.has(item.value);
                         return (
                           <ComboboxItem
                             key={item.value}
@@ -3124,7 +3183,19 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 <FolderIcon className="size-4 shrink-0" />
                               )}
                             </ProjectScopeRowIcon>
-                            <span className="min-w-0 truncate text-sm">{item.label}</span>
+                            <span
+                              className={cn(
+                                "min-w-0 truncate text-sm",
+                                isHidden && "text-muted-foreground line-through",
+                              )}
+                            >
+                              {item.label}
+                            </span>
+                            {project === null && hiddenProjectKeys.size > 0 ? (
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                {hiddenProjectKeys.size} hidden
+                              </span>
+                            ) : null}
                             {project && showProjectEnvironments ? (
                               <ProjectEnvironmentBadge
                                 group={project}
@@ -3148,19 +3219,41 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   ) : null
                                 }
                                 settings={
-                                  <Button
-                                    size="icon-xs"
-                                    variant="ghost-muted"
-                                    tabIndex={-1}
-                                    aria-hidden="true"
-                                    title={`Project settings for ${project.displayName}`}
-                                    onPointerDown={(event) => event.stopPropagation()}
-                                    onClick={(event) => {
-                                      void handleProjectSettings(event, project);
-                                    }}
-                                  >
-                                    <SettingsIcon className="size-3.5" />
-                                  </Button>
+                                  <>
+                                    <Button
+                                      size="icon-xs"
+                                      variant="ghost-muted"
+                                      tabIndex={-1}
+                                      aria-hidden="true"
+                                      title={`${isHidden ? "Show" : "Hide"} ${project.displayName}`}
+                                      onPointerDown={(event) => event.stopPropagation()}
+                                      onClick={(event) => {
+                                        // The item would otherwise take this click as a pick.
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        setProjectHidden(project.projectKey, !isHidden);
+                                      }}
+                                    >
+                                      {isHidden ? (
+                                        <EyeIcon className="size-3.5" />
+                                      ) : (
+                                        <EyeOffIcon className="size-3.5" />
+                                      )}
+                                    </Button>
+                                    <Button
+                                      size="icon-xs"
+                                      variant="ghost-muted"
+                                      tabIndex={-1}
+                                      aria-hidden="true"
+                                      title={`Project settings for ${project.displayName}`}
+                                      onPointerDown={(event) => event.stopPropagation()}
+                                      onClick={(event) => {
+                                        void handleProjectSettings(event, project);
+                                      }}
+                                    >
+                                      <SettingsIcon className="size-3.5" />
+                                    </Button>
+                                  </>
                                 }
                               />
                             ) : (

@@ -1060,6 +1060,34 @@ export function pullRequestMatchesSearchQuery(
   return normalizedQuery.split(" ").every((token) => haystack.includes(token));
 }
 
+/**
+ * The physical project keys whose threads the sidebar lists, or null for all.
+ * Picked projects win over hiding, so a hidden project can still be picked.
+ */
+export function resolveSidebarVisibleProjectKeys(input: {
+  readonly groups: ReadonlyArray<{
+    readonly projectKey: string;
+    readonly memberProjectRefs: ReadonlyArray<{
+      readonly environmentId: string;
+      readonly projectId: string;
+    }>;
+  }>;
+  readonly pickedKeys: readonly string[];
+  readonly hiddenKeys: ReadonlySet<string>;
+}): ReadonlySet<string> | null {
+  const picked = input.groups.filter((group) => input.pickedKeys.includes(group.projectKey));
+  const shown =
+    picked.length > 0
+      ? picked
+      : input.groups.filter((group) => !input.hiddenKeys.has(group.projectKey));
+  if (picked.length === 0 && shown.length === input.groups.length) return null;
+  return new Set(
+    shown.flatMap((group) =>
+      group.memberProjectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`),
+    ),
+  );
+}
+
 export function filterSidebarProjectScopeItems<TItem extends { readonly value: string }>(input: {
   items: readonly TItem[];
   query: string;

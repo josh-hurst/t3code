@@ -35,6 +35,7 @@ import {
   resolveSidebarFolderDot,
   sidebarFolderExpansionKeys,
   sidebarMessagePreview,
+  resolveSidebarVisibleProjectKeys,
 } from "./Sidebar.logic";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
@@ -85,6 +86,31 @@ describe("sidebarMessagePreview", () => {
   it("shows nothing when the message is only markup", () => {
     expect(sidebarMessagePreview(message("assistant", "```"))).toBeNull();
     expect(sidebarMessagePreview(null)).toBeNull();
+  });
+});
+
+describe("resolveSidebarVisibleProjectKeys", () => {
+  const groups = [
+    { projectKey: "a", memberProjectRefs: [{ environmentId: "e1", projectId: "a1" }] },
+    {
+      projectKey: "b",
+      memberProjectRefs: [
+        { environmentId: "e1", projectId: "b1" },
+        { environmentId: "e2", projectId: "b2" },
+      ],
+    },
+    { projectKey: "c", memberProjectRefs: [{ environmentId: "e1", projectId: "c1" }] },
+  ];
+  const visible = (pickedKeys: string[], hidden: string[]) =>
+    resolveSidebarVisibleProjectKeys({ groups, pickedKeys, hiddenKeys: new Set(hidden) });
+
+  it("drops hidden projects unless one is picked", () => {
+    expect(visible([], ["gone"])).toBeNull();
+    expect(visible([], ["b"])).toEqual(new Set(["e1:a1", "e1:c1"]));
+    // A picked project shows even while hidden.
+    expect(visible(["b"], ["b"])).toEqual(new Set(["e1:b1", "e2:b2"]));
+    // A pick that is not loaded yet falls back to hiding.
+    expect(visible(["z"], [])).toBeNull();
   });
 });
 
