@@ -99,10 +99,12 @@ const makeHarness = Effect.fn("ServerUsageTest.makeHarness")(function* (
         inputs.push(input);
         const price = settings.usagePriceOverrides["custom-model"]?.inputCostPerMillionTokens ?? 0;
         yield* beforeRead(requests, input);
+        // The summary's drivers are a breakdown, not the requested provider.
+        const { drivers: _drivers, ...echoed } = input;
         return {
           contractVersion: USAGE_CONTRACT_VERSION,
           readAt: "2026-09-04T12:00:00Z",
-          ...input,
+          ...echoed,
           buckets: [
             {
               day: input.sinceDay,

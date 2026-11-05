@@ -25,6 +25,7 @@ import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 import { ThreadServersPanel } from "./ThreadServersPanel";
 import {
   ThreadDetailsContext,
+  ThreadDetailsThreadUsage,
   ThreadDetailsUsage,
   type ThreadDetailsUsageInput,
 } from "./ThreadDetailsUsage";
@@ -262,6 +263,17 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
 
               {visible.context && props.usage.contextWindow ? (
                 <ThreadDetailsContext usage={props.usage.contextWindow} />
+              ) : null}
+
+              {density === "full" &&
+              props.isServerThread &&
+              !props.draftId &&
+              visible.threadUsage ? (
+                <ThreadDetailsThreadUsage
+                  environmentId={props.environmentId}
+                  threadId={props.threadId}
+                  {...props.usage}
+                />
               ) : null}
 
               {/* Shown only when no section above has content, so an emptied card can be refilled. */}

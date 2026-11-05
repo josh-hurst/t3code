@@ -142,10 +142,22 @@ Opening Limits checks the selected connected environments automatically. Each cl
 least five minutes between automatic checks of an environment, including after a failed check.
 If a window still looks stale, refresh Limits to re-check every provider and hub.
 
-Pick `/usage-limits` from the composer's command menu, or send it as a message, to check the
-current model's limits without leaving the conversation. The result opens above the composer and
-closes when you dismiss it or send your next message. It uses the same snapshot as **Usage → Limits**, so it does not run the agent or refresh
-anything. The command is offered only for providers that appear under **Usage → Limits**.
+Pick `/usage` from the composer's command menu, or send it as a message, to check the current
+model's limits and the thread's token use without leaving the conversation. The thread section
+shows cost, time spent working, input, output, cache reads and writes, and cache hit rate. Cost
+is what the provider reported, or an estimate at API rates for turns it did not price. The panel
+opens above the composer and closes when you dismiss it or send your next message. It never
+reaches the agent, so it adds nothing to the conversation's context. Limits come from the same
+snapshot as **Usage → Limits**. T3 answers `/usage` (and the older `/usage-limits`) only for
+providers that appear under **Usage → Limits**; for others, the provider's own `/usage` runs
+instead.
+
+For Claude, the panel also shows **What's using your limits?** for the last 24 hours or 7 days:
+how much of your usage ran above 150k tokens of context, came from subagent-heavy sessions, ran
+while four or more sessions were active, or came from sessions active for eight hours or more,
+followed by the subagents, MCP servers, and skills that used the most. Shares are weighted by
+estimated API cost and overlap, so they do not add up to 100%. They cover Claude Code history on
+the environment's machine, not claude.ai.
 
 To keep them in view on web and desktop, turn on **Usage limits** in **Settings → Appearance → Thread details**, or right-click the thread details card.
 The bottom of the thread details card then shows how much is left in each limit window of the
@@ -153,6 +165,11 @@ current provider account. Some windows, such as a weekly Opus limit, count only 
 row to see when it resets and your pace. Turn on **Context window** to also show the thread's
 context use against the model's limit. A tick on the bar marks where the provider compacts
 automatically, when it reports that point.
+
+**Thread cost and tokens**, on by default, shows the same thread totals as `/usage`. For Claude
+and Codex it also estimates how much of the weekly limit this thread used: the thread's share of
+everything the provider spent on this machine since the window began, applied to the percentage
+used.
 
 OpenCode Go reports its session, weekly, and monthly allowance when OpenCode runs locally in
 the environment. T3 cannot report limits for external OpenCode servers because their credentials

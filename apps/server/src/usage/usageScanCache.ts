@@ -1,6 +1,7 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
 import type {
   TranscriptUsageFormat,
+  UsageAttribution,
   UsageRecord,
   UsageSpeed,
 } from "@t3tools/provider-core/server/usage";
@@ -9,7 +10,9 @@ import * as Schema from "effect/Schema";
 import { CLAUDE_SYNTHETIC_MODEL } from "../provider/Drivers/claudeUsage.ts";
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
-const USAGE_SCAN_CACHE_VERSION = 11 as const;
+const USAGE_SCAN_CACHE_VERSION = 12 as const;
+// Earlier caches never recorded attribution, so their records would read as unattributed.
+const ATTRIBUTION_SINCE_VERSION = 12;
 const SPEED_COMPATIBLE_SINCE_VERSION = 4;
 
 /**
@@ -17,8 +20,9 @@ const SPEED_COMPATIBLE_SINCE_VERSION = 4;
  * replace it, dropping saved usage for deleted transcripts. Separate files keep
  * both.
  */
-export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v11.json";
+export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v12.json";
 export const LEGACY_SCAN_CACHE_FILE_NAMES = [
+  "usage-scan-cache-v11.json",
   "usage-scan-cache-v10.json",
   "usage-scan-cache-v9.json",
   "usage-scan-cache-v8.json",
@@ -57,7 +61,9 @@ type SerializedRecord = readonly [
   reportedCostUsd: number | null,
   speed: number,
   rateModelIndex?: number | null,
-  unresolvedServiceTierTurnId?: string,
+  unresolvedServiceTierTurnId?: string | null,
+  // Agent, MCP server and skill, interned in the string table models use.
+  attribution?: readonly [number | null, number | null, number | null],
 ];
 
 interface SerializedFile {
@@ -101,6 +107,8 @@ function intern(table: string[], index: Map<string, number>, value: string): num
 }
 
 function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile {
+  const internName = (value: string | undefined) =>
+    value === undefined ? null : intern(tables.models, tables.modelIndex, value);
   const serializeRecord = (record: UsageRecord): SerializedRecord => [
     record.timestampMs,
     intern(tables.models, tables.modelIndex, record.model),
@@ -116,9 +124,18 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
     record.rateModel === undefined
       ? null
       : intern(tables.models, tables.modelIndex, record.rateModel),
-    ...(record.unresolvedServiceTierTurnId === undefined
-      ? ([] as const)
-      : ([record.unresolvedServiceTierTurnId] as const)),
+    ...(record.attribution !== undefined
+      ? ([
+          record.unresolvedServiceTierTurnId ?? null,
+          [
+            internName(record.attribution.agent),
+            internName(record.attribution.mcpServer),
+            internName(record.attribution.skill),
+          ],
+        ] as const)
+      : record.unresolvedServiceTierTurnId === undefined
+        ? ([] as const)
+        : ([record.unresolvedServiceTierTurnId] as const)),
   ];
   return {
     s: entry.size,
@@ -164,6 +181,27 @@ export function makeScanCacheWriter(): (
 
 function isRecordArray(value: unknown): value is readonly unknown[] {
   return Array.isArray(value);
+}
+
+/** Null when the row is corrupt, which disqualifies its whole entry. */
+function decodeAttribution(indexes: unknown, names: readonly string[]): UsageAttribution | null {
+  if (!isRecordArray(indexes) || indexes.length !== 3) return null;
+  const decoded: Array<string | undefined> = [];
+  for (const index of indexes) {
+    if (index === null) {
+      decoded.push(undefined);
+      continue;
+    }
+    const name = typeof index === "number" ? names[index] : undefined;
+    if (name === undefined) return null;
+    decoded.push(name);
+  }
+  const [agent, mcpServer, skill] = decoded;
+  return {
+    ...(agent === undefined ? {} : { agent }),
+    ...(mcpServer === undefined ? {} : { mcpServer }),
+    ...(skill === undefined ? {} : { skill }),
+  };
 }
 
 export function decodeScanCache(
@@ -212,8 +250,14 @@ export function decodeScanCache(
         reportedCostUsd,
         speedIndex,
         rateModelIndex,
-        unresolvedServiceTierTurnId,
+        unresolvedServiceTierTurnIdOrNull,
+        attributionIndexes,
       ] = row as SerializedRecord;
+      const unresolvedServiceTierTurnId = unresolvedServiceTierTurnIdOrNull ?? undefined;
+      const attribution =
+        version >= ATTRIBUTION_SINCE_VERSION && attributionIndexes !== undefined
+          ? decodeAttribution(attributionIndexes, models)
+          : undefined;
       const speed = typeof speedIndex === "number" ? SPEEDS[speedIndex] : undefined;
 
       const model = typeof modelIndex === "number" ? models[modelIndex] : undefined;
@@ -225,6 +269,7 @@ export function decodeScanCache(
         (unresolvedServiceTierTurnId !== undefined &&
           typeof unresolvedServiceTierTurnId !== "string") ||
         (rateModelIndex != null && rateModel === undefined) ||
+        attribution === null ||
         !Number.isFinite(uncached) ||
         !Number.isFinite(cached) ||
         !Number.isFinite(cacheCreation) ||
@@ -254,6 +299,7 @@ export function decodeScanCache(
         },
         reportedCostUsd: typeof reportedCostUsd === "number" ? reportedCostUsd : null,
         speed,
+        ...(attribution === undefined ? {} : { attribution }),
         ...(version >= 7 && unresolvedServiceTierTurnId !== undefined
           ? { unresolvedServiceTierTurnId }
           : {}),
@@ -293,9 +339,9 @@ export function decodeScanCache(
     }
     // Keep history for deleted rollouts, but re-parse incompatible reducer state.
     // v9 and v11 repair skipped Codex requests; clean v8+ entries stay served while unchanged.
-    // v10 adds Claude advisor calls, which no older Claude entry holds.
+    // v10 adds Claude advisor calls and v12 attribution, which no older Claude entry holds.
     const legacy =
-      (entry.p === "claude" && version < 10) ||
+      (entry.p === "claude" && version < ATTRIBUTION_SINCE_VERSION) ||
       (format.state !== undefined &&
         (version < 6 ||
           (entry.p === "codex" && (version < 8 || (version < 11 && malformedRecords > 0)))));

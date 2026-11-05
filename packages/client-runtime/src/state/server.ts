@@ -661,7 +661,7 @@ type ServerProviderEntry = ServerConfig["providers"][number];
 
 /**
  * The provider-wide fields a workspace snapshot builds on. A live session, a sign-out, or a
- * /usage-limits change shows up here, so a snapshot fetched before it no longer applies.
+ * /usage change shows up here, so a snapshot fetched before it no longer applies.
  */
 const snapshotBasis = (provider: ServerProviderEntry | undefined) =>
   provider && {

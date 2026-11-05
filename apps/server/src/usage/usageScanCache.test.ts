@@ -161,7 +161,7 @@ describe("scan cache round trip", () => {
     expect(restored).toEqual(original);
   });
 
-  it.each([5, 6, 7, 8, 10])(
+  it.each([5, 6, 7, 8, 10, 11])(
     "retains v%s history and compatible positions but invalidates obsolete state",
     (version) => {
       const original = cacheWith([["/gone.jsonl", 100, [record({ speed: "fast" })]]]);
@@ -218,25 +218,30 @@ describe("scan cache round trip", () => {
       };
 
       const restored = decodeScanCache(JSON.parse(JSON.stringify(legacy)), TEST_FORMAT_MAP);
-      expect(restored.get("/gone.jsonl")).toEqual(
-        version >= 10
-          ? original.get("/gone.jsonl")
+      // Claude history from before attribution is kept, and re-read whole if the file still exists.
+      expect(restored.get("/gone.jsonl")).toEqual({
+        ...original.get("/gone.jsonl"),
+        size: -1,
+        position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
+      });
+      expect(restored.get("/gone-codex.jsonl")).toEqual(
+        version >= 11
+          ? original.get("/gone-codex.jsonl")
           : {
-              ...original.get("/gone.jsonl"),
+              ...original.get("/gone-codex.jsonl"),
               size: -1,
               position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
             },
       );
-      expect(restored.get("/gone-codex.jsonl")).toEqual({
-        ...original.get("/gone-codex.jsonl"),
-        size: -1,
-        position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
-      });
-      expect(restored.get("/clean-codex.jsonl")).toEqual({
-        ...cleanCodex,
-        size: version >= 8 ? cleanCodex.size : -1,
-        position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
-      });
+      expect(restored.get("/clean-codex.jsonl")).toEqual(
+        version >= 11
+          ? cleanCodex
+          : {
+              ...cleanCodex,
+              size: version >= 8 ? cleanCodex.size : -1,
+              position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
+            },
+      );
       expect(restored.get("/gone-pi.jsonl")).toEqual(
         version >= 6
           ? original.get("/gone-pi.jsonl")
@@ -249,16 +254,40 @@ describe("scan cache round trip", () => {
     },
   );
 
-  it("re-parses a Claude transcript cached before advisor usage was counted", () => {
-    const original = cacheWith([["/claude.jsonl", 100, [record()]]]);
-    const v9 = { ...JSON.parse(makeScanCacheWriter()(original, {})), version: 9 };
+  it.each([9, 11])(
+    "re-parses a Claude transcript cached by v%s, before advisor usage and attribution",
+    (version) => {
+      const original = cacheWith([["/claude.jsonl", 100, [record()]]]);
+      const legacy = { ...JSON.parse(makeScanCacheWriter()(original, {})), version };
 
-    const restored = decodeScanCache(JSON.parse(JSON.stringify(v9)), TEST_FORMAT_MAP);
-    expect(restored.get("/claude.jsonl")).toEqual({
-      ...original.get("/claude.jsonl"),
-      size: -1,
-      position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
-    });
+      const restored = decodeScanCache(JSON.parse(JSON.stringify(legacy)), TEST_FORMAT_MAP);
+      expect(restored.get("/claude.jsonl")).toEqual({
+        ...original.get("/claude.jsonl"),
+        size: -1,
+        position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
+      });
+    },
+  );
+
+  it("round-trips what each record was charged to", () => {
+    const original = cacheWith([
+      [
+        "/a.jsonl",
+        100,
+        [
+          record({ attribution: { agent: "Explore", skill: "egg-analytics" } }),
+          record({
+            dedupeKey: "msg_2:",
+            attribution: { mcpServer: "Roblox_Studio" },
+            unresolvedServiceTierTurnId: "turn-1",
+          }),
+          record({ dedupeKey: "msg_3:" }),
+        ],
+      ],
+    ]);
+    expect(
+      decodeScanCache(JSON.parse(makeScanCacheWriter()(original, {})), TEST_FORMAT_MAP),
+    ).toEqual(original);
   });
 
   it("rewrites only changed entries and still restores the whole cache", () => {

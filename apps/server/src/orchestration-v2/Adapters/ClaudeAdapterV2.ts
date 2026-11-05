@@ -4376,6 +4376,7 @@ interface ActiveClaudeTurnContext {
   readonly steeredSegmentUsage: Array<SDKResultMessage["usage"]>;
   // Ledger growth of the steered segments; undefined once any segment's growth is unknown.
   steeredLedgerUsage: ClaudeLedgerUsage | undefined;
+  steeredCostUsd: number;
   readonly rootModels: Set<string>;
   readonly subagentsByTaskId: Map<string, ActiveClaudeSubagent>;
   readonly subagentsByToolUseId: Map<string, ActiveClaudeSubagent>;
@@ -4434,6 +4435,8 @@ interface ClaudeLiveQueryContext {
   handedOffSubagents: ReadonlySet<ActiveClaudeSubagent>;
   // The SDK's per-process model ledger at the last result; a new process starts at zero.
   modelLedger: ClaudeModelLedger | undefined;
+  // Each result's total_cost_usd is this process's running total, so a result costs its growth.
+  reportedCostUsd: number;
   // Per process, not per session: a relative temp dir follows the cwd this CLI
   // was launched in, and a later turn's cwd can differ.
   readonly taskOutputRoot: string | undefined;
@@ -5099,6 +5102,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const queryContext = yield* Ref.make<ClaudeLiveQueryContext | null>(null);
         // Wake buffers replay result frames, so ledger growth is measured once on arrival.
         const resultLedgerUsage = new WeakMap<SDKMessage, ClaudeLedgerUsage>();
+        const resultCostUsd = new WeakMap<SDKMessage, number>();
         const resultsReportingNewContextWindow = new WeakSet<SDKMessage>();
         // A worktree handoff changes the project settings even within one session.
         let bypassCache: { cwd: string | null; availability: ClaudeBypassAvailability } | null =
@@ -7891,6 +7895,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly result?: SDKResultMessage;
         }) {
           yield* reasoningDeltas.flushTurn(input.context.nativeTurnId);
+          const resultCost =
+            input.result === undefined ? undefined : resultCostUsd.get(input.result);
           if (input.context.compaction?.status === "running") {
             const reason = input.result?.subtype === "success" ? input.result.result.trim() : "";
             yield* emitProviderEvent({
@@ -8072,24 +8078,29 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     status: input.status,
                     completedAt: input.completedAt,
                   }),
-                  turnTokenUsage: normalizeClaudeTurnTokenUsage(
-                    input.result,
-                    input.context.subagentsByTaskId.size > 0 ||
-                      input.context.subagentsByToolUseId.size > 0,
-                    input.status,
-                    input.context.steeredSegmentUsage,
-                    {
-                      rootModels: input.context.rootModels,
-                      ...(input.result === undefined
-                        ? {}
-                        : {
-                            ledger: addClaudeLedgerUsage(
-                              input.context.steeredLedgerUsage,
-                              resultLedgerUsage.get(input.result),
-                            ),
-                          }),
-                    },
-                  ),
+                  turnTokenUsage: {
+                    ...normalizeClaudeTurnTokenUsage(
+                      input.result,
+                      input.context.subagentsByTaskId.size > 0 ||
+                        input.context.subagentsByToolUseId.size > 0,
+                      input.status,
+                      input.context.steeredSegmentUsage,
+                      {
+                        rootModels: input.context.rootModels,
+                        ...(input.result === undefined
+                          ? {}
+                          : {
+                              ledger: addClaudeLedgerUsage(
+                                input.context.steeredLedgerUsage,
+                                resultLedgerUsage.get(input.result),
+                              ),
+                            }),
+                      },
+                    ),
+                    ...(resultCost === undefined
+                      ? {}
+                      : { costUsd: input.context.steeredCostUsd + resultCost }),
+                  },
                 },
               }),
               // Emit the roster before root settlement so writeFinalRunEvents preserves it.
@@ -9940,6 +9951,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 context.steeredLedgerUsage,
                 resultLedgerUsage.get(message),
               );
+              context.steeredCostUsd += resultCostUsd.get(message) ?? 0;
               return;
             }
             yield* Ref.update(steeredTurns, (current) => {
@@ -10951,6 +10963,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ),
             ),
             modelLedger: new Map(),
+            reportedCostUsd: 0,
             taskOutputRoot: claudeTaskOutputRoot(
               adapterOptions.environment,
               path,
@@ -10991,6 +11004,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     context.permissionMode = message.permissionMode;
                   }
                   if (message.type === "result") {
+                    // No growth reads as unknown: gateways report 0, and list rates price the turn.
+                    if (
+                      Number.isFinite(message.total_cost_usd) &&
+                      message.total_cost_usd > context.reportedCostUsd
+                    ) {
+                      resultCostUsd.set(message, message.total_cost_usd - context.reportedCostUsd);
+                      context.reportedCostUsd = message.total_cost_usd;
+                    }
                     const ledger = claudeModelLedger(message.modelUsage);
                     const growth = claudeLedgerDelta(context.modelLedger, ledger);
                     if (growth !== undefined) resultLedgerUsage.set(message, growth);
@@ -11157,6 +11178,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               compactionFailure: null,
               steeredSegmentUsage: [],
               steeredLedgerUsage: { inputTokens: 0, outputTokens: 0 },
+              steeredCostUsd: 0,
               rootModels: new Set(),
               subagentsByTaskId: new Map(),
               subagentsByToolUseId: new Map(),
