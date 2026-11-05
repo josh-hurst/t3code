@@ -3595,6 +3595,7 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   stopWorkflow: "orchestration.stopWorkflow",
   forceStopThread: "orchestration.forceStopThread",
   getTurnItem: "orchestration.getTurnItem",
+  getThreadUsage: "orchestration.getThreadUsage",
   launchThread: "orchestration.launchThread",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
@@ -4130,6 +4131,32 @@ export const OrchestrationV2GetTurnItemResult = Schema.Struct({
 });
 export type OrchestrationV2GetTurnItemResult = typeof OrchestrationV2GetTurnItemResult.Type;
 
+export const OrchestrationV2GetThreadUsageInput = Schema.Struct({
+  threadId: ThreadId,
+  /** Ignored by the server; a new value makes clients fetch again after a turn. */
+  revision: Schema.optional(Schema.String),
+  /** Count only turns that finished at or after this instant, such as a limit window's start. */
+  since: Schema.optional(IsoDateTime),
+});
+export type OrchestrationV2GetThreadUsageInput = typeof OrchestrationV2GetThreadUsageInput.Type;
+
+/**
+ * Totals over every provider turn the thread has run. Input excludes cache reads and writes,
+ * unlike a turn's own usage. `costUsd` is null when no turn has a cost, and `partial` marks
+ * finished turns whose usage or cost is missing.
+ */
+export const OrchestrationV2ThreadUsage = Schema.Struct({
+  turns: NonNegativeInt,
+  inputTokens: NonNegativeInt,
+  outputTokens: NonNegativeInt,
+  cacheReadTokens: NonNegativeInt,
+  cacheWriteTokens: NonNegativeInt,
+  costUsd: Schema.NullOr(Schema.Number.check(Schema.isFinite())),
+  activeMs: NonNegativeInt,
+  partial: Schema.Boolean,
+});
+export type OrchestrationV2ThreadUsage = typeof OrchestrationV2ThreadUsage.Type;
+
 const WORKFLOW_SCRIPT_ERROR_MESSAGES = {
   "invalid-path": "Workflow scripts must be absolute .js paths.",
   "root-unavailable": "Script root unavailable.",
@@ -4275,6 +4302,10 @@ export const OrchestrationV2RpcSchemas = {
   getTurnItem: {
     input: OrchestrationV2GetTurnItemInput,
     output: OrchestrationV2GetTurnItemResult,
+  },
+  getThreadUsage: {
+    input: OrchestrationV2GetThreadUsageInput,
+    output: OrchestrationV2ThreadUsage,
   },
   launchThread: {
     input: OrchestrationV2ThreadLaunchInput,

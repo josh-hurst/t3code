@@ -54,11 +54,13 @@ export const ThreadTokenUsageSnapshot = Schema.Struct({
 export type ThreadTokenUsageSnapshot = typeof ThreadTokenUsageSnapshot.Type;
 
 // Input includes cache reads/writes; output includes the optional reasoningTokens subset.
+// Token counts cover the main agent only; costUsd is what the provider billed, subagents included.
 const TurnTokenUsageCommonFields = {
   usageScope: Schema.Literal("main_agent"),
   cachedInputTokens: Schema.optional(NonNegativeInt),
   cacheCreationTokens: Schema.optional(NonNegativeInt),
   reasoningTokens: Schema.optional(NonNegativeInt),
+  costUsd: Schema.optional(Schema.Number.check(Schema.isFinite())),
   hasSubagents: Schema.Boolean,
   // Native model ids the provider reported for the main agent's work. Absent means unknown.
   models: Schema.optional(Schema.Array(TrimmedNonEmptyStringSchema)),

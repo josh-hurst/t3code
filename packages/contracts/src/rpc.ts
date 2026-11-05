@@ -653,7 +653,7 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
      * refresh, at most one TTL later.
      */
     workspaceSnapshotsOnDemand: Schema.optional(Schema.Boolean),
-    /** As on `subscribeServerConfig`: add /usage-limits to the replied snapshot. */
+    /** As on `subscribeServerConfig`: add /usage to the replied snapshot. */
     usageLimitsCommand: Schema.optional(Schema.Boolean),
   }),
   success: ServerProviderUpdatedPayload,
@@ -1847,6 +1847,12 @@ const WsOrchestrationV2GetTurnItemRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.get
   error: Schema.Union([OrchestrationV2GetThreadProjectionError, EnvironmentAuthorizationError]),
 });
 
+const WsOrchestrationV2GetThreadUsageRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.getThreadUsage, {
+  payload: OrchestrationV2RpcSchemas.getThreadUsage.input,
+  success: OrchestrationV2RpcSchemas.getThreadUsage.output,
+  error: Schema.Union([OrchestrationV2GetThreadProjectionError, EnvironmentAuthorizationError]),
+});
+
 const WsOrchestrationV2LaunchThreadRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.launchThread, {
   payload: OrchestrationV2RpcSchemas.launchThread.input,
   success: OrchestrationV2RpcSchemas.launchThread.output,
@@ -1889,7 +1895,7 @@ export const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerCon
     /** Opt-in protects older clients that reject unknown theme event types. */
     environmentThemes: Schema.optional(Schema.Boolean),
     usageLimitSources: Schema.optional(Schema.Boolean),
-    /** Advertise client handling before the server offers /usage-limits, or older clients send it as a prompt. */
+    /** Advertise client handling before the server offers /usage, or older clients send it as a prompt. */
     usageLimitsCommand: Schema.optional(Schema.Boolean),
     /** Omit per-cwd provider snapshots; the client fetches its cwd through `server.refreshProviders`. */
     workspaceSnapshotsOnDemand: Schema.optional(Schema.Boolean),
@@ -2191,6 +2197,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2StopWorkflowRpc,
   WsOrchestrationV2ForceStopThreadRpc,
   WsOrchestrationV2GetTurnItemRpc,
+  WsOrchestrationV2GetThreadUsageRpc,
   WsOrchestrationV2GetTurnDiffRpc,
   WsOrchestrationV2GetFullThreadDiffRpc,
   WsOrchestrationV2SearchThreadsRpc,
