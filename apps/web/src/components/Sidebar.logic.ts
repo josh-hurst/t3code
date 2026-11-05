@@ -356,6 +356,9 @@ export function planSidebarThreadDrop(input: {
   readonly activeKeysById: ReadonlyMap<string, string | null | undefined>;
   readonly activeReorderableKeys?: ReadonlySet<string>;
   readonly activeTimeOrdered?: boolean;
+  // Active rows that hold their place, such as Needs you above a hand-ordered list.
+  // They cannot be reordered, and drops order only the rows around them.
+  readonly activeFixedKeys?: ReadonlySet<string>;
 }): SidebarThreadDropPlan {
   const {
     activeKey,
@@ -423,11 +426,27 @@ export function planSidebarThreadDrop(input: {
               unsnooze: activeSection === "snoozed",
             };
       }
-      const order = target.activeOrder;
+      const fixed = input.activeFixedKeys;
+      if (fixed?.has(activeKey)) {
+        return activeSection === "active"
+          ? { kind: "none" }
+          : {
+              kind: "move-active",
+              order: null,
+              assignments: [],
+              unpin: activePinned,
+              unsettle: activeSettled,
+              unsnooze: activeSection === "snoozed",
+            };
+      }
+      const movable = (keys: readonly string[]) =>
+        fixed === undefined ? keys : keys.filter((key) => !fixed.has(key));
+      const order = movable(target.activeOrder);
+      const currentOrder = movable(activeOrder);
       if (
         activeSection === "active" &&
-        order.length === activeOrder.length &&
-        order.every((key, index) => key === activeOrder[index])
+        order.length === currentOrder.length &&
+        order.every((key, index) => key === currentOrder[index])
       ) {
         return { kind: "none" };
       }
@@ -435,7 +454,7 @@ export function planSidebarThreadDrop(input: {
       if (assignments === null) return { kind: "none" };
       return {
         kind: "move-active",
-        order,
+        order: target.activeOrder,
         assignments,
         unpin: activePinned,
         unsettle: activeSettled,
@@ -1230,6 +1249,46 @@ export function resolveThreadStatusPill(input: {
   }
 
   return null;
+}
+
+const NEEDS_YOU_STATUS_LABELS: ReadonlySet<ThreadStatusPill["label"]> = new Set([
+  "Pending Approval",
+  "Awaiting Input",
+  "Guest Request",
+  "Failed",
+  "Plan Ready",
+]);
+
+/** Whether the row's status pill asks you to act, or with `includeCompleted`, to look. */
+export function sidebarThreadNeedsYou(
+  thread: ThreadStatusInput,
+  options: { readonly includeCompleted: boolean },
+): boolean {
+  const pill = resolveThreadStatusPill({ thread });
+  if (pill === null) return false;
+  if (pill.label === "Completed") return options.includeCompleted;
+  return NEEDS_YOU_STATUS_LABELS.has(pill.label);
+}
+
+/**
+ * Keeps the open thread in or out of Needs you as it was when opened, so opening a
+ * finished run never moves the row being looked at. Leaving it, or sending it a
+ * message (a new `sentAt`), re-sorts it. Call with the route key on each pass.
+ */
+export function createOpenThreadPlacementHold() {
+  let held: {
+    readonly key: string;
+    readonly needsYou: boolean;
+    readonly sentAt: string | null;
+  } | null = null;
+  return (routeKey: string | null) => {
+    if (held?.key !== routeKey) held = null;
+    return (key: string, needsYou: boolean, sentAt: string | null): boolean => {
+      if (key !== routeKey) return needsYou;
+      if (held === null || held.sentAt !== sentAt) held = { key, needsYou, sentAt };
+      return held.needsYou;
+    };
+  };
 }
 
 export function getFallbackThreadIdAfterDelete<

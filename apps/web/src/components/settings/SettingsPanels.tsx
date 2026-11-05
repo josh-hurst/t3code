@@ -21,6 +21,7 @@ import {
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ResponseStreamingMode,
   type QuitConfirmationMode,
+  SidebarNeedsYouPlacement,
   SidebarProjectSortOrder,
   SidebarRowDetail,
 } from "@t3tools/contracts/settings";
@@ -133,6 +134,12 @@ const SIDEBAR_ROW_DETAIL_LABELS: Record<SidebarRowDetail, string> = {
   both: "Both",
 };
 const isSidebarRowDetail = Schema.is(SidebarRowDetail);
+const SIDEBAR_NEEDS_YOU_PLACEMENT_LABELS: Record<SidebarNeedsYouPlacement, string> = {
+  off: "Off",
+  project: "In each project",
+  top: "Above all projects",
+};
+const isSidebarNeedsYouPlacement = Schema.is(SidebarNeedsYouPlacement);
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -493,6 +500,13 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarRowDetail !== DEFAULT_UNIFIED_SETTINGS.sidebarRowDetail
       ? ["Thread row details"]
       : []),
+    ...(settings.sidebarNeedsYouPlacement !== DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement
+      ? ["Needs you section"]
+      : []),
+    ...(settings.sidebarNeedsYouIncludesCompleted !==
+    DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouIncludesCompleted
+      ? ["Finished threads in Needs you"]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-settle inactive threads"]
       : []),
@@ -663,6 +677,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarRowDetail: DEFAULT_UNIFIED_SETTINGS.sidebarRowDetail,
+      sidebarNeedsYouPlacement: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement,
+      sidebarNeedsYouIncludesCompleted: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouIncludesCompleted,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -952,6 +968,75 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
+        <SettingsRow
+          {...searchableSetting("needs-you-placement")}
+          description="Collect threads waiting on an approval or an answer, with a plan ready, or with a finished run you haven't opened in a Needs you section, at the top of each project folder or above all of them. Project folders need the boring sidebar in Labs; without it, Needs you sits above the active list."
+          resetAction={
+            settings.sidebarNeedsYouPlacement !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement ? (
+              <SettingResetButton
+                label="Needs you section"
+                onClick={() =>
+                  updateSettings({
+                    sidebarNeedsYouPlacement: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.sidebarNeedsYouPlacement}
+              onValueChange={(value) => {
+                if (isSidebarNeedsYouPlacement(value)) {
+                  updateSettings({ sidebarNeedsYouPlacement: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Needs you section">
+                <SelectValue>
+                  {SIDEBAR_NEEDS_YOU_PLACEMENT_LABELS[settings.sidebarNeedsYouPlacement]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {SidebarNeedsYouPlacement.literals.map((placement) => (
+                  <SelectItem hideIndicator key={placement} value={placement}>
+                    {SIDEBAR_NEEDS_YOU_PLACEMENT_LABELS[placement]}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+        {settings.sidebarNeedsYouPlacement === "off" ? null : (
+          <SettingsRow
+            {...searchableSetting("needs-you-finished-threads")}
+            description="Move threads with a finished run you haven't opened to Needs you. When off, they stay where they are."
+            resetAction={
+              settings.sidebarNeedsYouIncludesCompleted !==
+              DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouIncludesCompleted ? (
+                <SettingResetButton
+                  label="finished threads in Needs you"
+                  onClick={() =>
+                    updateSettings({
+                      sidebarNeedsYouIncludesCompleted:
+                        DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouIncludesCompleted,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.sidebarNeedsYouIncludesCompleted}
+                onCheckedChange={(checked) =>
+                  updateSettings({ sidebarNeedsYouIncludesCompleted: Boolean(checked) })
+                }
+                aria-label="Finished threads in Needs you"
+              />
+            }
+          />
+        )}
       </SettingsSection>
 
       <SettingsSection id="confirmations" title="Confirmations">

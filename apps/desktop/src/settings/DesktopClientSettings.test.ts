@@ -64,6 +64,8 @@ const clientSettings: ClientSettings = {
   sidebarProjectSortOrder: "manual",
   sidebarThreadSortOrder: "created_at",
   sidebarRowDetail: "branch",
+  sidebarNeedsYouPlacement: "off",
+  sidebarNeedsYouIncludesCompleted: true,
   boringSidebarEnabled: false,
   boringSidebarMultilineRows: false,
   threadDetailsUsageEnabled: false,

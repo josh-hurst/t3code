@@ -36,6 +36,8 @@ import {
   sidebarFolderExpansionKeys,
   sidebarMessagePreview,
   resolveSidebarVisibleProjectKeys,
+  sidebarThreadNeedsYou,
+  createOpenThreadPlacementHold,
 } from "./Sidebar.logic";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
@@ -111,6 +113,86 @@ describe("resolveSidebarVisibleProjectKeys", () => {
     expect(visible(["b"], ["b"])).toEqual(new Set(["e1:b1", "e2:b2"]));
     // A pick that is not loaded yet falls back to hiding.
     expect(visible(["z"], [])).toBeNull();
+  });
+});
+
+describe("Needs you", () => {
+  it("keeps the open thread in the section it was opened in until you leave it", () => {
+    const hold = createOpenThreadPlacementHold();
+    // Opened outside Needs you, then it finishes while open.
+    expect(hold("a")("a", false, null)).toBe(false);
+    expect(hold("a")("a", true, null)).toBe(false);
+    expect(hold("a")("b", true, null)).toBe(true);
+    // Leaving re-sorts it: an unanswered request still lands in Needs you.
+    expect(hold("b")("a", true, null)).toBe(true);
+    // Opened from Needs you, then visiting clears its status.
+    expect(hold("b")("b", true, null)).toBe(true);
+    expect(hold("b")("b", false, null)).toBe(true);
+    expect(hold(null)("b", false, null)).toBe(false);
+  });
+
+  it("moves the open thread out of Needs you once you send it a message", () => {
+    const hold = createOpenThreadPlacementHold();
+    const t1 = "2026-03-09T10:00:00.000Z";
+    const t2 = "2026-03-09T11:00:00.000Z";
+    expect(hold("a")("a", true, t1)).toBe(true);
+    expect(hold("a")("a", false, t1)).toBe(true);
+    // Sending starts a turn, so it leaves Needs you and stays out.
+    expect(hold("a")("a", false, t2)).toBe(false);
+    expect(hold("a")("a", true, t2)).toBe(false);
+  });
+
+  it("treats approvals, questions, guest requests, failures and unseen completions as needing you", () => {
+    const idle = {
+      hasActionableProposedPlan: false,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      pendingSubagentRequest: null,
+      interactionMode: "default" as const,
+      runtime: null,
+      latestRun: null,
+      lastVisitedAt: "2026-03-09T10:00:00.000Z",
+    };
+    const run = (status: "completed" | "failed", completedAt: string) =>
+      ({ status, completedAt }) as never;
+    const all = { includeCompleted: true };
+    expect(sidebarThreadNeedsYou(idle, all)).toBe(false);
+    expect(sidebarThreadNeedsYou({ ...idle, hasPendingApprovals: true }, all)).toBe(true);
+    expect(sidebarThreadNeedsYou({ ...idle, pendingSubagentRequest: "user_input" }, all)).toBe(
+      true,
+    );
+    expect(sidebarThreadNeedsYou({ ...idle, pendingGuestMessageCount: 1 }, all)).toBe(true);
+    expect(
+      sidebarThreadNeedsYou(
+        { ...idle, latestRun: run("completed", "2026-03-09T11:00:00.000Z") },
+        all,
+      ),
+    ).toBe(true);
+    expect(
+      sidebarThreadNeedsYou(
+        { ...idle, latestRun: run("completed", "2026-03-09T09:00:00.000Z") },
+        all,
+      ),
+    ).toBe(false);
+    expect(
+      sidebarThreadNeedsYou({ ...idle, latestRun: run("failed", "2026-03-09T11:00:00.000Z") }, all),
+    ).toBe(true);
+
+    // With finished runs left out, only the asks remain.
+    const options = { includeCompleted: false };
+    expect(
+      sidebarThreadNeedsYou(
+        { ...idle, latestRun: run("completed", "2026-03-09T11:00:00.000Z") },
+        options,
+      ),
+    ).toBe(false);
+    expect(
+      sidebarThreadNeedsYou(
+        { ...idle, latestRun: run("failed", "2026-03-09T11:00:00.000Z") },
+        options,
+      ),
+    ).toBe(true);
+    expect(sidebarThreadNeedsYou({ ...idle, hasPendingApprovals: true }, options)).toBe(true);
   });
 });
 
@@ -1443,6 +1525,50 @@ describe("Working shelf (beta)", () => {
           expect(result.plan).toEqual({ kind: "none" });
         },
       );
+    });
+
+    it("orders only the rows below Needs you above a hand-ordered list", () => {
+      const base = {
+        pinnedOrder: [],
+        pinnedKeysById: new Map(),
+        // n1 needs you and sits on top, though its saved order is last.
+        activeOrder: ["n1", "a1", "a2"],
+        activeKeysById: new Map([
+          ["n1", "x"],
+          ["a1", "f"],
+          ["a2", "t"],
+        ]),
+        activeFixedKeys: new Set(["n1"]),
+      };
+      // Needs you rows hold their place.
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "n1",
+          activeSection: "active",
+          target: { section: "active", pinnedOrder: [], activeOrder: ["a1", "n1", "a2"] },
+        }),
+      ).toEqual({ kind: "none" });
+      // Moving a row past one of them changes nothing below.
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "a1",
+          activeSection: "active",
+          target: { section: "active", pinnedOrder: [], activeOrder: ["a1", "n1", "a2"] },
+        }),
+      ).toEqual({ kind: "none" });
+      // Dropped into the panel, a row lands first below it, ignoring n1's key.
+      const plan = planSidebarThreadDrop({
+        ...base,
+        activeKey: "a2",
+        activeSection: "active",
+        target: { section: "active", pinnedOrder: [], activeOrder: ["a2", "n1", "a1"] },
+      });
+      expect(plan.kind === "move-active" && plan.assignments).toEqual([
+        { id: "a2", orderKey: expect.any(String) },
+      ]);
+      expect(plan.kind === "move-active" && plan.assignments[0]!.orderKey < "f").toBe(true);
     });
 
     it("only changes lifecycle when the inbox is time-ordered", () => {

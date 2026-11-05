@@ -37,6 +37,7 @@ import {
   CircleCheckIcon,
   CircleDashedIcon,
   CircleDotDashedIcon,
+  BellDotIcon,
   ClockIcon,
   GitBranchIcon,
   MessageCircleQuestionIcon,
@@ -484,6 +485,18 @@ export function SortableThreadRow(
   return <SidebarThreadRow key={rowProps.variant} {...rowProps} thread={thread} sortable={bag} />;
 }
 export type SidebarSweepAction = "settle" | "unsettle" | "unsnooze";
+
+// Where a row sits in the Needs you panel: the first row carries the label
+// and the last closes the tint.
+export type SidebarThreadPanelPosition = "first" | "row" | "last" | "only";
+
+export function sidebarThreadPanelPosition(
+  afterPanelRow: boolean,
+  beforePanelRow: boolean,
+): SidebarThreadPanelPosition {
+  if (afterPanelRow) return beforePanelRow ? "row" : "last";
+  return beforePanelRow ? "first" : "only";
+}
 const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
   pin: (
     <>
@@ -565,6 +578,7 @@ type SidebarThreadRowProps = {
   project: EnvironmentProject | null;
   projectDisplayName: string | null;
   rowDetail: SidebarRowDetail;
+  panel: SidebarThreadPanelPosition | null;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
   timestampFormat: TimestampFormat;
   onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
@@ -1216,6 +1230,22 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     </span>
   ) : null;
 
+  const panel = props.panel;
+  const panelClassName =
+    panel !== null &&
+    cn(
+      "mx-0.5 bg-primary/5 px-1 dark:bg-primary/15",
+      (panel === "first" || panel === "only") && "mt-0.5 rounded-t-lg",
+      (panel === "last" || panel === "only") && "rounded-b-lg pb-1",
+    );
+  const panelLabel =
+    panel === "first" || panel === "only" ? (
+      <div className="flex h-6 items-center gap-1.5 px-2 text-xs font-medium text-primary">
+        <BellDotIcon aria-hidden className="size-3.5 shrink-0" />
+        Needs you
+      </div>
+    ) : null;
+
   if (variant !== "card") {
     const multiline = variant === "folder-multiline";
     const inFolder = variant === "folder" || multiline;
@@ -1227,9 +1257,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         className={cn(
           "list-none [content-visibility:auto] [contain-intrinsic-size:auto_--spacing(9)]",
           metaLine !== null && multiline && "[contain-intrinsic-size:auto_--spacing(13.5)]",
+          panelClassName,
           sortable?.isDragging && "relative z-20",
         )}
       >
+        {panelLabel}
         <Tooltip disabled={sortable?.isDragging}>
           <TooltipTrigger
             render={
@@ -1423,9 +1455,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       className={cn(
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
         metaLineEmpty && "[contain-intrinsic-size:auto_58px]",
+        panelClassName,
         sortable?.isDragging && "relative z-20",
       )}
     >
+      {panelLabel}
       <Tooltip disabled={snoozeMenuOpen || sortable?.isDragging}>
         <TooltipTrigger
           render={

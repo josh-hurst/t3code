@@ -460,6 +460,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sidebar branch latest message preview last reply subtitle second line"],
   },
   {
+    id: "needs-you-placement",
+    title: "Needs you section",
+    to: "/settings/general",
+    searchTerms: ["sidebar attention approval question inbox waiting on me top project"],
+  },
+  {
+    id: "needs-you-finished-threads",
+    title: "Finished threads in Needs you",
+    to: "/settings/general",
+    searchTerms: ["sidebar completed done unread unseen runs needs you"],
+  },
+  {
     id: "boring-sidebar",
     title: "Boring sidebar (group by project)",
     to: "/settings/labs",
