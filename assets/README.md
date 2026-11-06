@@ -6,7 +6,9 @@ The three Icon Composer projects are the source of truth for full application ic
 - `nightly/app-icon.icon`
 - `prod/app-icon.icon`
 
-Each project uses `text.svg` for the T3 mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
+Each project draws the icon from `panes-light.png` and `panes-dark.png`, switched by appearance. The older vector layers (`text.svg`, `background.svg` and the variant decorations) are no longer referenced by the projects; they remain only as the source of the Android artwork described below.
+
+macOS desktop builds ship the `.icon` project itself: electron-builder compiles it with Xcode 26's `actool` into `Assets.car`, so the Dock icon follows the system's light and dark appearance. The macOS PNG below is still used for the app's runtime `icon.png`.
 
 Run `vp run icons:export` from the repository root to regenerate the tracked iOS, Linux, Windows, and web assets. The development web exports are also copied to `apps/web/public` for the browser favicon and splash screen. Run `vp run icons:check` to verify that the generated assets and public copies match their sources without changing files.
 

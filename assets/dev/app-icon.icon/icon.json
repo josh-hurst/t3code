@@ -1,45 +1,64 @@
 {
-  "fill": {
-    "solid": "display-p3:0.00000,0.00000,0.00000,1.00000"
-  },
+  "fill-specializations": [
+    {
+      "value": {
+        "solid": "display-p3:0.99510,0.95686,0.90196,1.00000"
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "solid": "display-p3:0.07157,0.01765,0.00980,1.00000"
+      }
+    }
+  ],
   "groups": [
     {
       "layers": [
         {
-          "glass": true,
-          "image-name": "text.svg",
-          "name": "Text",
+          "glass": false,
+          "image-name": "panes-dark.png",
+          "name": "Panes Dark",
           "position": {
-            "scale": 8.5,
+            "scale": 1,
             "translation-in-points": [0, 0]
-          }
+          },
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 1
+            }
+          ]
         },
         {
           "glass": false,
-          "image-name": "annotations.svg",
-          "name": "Annotations",
+          "image-name": "panes-light.png",
+          "name": "Panes Light",
           "position": {
-            "scale": 8.5,
+            "scale": 1,
             "translation-in-points": [0, 0]
-          }
-        },
-        {
-          "glass": true,
-          "image-name": "background.svg",
-          "name": "Background",
-          "position": {
-            "scale": 8.1,
-            "translation-in-points": [0, 0]
-          }
+          },
+          "opacity-specializations": [
+            {
+              "value": 1
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            }
+          ]
         }
       ],
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.6
+        "opacity": 0.5
       },
       "translucency": {
-        "enabled": true,
-        "value": 0.2
+        "enabled": false,
+        "value": 0
       }
     }
   ],
