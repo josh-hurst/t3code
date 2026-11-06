@@ -359,6 +359,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["latex tex katex equations formulas markdown"],
   },
   {
+    id: "app-icon",
+    title: "App icon",
+    to: "/settings/appearance",
+    searchTerms: ["dock icon quill copper blue"],
+    desktopOnly: true,
+    macOnly: true,
+  },
+  {
     id: "panel-animations",
     title: "Panel animations",
     to: "/settings/appearance",

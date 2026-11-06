@@ -51,6 +51,24 @@ public final class T3NativeControlsModule: Module {
       ViewName("ScrollEdgeBleed")
     }
 
+    AsyncFunction("getAlternateAppIcon") { () -> String? in
+      UIApplication.shared.alternateIconName
+    }.runOnQueue(.main)
+
+    AsyncFunction("setAlternateAppIcon") { (name: String?, promise: Promise) in
+      guard UIApplication.shared.supportsAlternateIcons else {
+        promise.reject("ERR_ALTERNATE_ICONS_UNSUPPORTED", "This device does not support alternate app icons.")
+        return
+      }
+      UIApplication.shared.setAlternateIconName(name) { error in
+        if let error {
+          promise.reject("ERR_ALTERNATE_ICON", error.localizedDescription)
+        } else {
+          promise.resolve(nil)
+        }
+      }
+    }.runOnQueue(.main)
+
     AsyncFunction("presentVideo") { (url: URL, title: String, sourceIdentifier: String, identifier: String, promise: Promise) in
       try self.presentVideo(
         url: url,

@@ -2,7 +2,20 @@
   "fill-specializations": [
     {
       "value": {
-        "solid": "display-p3:0.99216,0.95686,0.91373,1.00000"
+        "linear-gradient": [
+          "display-p3:1.00000,0.96863,0.93333,1.00000",
+          "display-p3:0.96471,0.91765,0.86275,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.5,
+            "y": 0
+          },
+          "stop": {
+            "x": 0.5,
+            "y": 1
+          }
+        }
       }
     },
     {
@@ -68,6 +81,40 @@
       "shadow": {
         "kind": "neutral",
         "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    },
+    {
+      "layers": [
+        {
+          "glass": false,
+          "image-name": "grid.png",
+          "name": "Grid",
+          "position": {
+            "scale": 1,
+            "translation-in-points": [0, 0]
+          },
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "display-p3:0.55686,0.55686,0.57647,0.30000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "display-p3:1.00000,1.00000,1.00000,0.14000"
+              }
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "none",
+        "opacity": 0
       },
       "translucency": {
         "enabled": false,

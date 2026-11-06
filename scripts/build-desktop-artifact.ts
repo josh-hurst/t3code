@@ -130,6 +130,7 @@ const MAC_ICON_COMPOSER_RESOURCE = "icon.icon";
 interface DesktopBuildIconAssets {
   readonly macIconPng: string;
   readonly macIconComposerProject: string;
+  readonly macAppIconsDirectory: string;
   readonly linuxIconPng: string;
   readonly windowsIconIco: string;
 }
@@ -2463,11 +2464,12 @@ const stageMacIcons = Effect.fn("build-desktop-artifact.stageMacIcons")(function
   stageResourcesDir: string,
   sourcePng: string,
   iconComposerProject: string,
+  appIconsDirectory: string,
   verbose: boolean,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  for (const sourcePath of [sourcePng, iconComposerProject]) {
+  for (const sourcePath of [sourcePng, iconComposerProject, appIconsDirectory]) {
     if (!(yield* fs.exists(sourcePath))) {
       return yield* new DesktopIconSourceMissingError({ platform: "mac", sourcePath });
     }
@@ -2481,6 +2483,12 @@ const stageMacIcons = Effect.fn("build-desktop-artifact.stageMacIcons")(function
   });
 
   yield* fs.copy(iconComposerProject, path.join(stageResourcesDir, MAC_ICON_COMPOSER_RESOURCE));
+  // Dock icons the app swaps in at runtime when the user picks another app icon.
+  for (const name of yield* fs.readDirectory(appIconsDirectory)) {
+    if (name.endsWith(".png")) {
+      yield* fs.copy(path.join(appIconsDirectory, name), path.join(stageResourcesDir, name));
+    }
+  }
 });
 
 export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(function* (
@@ -2690,6 +2698,7 @@ export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIcon
     return {
       macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
       macIconComposerProject: BRAND_ASSET_PATHS.nightlyIconComposerProject,
+      macAppIconsDirectory: BRAND_ASSET_PATHS.appIconsDirectory,
       linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
       windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
     };
@@ -2698,6 +2707,7 @@ export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIcon
   return {
     macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
     macIconComposerProject: BRAND_ASSET_PATHS.productionIconComposerProject,
+    macAppIconsDirectory: BRAND_ASSET_PATHS.appIconsDirectory,
     linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
     windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
   };
@@ -2968,6 +2978,7 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
       stageResourcesDir,
       iconAssets.macIconPng,
       iconAssets.macIconComposerProject,
+      iconAssets.macAppIconsDirectory,
       verbose,
     );
     return;
@@ -3794,6 +3805,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     {
       macIconPng: path.join(repoRoot, iconAssets.macIconPng),
       macIconComposerProject: path.join(repoRoot, iconAssets.macIconComposerProject),
+      macAppIconsDirectory: path.join(repoRoot, iconAssets.macAppIconsDirectory),
       linuxIconPng: path.join(repoRoot, iconAssets.linuxIconPng),
       windowsIconIco: path.join(repoRoot, iconAssets.windowsIconIco),
     },

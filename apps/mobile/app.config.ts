@@ -454,6 +454,10 @@ const config: ExpoConfig = {
     "./plugins/withAndroidModernAlertDialog.cjs",
     "./plugins/withAndroidPredictiveBackCompat.cjs",
     "./plugins/withAndroidTabletOrientation.cjs",
+    [
+      "./plugins/withAlternateAppIcon.cjs",
+      { name: "app-icon-blue", source: fromRepoRoot(BRAND_ASSET_PATHS.blueIconComposerProject) },
+    ],
     ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
   ],
   extra: {

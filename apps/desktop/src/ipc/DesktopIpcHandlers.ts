@@ -74,6 +74,7 @@ import {
   takeLegacyLocalStorage,
 } from "./methods/legacyLocalStorage.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
+import { getAppIcon, setAppIcon } from "./methods/appIcon.ts";
 import {
   getCliCommandState,
   installCliCommand,
@@ -140,6 +141,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(pickProjectFavicon);
   yield* ipc.handle(pickThemeFiles);
   yield* ipc.handle(setTheme);
+  yield* ipc.handle(getAppIcon);
+  yield* ipc.handle(setAppIcon);
   yield* ipc.handle(showContextMenu);
   yield* ipc.handle(openExternal);
   yield* ipc.handle(readMedia);

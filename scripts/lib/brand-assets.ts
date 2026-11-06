@@ -4,6 +4,9 @@ export const BRAND_ASSET_PATHS = {
   developmentUniversalIconPng: "assets/dev/blueprint-universal-1024.png",
 
   productionIconComposerProject: "assets/prod/app-icon.icon",
+  // Alternate icon users can pick on macOS and iOS; macOS swaps the Dock icon from appIconsDirectory.
+  blueIconComposerProject: "assets/blue/app-icon.icon",
+  appIconsDirectory: "assets/app-icons",
   productionIosIconPng: "assets/prod/black-ios-1024.png",
   productionMacIconPng: "assets/prod/black-macos-1024.png",
   productionLinuxIconPng: "assets/prod/black-universal-1024.png",

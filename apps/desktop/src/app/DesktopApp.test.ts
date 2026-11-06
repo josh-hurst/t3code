@@ -30,6 +30,7 @@ import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopLegacyLocalStorage from "./DesktopLegacyLocalStorage.ts";
 import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
+import * as DesktopAppIcon from "./DesktopAppIcon.ts";
 import * as DesktopMacIconCache from "./DesktopMacIconCache.ts";
 import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
@@ -148,6 +149,11 @@ it.effect(
           }),
           Effect.provideService(DesktopMacIconCache.DesktopMacIconCache, {
             refreshAfterInstall: Effect.void,
+          }),
+          Effect.provideService(DesktopAppIcon.DesktopAppIcon, {
+            get: Effect.succeed("copper" as const),
+            set: () => Effect.void,
+            register: Effect.void,
           }),
         )
         .pipe(
