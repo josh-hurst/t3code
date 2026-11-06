@@ -1407,6 +1407,20 @@ export const ServerSettings = Schema.Struct({
     ),
   ),
   threadTitleInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  /** Sidebar rows showing the latest message show a generated summary of the latest reply. */
+  threadReplySummariesEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  /** Separate from the text generation model: summaries run often, so they default to a cheap one. */
+  threadReplySummaryModelSelection: ModelSelection.pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed({
+        instanceId: ProviderInstanceId.make("codex"),
+        model: DEFAULT_TEXT_GENERATION_MODEL,
+        options: [{ id: "reasoningEffort", value: DEFAULT_TEXT_GENERATION_REASONING_EFFORT }],
+      }),
+    ),
+  ),
   branchNamingMode: BranchNamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("static" as const)),
   ),
@@ -1760,6 +1774,8 @@ export const ServerSettingsPatch = Schema.Struct({
   ghqCloneLayout: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
+  threadReplySummariesEnabled: Schema.optionalKey(Schema.Boolean),
+  threadReplySummaryModelSelection: Schema.optionalKey(ModelSelection),
   branchNamingMode: Schema.optionalKey(BranchNamingMode),
   branchNamePrefix: Schema.optionalKey(TrimmedString),
   branchNameInstructions: Schema.optionalKey(TrimmedString),

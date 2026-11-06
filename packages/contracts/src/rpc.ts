@@ -1853,6 +1853,12 @@ const WsOrchestrationV2GetThreadUsageRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.
   error: Schema.Union([OrchestrationV2GetThreadProjectionError, EnvironmentAuthorizationError]),
 });
 
+const WsOrchestrationV2GetReplySummaryRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.getReplySummary, {
+  payload: OrchestrationV2RpcSchemas.getReplySummary.input,
+  success: OrchestrationV2RpcSchemas.getReplySummary.output,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsOrchestrationV2LaunchThreadRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.launchThread, {
   payload: OrchestrationV2RpcSchemas.launchThread.input,
   success: OrchestrationV2RpcSchemas.launchThread.output,
@@ -2198,6 +2204,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2ForceStopThreadRpc,
   WsOrchestrationV2GetTurnItemRpc,
   WsOrchestrationV2GetThreadUsageRpc,
+  WsOrchestrationV2GetReplySummaryRpc,
   WsOrchestrationV2GetTurnDiffRpc,
   WsOrchestrationV2GetFullThreadDiffRpc,
   WsOrchestrationV2SearchThreadsRpc,

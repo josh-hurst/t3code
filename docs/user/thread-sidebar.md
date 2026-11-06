@@ -189,6 +189,13 @@ two-line folder rows in the boring sidebar. A thread started in your project's o
 without picking a branch has no branch to show. While a run is going, the preview updates when
 the run ends.
 
+To see a few-word summary of the agent's latest reply instead, such as "Fixed flaky login
+test; 2 retries removed", turn on **Settings → Threads → Text generation → Summarize latest
+reply**. The environment writes each summary once, after the run ends, with the **Reply summary
+model** chosen there, so every new reply costs one short generation on that provider. Your own
+messages, and replies whose summary is not ready or could not be written, show the start of the
+message as before.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list
