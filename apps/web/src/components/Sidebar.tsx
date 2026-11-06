@@ -386,10 +386,10 @@ function resolveDraggedOrders(input: {
   readonly threadByKey: ReadonlyMap<string, EnvironmentThreadShell>;
   readonly settledThreads: readonly EnvironmentThreadShell[];
   readonly activeThreads: readonly EnvironmentThreadShell[];
-  readonly workingShelfEnabled: boolean;
+  readonly activeTimeOrdered: boolean;
   readonly liftNeedsYou: (threads: readonly EnvironmentThreadShell[]) => EnvironmentThreadShell[];
 }): typeof NO_DRAGGED_ORDERS {
-  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled, liftNeedsYou } =
+  const { drag, threadByKey, settledThreads, activeThreads, activeTimeOrdered, liftNeedsYou } =
     input;
   const thread = threadByKey.get(drag.activeKey);
   if (thread === undefined) return NO_DRAGGED_ORDERS;
@@ -400,7 +400,7 @@ function resolveDraggedOrders(input: {
       ...others(settledThreads),
       applySidebarThreadDrop(thread, "settled", drag.occurredAt),
     ]).map(threadShellKey),
-    activeOrder: workingShelfEnabled
+    activeOrder: activeTimeOrdered
       ? liftNeedsYou(
           sortInboxThreadsByReturn(
             [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
@@ -447,9 +447,9 @@ function useSidebarThreads(input: {
     folderGroups,
     keepEmptyFolders: keepEmpty,
   } = input;
-  // Folders already separate the work, so boring mode has no Working shelf.
-  const workingShelfEnabled =
-    useClientSettings((s) => s.sidebarWorkingShelfEnabled) && folderGroups === null;
+  const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
+  // Folders order active threads by latest send, not by inbox return.
+  const activeTimeOrdered = workingShelfEnabled && folderGroups === null;
   const needsYouPlacement = useClientSettings((s) => s.sidebarNeedsYouPlacement);
   const needsYouIncludesCompleted = useClientSettings((s) => s.sidebarNeedsYouIncludesCompleted);
   const inboxReturnsVersion = useSyncExternalStore(
@@ -610,12 +610,12 @@ function useSidebarThreads(input: {
     ...partition,
     activeThreads,
     threads,
-    workingShelfEnabled,
+    activeTimeOrdered,
     needsYouKeys,
     needsYouAboveFolders,
     liftNeedsYou,
     // Above a hand-ordered list, Needs you rows hold their place and drops order only the rest.
-    activeFixedKeys: needsYouOnTop && !workingShelfEnabled ? needsYouKeys : undefined,
+    activeFixedKeys: needsYouOnTop && !activeTimeOrdered ? needsYouKeys : undefined,
     searchableThreads: [
       ...pinnedThreads,
       ...activeThreads,
@@ -1383,7 +1383,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
 
   const {
-    workingShelfEnabled,
+    activeTimeOrdered,
     pinnedThreads,
     draggableThreadKeys,
     activeReorderableThreadKeys,
@@ -2115,7 +2115,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           threadByKey,
           settledThreads,
           activeThreads,
-          workingShelfEnabled,
+          activeTimeOrdered,
           liftNeedsYou,
         });
   const sidebarSortingStrategy = createSidebarSortingStrategy({
@@ -2155,7 +2155,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             activeOrder: activeKeys,
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
-            activeTimeOrdered: workingShelfEnabled,
+            activeTimeOrdered,
             ...(activeFixedKeys === undefined ? {} : { activeFixedKeys }),
           }).kind !== "none"
         );
@@ -2189,7 +2189,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeOrder: activeKeys,
       activeKeysById,
       activeReorderableKeys: activeReorderableThreadKeys,
-      activeTimeOrdered: workingShelfEnabled,
+      activeTimeOrdered,
       ...(activeFixedKeys === undefined ? {} : { activeFixedKeys }),
     });
     if (plan.kind === "none") return;

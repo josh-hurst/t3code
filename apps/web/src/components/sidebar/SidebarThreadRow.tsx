@@ -1262,6 +1262,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         className={cn(
           "list-none [content-visibility:auto] [contain-intrinsic-size:auto_--spacing(9)]",
           metaLine !== null && multiline && "[contain-intrinsic-size:auto_--spacing(13.5)]",
+          // A tree guide marks folder membership in 8px instead of a deep indent.
+          inFolder &&
+            "relative ps-2 before:pointer-events-none before:absolute before:inset-y-0 before:-bottom-px before:start-0.75 before:w-px before:bg-sidebar-border before:content-['']",
           panelClassName,
           sortable?.isDragging && "relative z-20",
         )}
@@ -1285,8 +1288,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   multiline
                     ? "flex flex-col justify-center px-2.5 py-1.5"
                     : "flex h-9 items-center gap-2.5 px-2.5",
-                  // Lines titles up with the folder name, past its chevron and icon.
-                  inFolder && "ps-9",
                 )}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
