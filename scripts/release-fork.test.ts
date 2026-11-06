@@ -19,9 +19,9 @@ function fixture() {
   for (const name of [
     "latest-mac.yml",
     "latest.yml",
-    "J6-Code-0.1.7001-arm64.zip",
-    "J6-Code-0.1.7001-arm64.dmg",
-    "J6-Code-0.1.7001-x64.exe",
+    "T3-Code-0.1.7001-arm64.zip",
+    "T3-Code-0.1.7001-arm64.dmg",
+    "T3-Code-0.1.7001-x64.exe",
   ]) {
     NodeFS.writeFileSync(NodePath.join(directory, name), name);
   }
@@ -55,7 +55,7 @@ const candidate = {
   repository: "josh-hurst/t3code",
   commit: "abcdef",
   appId: "com.joshhurst.t3code",
-  productName: "J6 Code (Beta)",
+  productName: "T3 Code",
 };
 
 describe("release-fork", () => {
@@ -96,7 +96,7 @@ describe("release-fork", () => {
     const staged = await stageForkRelease(release.directory, candidate, release.execute);
     assert.include(release.calls[0]!, "--draft");
     assert.notInclude(release.calls[0]!, "--latest");
-    assert.equal(forkReleaseMacArchive(staged), "J6-Code-0.1.7001-arm64.zip");
+    assert.equal(forkReleaseMacArchive(staged), "T3-Code-0.1.7001-arm64.zip");
 
     await publishForkRelease(release.directory, release.execute);
     assert.deepEqual(
@@ -111,7 +111,7 @@ describe("release-fork", () => {
     using release = fixture();
     await stageForkRelease(release.directory, candidate, release.execute);
     NodeFS.writeFileSync(
-      NodePath.join(release.directory, "J6-Code-0.1.7001-arm64.zip"),
+      NodePath.join(release.directory, "T3-Code-0.1.7001-arm64.zip"),
       "different build",
     );
     await expect(publishForkRelease(release.directory, release.execute)).rejects.toThrow(/changed/);

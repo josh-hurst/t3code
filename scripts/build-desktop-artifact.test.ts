@@ -575,16 +575,16 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             ConfigProvider.fromEnv({
               env: {
                 T3CODE_DESKTOP_APP_ID: "com.example.t3code",
-                T3CODE_DESKTOP_PRODUCT_NAME: "J6 Code (Beta)",
+                T3CODE_DESKTOP_PRODUCT_NAME: "T3 Code",
               },
             }),
           ),
         ),
       );
       assert.equal(fork.appId, "com.example.t3code");
-      assert.equal(fork.productName, "J6 Code (Beta)");
-      assert.equal(fork.artifactName, "J6-Code-${version}-${arch}.${ext}");
-      assert.equal((fork.dmg as { title: string }).title, "J6 Code (Beta) 0.1.7001 Installer");
+      assert.equal(fork.productName, "T3 Code");
+      assert.equal(fork.artifactName, "T3-Code-${version}-${arch}.${ext}");
+      assert.equal((fork.dmg as { title: string }).title, "T3 Code 0.1.7001 Installer");
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 

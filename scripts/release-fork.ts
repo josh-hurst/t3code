@@ -11,7 +11,7 @@
 //   T3CODE_DESKTOP_APP_ID        bundle ID registered to your Apple team (required;
 //                                the official one belongs to T3 Tools)
 //   T3CODE_DESKTOP_PRODUCT_NAME  app name, so it installs beside the official app
-//                                (default: J6 Code (Beta))
+//                                (default: T3 Code)
 //   T3CODE_FORK_REPOSITORY       owner/repo to publish to (default: the `fork`
 //                                remote, else `origin`)
 //
@@ -36,7 +36,7 @@ import { prepareForkApplicationInstall } from "./install-fork-release.ts";
 const root = NodePath.resolve(import.meta.dirname, "..");
 const OFFICIAL_REPOSITORY = "pingdotgg/t3code";
 const OFFICIAL_APP_ID = "com.t3tools.t3code";
-const DEFAULT_FORK_PRODUCT_NAME = "J6 Code (Beta)";
+const DEFAULT_FORK_PRODUCT_NAME = "T3 Code";
 // Each base version leaves room for this many fork releases before the next
 // official version, so fork versions always sort after the one they build on.
 const RELEASES_PER_BASE_VERSION = 1000;
