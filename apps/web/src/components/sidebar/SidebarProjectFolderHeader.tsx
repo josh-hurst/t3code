@@ -1,12 +1,18 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { ChevronDownIcon, SquarePenIcon } from "lucide-react";
 import { memo } from "react";
 
 import { cn } from "~/lib/utils";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useUiStateStore } from "../../uiStateStore";
-import { resolveSidebarFolderDot, resolveThreadLastVisitedAt } from "../Sidebar.logic";
+import {
+  animateSidebarLayoutChanges,
+  resolveSidebarFolderDot,
+  resolveThreadLastVisitedAt,
+} from "../Sidebar.logic";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -30,6 +36,11 @@ export function sidebarFolderRowId(projectKey: string) {
   return `folder:${projectKey}`;
 }
 
+/** The folder header's id among the sidebar's sortables. */
+export function sidebarFolderSortableId(projectKey: string) {
+  return `project-folder:${projectKey}`;
+}
+
 /**
  * A project folder in the boring sidebar. It reads like a shelf header: a trailing
  * count and chevron, with the count and a status dot only while it is closed, so a
@@ -42,9 +53,18 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   onToggle: (group: SidebarProjectSnapshot) => void;
   onNewThread: (group: SidebarProjectSnapshot) => void;
   onContextMenu: (group: SidebarProjectSnapshot, position: { x: number; y: number }) => void;
+  sortableDisabled: boolean;
+  // Only drags out to the composer; the folder holds still in the list.
+  contextDrag: boolean;
 }) {
   const { group, collapsed, hiddenThreads } = props;
   const rowId = sidebarFolderRowId(group.projectKey);
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: sidebarFolderSortableId(group.projectKey),
+    disabled: props.sortableDisabled,
+    animateLayoutChanges: animateSidebarLayoutChanges,
+  });
+  const dragTransform = props.contextDrag ? null : transform;
   const localLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
   const dot = collapsed
     ? resolveSidebarFolderDot(
@@ -61,8 +81,19 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
     : null;
   return (
     <li
+      ref={setNodeRef}
       data-testid="sidebar-project-folder"
-      className="group/project-folder relative mt-2 list-none first:mt-0"
+      className={cn(
+        "group/project-folder relative mt-2 list-none first:mt-0",
+        isDragging &&
+          !props.contextDrag &&
+          "z-10 rounded-(--control-radius) bg-sidebar bg-linear-to-b from-sidebar-row-active to-sidebar-row-active shadow-lg",
+      )}
+      style={{
+        transform: CSS.Translate.toString(dragTransform),
+        transition: props.contextDrag && isDragging ? "transform 150ms ease-out" : transition,
+      }}
+      {...listeners}
     >
       <button
         type="button"

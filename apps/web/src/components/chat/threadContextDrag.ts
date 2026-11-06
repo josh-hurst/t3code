@@ -2,6 +2,13 @@ import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { type RefObject, useEffect, useEffectEvent, useSyncExternalStore } from "react";
 
 export const THREAD_CONTEXT_DROP_EVENT = "t3-thread-context-drop";
+const PROJECT_CONTEXT_DROP_EVENT = "t3-project-context-drop";
+
+/** A dragged project's folder on each environment that has it. */
+export type ProjectContextRoots = ReadonlyArray<{
+  readonly environmentId: EnvironmentId;
+  readonly workspaceRoot: string;
+}>;
 
 export function useThreadContextDrop(
   targetRef: RefObject<EventTarget | null>,
@@ -30,6 +37,22 @@ export function useThreadContextDrop(
   ]);
 }
 
+export function useProjectContextDrop(
+  targetRef: RefObject<EventTarget | null>,
+  onDrop: (roots: ProjectContextRoots) => void,
+) {
+  const handleDrop = useEffectEvent(onDrop);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes the target element to project-context drop events
+  useEffect(() => {
+    const target = targetRef.current;
+    if (!target) return;
+    const listener = (event: Event) =>
+      handleDrop((event as CustomEvent<ProjectContextRoots>).detail);
+    target.addEventListener(PROJECT_CONTEXT_DROP_EVENT, listener);
+    return () => target.removeEventListener(PROJECT_CONTEXT_DROP_EVENT, listener);
+  }, [targetRef]);
+}
+
 const DROP_TARGET_ATTRIBUTE = "data-thread-context-drop";
 const DROP_OVER_ATTRIBUTE = "data-thread-context-over";
 
@@ -38,6 +61,7 @@ export interface ThreadContextDragGhost {
   readonly y: number;
   readonly title: string;
   readonly count: number;
+  readonly kind: "thread" | "project";
 }
 
 let ghost: ThreadContextDragGhost | null = null;
@@ -72,7 +96,7 @@ function findDropTarget(point: { x: number; y: number }): HTMLElement | null {
 
 export function moveThreadContextDrag(
   point: { x: number; y: number },
-  label: { title: string; count: number },
+  label: { title: string; count: number; kind?: "thread" | "project" },
 ) {
   const target = findDropTarget(point);
   if (target !== overTarget) {
@@ -80,7 +104,7 @@ export function moveThreadContextDrag(
     target?.setAttribute(DROP_OVER_ATTRIBUTE, "true");
     overTarget = target;
   }
-  setGhost({ x: point.x, y: point.y, ...label });
+  setGhost({ x: point.x, y: point.y, kind: "thread", ...label });
 }
 
 export function endThreadContextDrag() {
@@ -96,6 +120,16 @@ export function dropThreadContext(
   const target = findDropTarget(point);
   if (!target || threads.length === 0) return false;
   target.dispatchEvent(new CustomEvent(THREAD_CONTEXT_DROP_EVENT, { detail: threads }));
+  return true;
+}
+
+export function dropProjectContext(
+  point: { x: number; y: number },
+  roots: ProjectContextRoots,
+): boolean {
+  const target = findDropTarget(point);
+  if (!target || roots.length === 0) return false;
+  target.dispatchEvent(new CustomEvent(PROJECT_CONTEXT_DROP_EVENT, { detail: roots }));
   return true;
 }
 

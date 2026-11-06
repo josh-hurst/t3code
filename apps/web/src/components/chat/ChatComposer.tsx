@@ -188,7 +188,11 @@ import {
   environmentContextReference,
 } from "~/lib/composerContextRecords";
 import { rememberCopiedComposerAttachments } from "~/lib/copiedComposerAttachments";
-import { useThreadContextDrop, threadContextDropTargetProps } from "./threadContextDrag";
+import {
+  threadContextDropTargetProps,
+  useProjectContextDrop,
+  useThreadContextDrop,
+} from "./threadContextDrag";
 import { readThreadShell } from "~/state/entities";
 import { useLinkedEnvironments } from "~/state/peerLinks";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
@@ -2836,6 +2840,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (isComposerCollapsedMobile) expandMobileComposerStable();
     } else {
       addComposerDraftThreadContexts(composerDraftTarget, records);
+    }
+  });
+
+  // A project dragged from the sidebar comes in as its folder, like a folder dropped from Finder.
+  useProjectContextDrop(composerFormRef, (roots) => {
+    const root = roots.find((candidate) => candidate.environmentId === environmentId) ?? roots[0];
+    if (root === undefined) return;
+    if (
+      !insertComposerTextAtEndStable(`${serializeComposerFileLink(root.workspaceRoot)} `, {
+        ensureLeadingBoundary: true,
+      })
+    ) {
+      toastManager.add({
+        type: "error",
+        title: "Unable to add project",
+        description: "The composer is busy; try again once it is ready.",
+      });
     }
   });
 

@@ -231,6 +231,26 @@ type SidebarDropTarget = {
   readonly activeOrder: readonly string[];
 };
 
+/**
+ * The active order after a folder row moves to `overKey`'s place among its folder's
+ * rendered rows; the other folders' rows keep their slots. Null across folders.
+ */
+export function moveSidebarFolderRow(
+  activeOrder: readonly string[],
+  folderKeys: readonly string[],
+  activeKey: string,
+  overKey: string,
+): string[] | null {
+  const from = folderKeys.indexOf(activeKey);
+  const to = folderKeys.indexOf(overKey);
+  if (from === -1 || to === -1) return null;
+  const folderOrder = folderKeys.filter((key) => key !== activeKey);
+  folderOrder.splice(to, 0, activeKey);
+  const inFolder = new Set(folderKeys);
+  let next = 0;
+  return activeOrder.map((key) => (inFolder.has(key) ? folderOrder[next++]! : key));
+}
+
 export function resolveSidebarDropTarget(
   items: readonly SidebarListItem[],
   activeKey: string,

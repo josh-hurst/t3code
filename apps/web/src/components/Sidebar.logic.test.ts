@@ -20,6 +20,7 @@ import {
   searchSidebarThreads,
   shouldRecedeSidebarThread,
   sortInboxThreadsByReturn,
+  moveSidebarFolderRow,
   resolveSidebarDropTarget,
   planSidebarThreadDrop,
   resolveSidebarReorderableThreadKeys,
@@ -956,6 +957,32 @@ describe("sortSidebarV2ProjectGroups", () => {
         (project) => project.projectKey,
       ),
     ).toEqual(["logical-newer", "logical-older"]);
+  });
+});
+
+describe("moveSidebarFolderRow", () => {
+  // Folder rows b1–b3 interleave with other folders' rows in the active order.
+  const activeOrder = ["a1", "b1", "a2", "b2", "b3"];
+
+  it("reorders only the folder's own slots", () => {
+    expect(moveSidebarFolderRow(activeOrder, ["b1", "b2", "b3"], "b3", "b1")).toEqual([
+      "a1",
+      "b3",
+      "a2",
+      "b1",
+      "b2",
+    ]);
+    expect(moveSidebarFolderRow(activeOrder, ["b1", "b2", "b3"], "b1", "b3")).toEqual([
+      "a1",
+      "b2",
+      "a2",
+      "b3",
+      "b1",
+    ]);
+  });
+
+  it("refuses a target outside the folder", () => {
+    expect(moveSidebarFolderRow(activeOrder, ["b1", "b2", "b3"], "b1", "a2")).toBeNull();
   });
 });
 

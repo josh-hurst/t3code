@@ -89,6 +89,131 @@ export function createSidebarCollisionDetection(
   };
 }
 
+/** A project folder in the boring sidebar: its header's sortable id and its rendered rows'. */
+export type SidebarFolderBlock = {
+  readonly id: string;
+  readonly rowIds: readonly string[];
+  // Pinned folders always come first, so a folder moves only among its own kind.
+  readonly pinned?: boolean;
+};
+
+function sidebarFolderBlockSpans(
+  blocks: readonly SidebarFolderBlock[],
+  rectOf: (id: string) => { top: number; height: number } | null | undefined,
+) {
+  const spans = blocks.map((block) => {
+    const header = rectOf(block.id);
+    const last = block.rowIds.length > 0 ? rectOf(block.rowIds.at(-1)!) : header;
+    if (!header || !last) return null;
+    return {
+      top: header.top,
+      headerHeight: header.height,
+      height: last.top + last.height - header.top,
+    };
+  });
+  if (spans.some((span) => span === null)) return null;
+  const measured = spans as Array<NonNullable<(typeof spans)[number]>>;
+  const gap = measured.length > 1 ? measured[1]!.top - (measured[0]!.top + measured[0]!.height) : 0;
+  return { spans: measured, gap };
+}
+
+/**
+ * Rows land among their own folder's rows. A dragged folder header shrinks to its
+ * own height and moves through the other folders, which travel whole; it lands
+ * before the first folder whose center lies below its center. Anything else in
+ * the list has no target.
+ */
+export function createSidebarFolderCollisionDetection(
+  blocks: readonly SidebarFolderBlock[],
+): CollisionDetection {
+  return (args) => {
+    const { active, collisionRect, droppableRects } = args;
+    const activeIndex = blocks.findIndex((block) => block.id === active.id);
+    if (activeIndex === -1) {
+      const block = blocks.find((candidate) => candidate.rowIds.includes(String(active.id)));
+      if (block === undefined) return [];
+      const rows = new Set(block.rowIds);
+      return closestCenter({
+        ...args,
+        droppableContainers: args.droppableContainers.filter((container) =>
+          rows.has(String(container.id)),
+        ),
+      });
+    }
+    const layout = sidebarFolderBlockSpans(blocks, (id) => droppableRects.get(id));
+    if (layout === null) return [];
+    const center = collisionRect.top + collisionRect.height / 2;
+    let top = layout.spans[0]!.top;
+    let insertAt = 0;
+    for (const [index, span] of layout.spans.entries()) {
+      if (index === activeIndex) continue;
+      if (center > top + span.height / 2) insertAt += 1;
+      top += span.height + layout.gap;
+    }
+    const pinned = blocks[activeIndex]!.pinned === true;
+    const first = blocks.findIndex((block) => (block.pinned === true) === pinned);
+    const last = blocks.findLastIndex((block) => (block.pinned === true) === pinned);
+    return [{ id: blocks[Math.min(Math.max(insertAt, first), last)]!.id }];
+  };
+}
+
+/**
+ * Sorts the boring sidebar's folders and the rows inside them, which share one
+ * flat list. Rows move within their folder; a dragged folder's rows hide while
+ * the other folders shift around its header.
+ */
+export function createSidebarFolderSortingStrategy(
+  blocks: readonly SidebarFolderBlock[],
+): SortingStrategy {
+  const blockIndexById = new Map<string, number>();
+  for (const [index, block] of blocks.entries()) {
+    blockIndexById.set(block.id, index);
+    for (const rowId of block.rowIds) blockIndexById.set(rowId, index);
+  }
+  const ids = blocks.flatMap((block) => [block.id, ...block.rowIds]);
+  const indexById = new Map(ids.map((id, index) => [id, index]));
+  let previous: Pick<Layout, "rects" | "activeIndex" | "overIndex"> | undefined;
+  let transforms: ReturnType<SortingStrategy>[] = [];
+
+  function project({ rects, activeIndex, overIndex }: Layout) {
+    const activeBlock = blockIndexById.get(ids[activeIndex] ?? "");
+    const overBlock = blockIndexById.get(ids[overIndex] ?? "");
+    const layout = sidebarFolderBlockSpans(blocks, (id) => rects[indexById.get(id) ?? -1]);
+    if (activeBlock === undefined || overBlock === undefined || layout === null) return [];
+    const order = blocks.map((_, index) => index).filter((index) => index !== activeBlock);
+    order.splice(overBlock, 0, activeBlock);
+    const result = ids.map(() => stationary);
+    let top = layout.spans[0]!.top;
+    for (const blockIndex of order) {
+      const span = layout.spans[blockIndex]!;
+      const block = blocks[blockIndex]!;
+      const moved = blockIndex === activeBlock;
+      const y = top - span.top;
+      for (const id of [block.id, ...block.rowIds]) {
+        result[indexById.get(id)!] = moved ? hidden : { ...stationary, y };
+      }
+      top += (moved ? span.headerHeight : span.height) + layout.gap;
+    }
+    result[activeIndex] = stationary;
+    return result;
+  }
+
+  return (args) => {
+    if (!blocks.some((block) => block.id === ids[args.activeIndex])) {
+      return verticalListSortingStrategy(args);
+    }
+    if (
+      previous?.rects !== args.rects ||
+      previous.activeIndex !== args.activeIndex ||
+      previous.overIndex !== args.overIndex
+    ) {
+      previous = args;
+      transforms = project(args);
+    }
+    return transforms[args.index] ?? stationary;
+  };
+}
+
 export function createSidebarSortingStrategy(input: {
   items: readonly SidebarListItem[];
   enabled?: boolean;

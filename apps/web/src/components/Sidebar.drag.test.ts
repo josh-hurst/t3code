@@ -3,6 +3,8 @@ import { closestCenter, type CollisionDetection } from "@dnd-kit/core";
 import type { SortingStrategy } from "@dnd-kit/sortable";
 import {
   createSidebarCollisionDetection,
+  createSidebarFolderCollisionDetection,
+  createSidebarFolderSortingStrategy,
   createSidebarSortingStrategy,
   restrictBelowSidebarLabel,
 } from "./Sidebar.drag";
@@ -724,5 +726,110 @@ describe("lifted card clearance", () => {
   it("follows the list when it scrolls and includes content preceding Pins", () => {
     expect(511 + apply(511, 36, -500, 96).y).toBe(128);
     expect(511 + apply(511, 36, -500, 136, 114).y).toBe(250);
+  });
+});
+
+describe("project folder drag", () => {
+  // Folder a has two rows, b none, c one; headers are 32px, rows 36px, 1px apart, folders 9px.
+  const blocks = [
+    { id: "folder:a", rowIds: ["a1", "a2"] },
+    { id: "folder:b", rowIds: [] },
+    { id: "folder:c", rowIds: ["c1"] },
+  ];
+  const ids = blocks.flatMap((block) => [block.id, ...block.rowIds]);
+  const rects = (() => {
+    let top = 100;
+    return ids.map((id) => {
+      if (id.startsWith("folder:") && id !== "folder:a") top += 8;
+      const height = id.startsWith("folder:") ? 32 : 36;
+      const rect = { top, height, bottom: top + height, left: 0, right: 260, width: 260 };
+      top += height + 1;
+      return rect;
+    });
+  })();
+  const shifts = (active: string, over: string) => {
+    const strategy = createSidebarFolderSortingStrategy(blocks);
+    const args = {
+      rects,
+      activeIndex: ids.indexOf(active),
+      overIndex: ids.indexOf(over),
+      activeNodeRect: rects[ids.indexOf(active)]!,
+    };
+    return Object.fromEntries(ids.map((id, index) => [id, strategy({ ...args, index })]));
+  };
+
+  it("moves whole folders around a dragged header and hides its rows", () => {
+    const result = shifts("folder:a", "folder:c");
+    // b and c rise by all of a and its gap (106 + 9px); a's header slots in below them.
+    expect(result["folder:b"]).toEqual({ ...stationary, y: -115 });
+    expect(result["c1"]).toEqual({ ...stationary, y: -115 });
+    expect(result["a1"]?.scaleY).toBe(0);
+    expect(result["a2"]?.scaleY).toBe(0);
+    expect(result["folder:a"]).toEqual(stationary);
+  });
+
+  it("moves rows within their folder like a plain list", () => {
+    const result = shifts("a1", "a2");
+    expect(result["a2"]).toEqual({ ...stationary, y: -37 });
+    expect(result["folder:b"]).toEqual(stationary);
+  });
+
+  const collide = (active: string, centerY: number) => {
+    const droppableRects = new Map(ids.map((id, index) => [id, rects[index]!]));
+    return createSidebarFolderCollisionDetection(blocks)({
+      active: {
+        id: active,
+        data: { current: undefined },
+        rect: { current: { initial: null, translated: null } },
+      },
+      collisionRect: {
+        top: centerY - 16,
+        height: 32,
+        bottom: centerY + 16,
+        left: 0,
+        right: 260,
+        width: 260,
+      },
+      droppableRects,
+      droppableContainers: ids.map((id, index) => ({
+        id,
+        key: id,
+        data: { current: undefined },
+        disabled: false,
+        node: { current: null },
+        rect: { current: rects[index]! },
+      })),
+      pointerCoordinates: { x: 10, y: centerY },
+    });
+  };
+
+  it("places a dragged folder once it passes the middle of the next folder", () => {
+    // Without a, b spans 100–132 and c spans 141–214 (middle 177.5).
+    expect(collide("folder:a", 110)).toEqual([{ id: "folder:a" }]);
+    expect(collide("folder:a", 120)).toEqual([{ id: "folder:b" }]);
+    expect(collide("folder:a", 180)).toEqual([{ id: "folder:c" }]);
+  });
+
+  it("keeps an unpinned folder below the pinned ones", () => {
+    const pinnedFirst = [{ ...blocks[0]!, pinned: true }, blocks[1]!, blocks[2]!];
+    const droppableRects = new Map(ids.map((id, index) => [id, rects[index]!]));
+    const detect = createSidebarFolderCollisionDetection(pinnedFirst);
+    const [collision] = detect({
+      active: {
+        id: "folder:c",
+        data: { current: undefined },
+        rect: { current: { initial: null, translated: null } },
+      },
+      collisionRect: { top: 84, height: 32, bottom: 116, left: 0, right: 260, width: 260 },
+      droppableRects,
+      droppableContainers: [],
+      pointerCoordinates: { x: 10, y: 100 },
+    });
+    expect(collision?.id).toBe("folder:b");
+  });
+
+  it("keeps a row among its own folder's rows", () => {
+    expect(collide("a1", 400).map((collision) => collision.id)).toEqual(["a2", "a1"]);
+    expect(collide("c1", 100).map((collision) => collision.id)).toEqual(["c1"]);
   });
 });
