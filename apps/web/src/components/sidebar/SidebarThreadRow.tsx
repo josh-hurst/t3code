@@ -1163,42 +1163,46 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     prBadge === null &&
     diff === null &&
     runningTerminalIds.length === 0;
+  // Beside a preview, the branch moves to the right next to the provider icons, and the icon
+  // and code face mark it as a ref.
+  const besidePreview = messagePreview !== null;
+  const branchDetail =
+    showsBranch && thread.branch ? (
+      <>
+        <ThreadWorktreeIndicator thread={thread} />
+        {besidePreview && !thread.worktreePath ? (
+          <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+        ) : null}
+        <span
+          className={cn(
+            "flex min-w-0",
+            besidePreview ? "max-w-[40%] font-mono text-2xs" : "flex-1",
+          )}
+        >
+          <MiddleTruncate value={thread.branch} showTitle={false} />
+        </span>
+      </>
+    ) : showsBranch && showsScratchMachine ? (
+      <>
+        <EnvironmentMachineIcon
+          aria-hidden
+          kind={props.environmentMachine}
+          className="size-3 shrink-0"
+        />
+        <span className={cn("min-w-0 truncate", besidePreview ? "max-w-[45%]" : "flex-1")}>
+          {props.scratchMachineLabel}
+        </span>
+      </>
+    ) : null;
   const metaLine = metaLineEmpty ? null : (
     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-      {showsBranch && thread.branch ? (
-        <>
-          <ThreadWorktreeIndicator thread={thread} />
-          {/* Beside a preview, the icon and code face mark the branch as a ref. */}
-          {messagePreview !== null && !thread.worktreePath ? (
-            <GitBranchIcon aria-hidden className="size-3 shrink-0" />
-          ) : null}
-          <span
-            className={cn(
-              "flex min-w-0",
-              messagePreview === null ? "flex-1" : "max-w-[40%] font-mono text-2xs",
-            )}
-          >
-            <MiddleTruncate value={thread.branch} showTitle={false} />
-          </span>
-        </>
-      ) : showsBranch && showsScratchMachine ? (
-        <>
-          <EnvironmentMachineIcon
-            aria-hidden
-            kind={props.environmentMachine}
-            className="size-3 shrink-0"
-          />
-          <span
-            className={cn("min-w-0 truncate", messagePreview === null ? "flex-1" : "max-w-[45%]")}
-          >
-            {props.scratchMachineLabel}
-          </span>
-        </>
-      ) : null}
-      {messagePreview !== null ? (
+      {besidePreview ? (
         <span className="min-w-0 flex-1 truncate">{messagePreview}</span>
-      ) : showsBranchDetail ? null : (
-        <span className="flex-1" />
+      ) : (
+        <>
+          {branchDetail}
+          {showsBranchDetail ? null : <span className="flex-1" />}
+        </>
       )}
       {terminalStatusIcon}
       {prBadge}
@@ -1208,6 +1212,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           <span className="text-diff-deletion-foreground">−{formatDiffCount(diff.deletions)}</span>
         </span>
       ) : null}
+      {besidePreview ? branchDetail : null}
       <span
         aria-hidden
         className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
