@@ -6,7 +6,7 @@ The three Icon Composer projects are the source of truth for full application ic
 - `nightly/app-icon.icon`
 - `prod/app-icon.icon`
 
-Each project draws the icon from `panes-light.png` and `panes-dark.png`, switched by appearance. The older vector layers (`text.svg`, `background.svg` and the variant decorations) are no longer referenced by the projects; they remain only as the source of the Android artwork described below.
+Each project draws the icon from `quill-light.png` and `quill-dark.png`, switched by appearance. The older vector layers (`text.svg`, `background.svg` and the variant decorations) are no longer referenced by the projects; they remain only as the source of the Android artwork described below.
 
 macOS desktop builds ship the `.icon` project itself: electron-builder compiles it with Xcode 26's `actool` into `Assets.car`, so the Dock icon follows the system's light and dark appearance. The macOS PNG below is still used for the app's runtime `icon.png`.
 

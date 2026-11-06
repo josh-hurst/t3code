@@ -2,13 +2,26 @@
   "fill-specializations": [
     {
       "value": {
-        "solid": "display-p3:0.99510,0.95686,0.90196,1.00000"
+        "solid": "display-p3:0.99216,0.95686,0.91373,1.00000"
       }
     },
     {
       "appearance": "dark",
       "value": {
-        "solid": "display-p3:0.07157,0.01765,0.00980,1.00000"
+        "linear-gradient": [
+          "display-p3:0.12157,0.11765,0.11765,1.00000",
+          "display-p3:0.05882,0.05490,0.05490,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.5,
+            "y": 0
+          },
+          "stop": {
+            "x": 0.5,
+            "y": 1
+          }
+        }
       }
     }
   ],
@@ -17,8 +30,8 @@
       "layers": [
         {
           "glass": false,
-          "image-name": "panes-dark.png",
-          "name": "Panes Dark",
+          "image-name": "quill-dark.png",
+          "name": "Quill Dark",
           "position": {
             "scale": 1,
             "translation-in-points": [0, 0]
@@ -35,8 +48,8 @@
         },
         {
           "glass": false,
-          "image-name": "panes-light.png",
-          "name": "Panes Light",
+          "image-name": "quill-light.png",
+          "name": "Quill Light",
           "position": {
             "scale": 1,
             "translation-in-points": [0, 0]
