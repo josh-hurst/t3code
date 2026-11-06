@@ -20,9 +20,14 @@ import {
   isListedThreadLineage,
   type ContextMenuItem,
   type EnvironmentId,
+  type MessageId,
   type ThreadId,
 } from "@t3tools/contracts";
-import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+import type {
+  SidebarProjectSortOrder,
+  SidebarRowDetail,
+  SidebarThreadSortOrder,
+} from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
 import {
   effectiveSnoozed,
@@ -592,6 +597,35 @@ export function sidebarMessagePreview(
   const text = message.text.replace(PREVIEW_MARKDOWN_NOISE, "").replace(/\s+/g, " ").trim();
   if (text === "") return null;
   return message.role === "user" ? `You: ${text}` : text;
+}
+
+/** The reply to summarize for a row, or null when the row shows the plain preview. */
+export function sidebarReplySummaryMessageId(input: {
+  readonly rowDetail: SidebarRowDetail;
+  readonly summariesEnabled: boolean;
+  readonly status: SidebarThreadStatus;
+  readonly message: SidebarThreadSummary["source"]["latestVisibleMessage"];
+}): MessageId | null {
+  // Mid-turn replies are interim; summarizing each would spend a run per step.
+  if (
+    !input.summariesEnabled ||
+    input.rowDetail === "branch" ||
+    input.status === "preparing" ||
+    input.status === "working" ||
+    input.message?.role !== "assistant"
+  ) {
+    return null;
+  }
+  return input.message.id;
+}
+
+export function sidebarRowMessagePreview(
+  message: SidebarThreadSummary["source"]["latestVisibleMessage"],
+  replySummary: string | null,
+): string | null {
+  return message?.role === "assistant" && replySummary
+    ? replySummary
+    : sidebarMessagePreview(message);
 }
 
 export function isSidebarHiddenThread(thread: Pick<SidebarThreadSummary, "lineage">): boolean {

@@ -154,6 +154,13 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       staleTimeMs: 0,
       idleTtlMs: 0,
     }),
+    // Keyed by message id, so a new reply is the only thing that fetches again.
+    replySummary: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:orchestration:reply-summary",
+      tag: ORCHESTRATION_V2_WS_METHODS.getReplySummary,
+      staleTimeMs: Number.POSITIVE_INFINITY,
+      idleTtlMs: 30 * 60_000,
+    }),
     fullThreadDiff: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:full-thread-diff",
       tag: ORCHESTRATION_V2_WS_METHODS.getFullThreadDiff,

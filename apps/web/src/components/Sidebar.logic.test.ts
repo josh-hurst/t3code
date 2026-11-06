@@ -35,6 +35,8 @@ import {
   resolveSidebarFolderDot,
   sidebarFolderExpansionKeys,
   sidebarMessagePreview,
+  sidebarReplySummaryMessageId,
+  sidebarRowMessagePreview,
   resolveSidebarVisibleProjectKeys,
   sidebarThreadNeedsYou,
   createOpenThreadPlacementHold,
@@ -88,6 +90,39 @@ describe("sidebarMessagePreview", () => {
   it("shows nothing when the message is only markup", () => {
     expect(sidebarMessagePreview(message("assistant", "```"))).toBeNull();
     expect(sidebarMessagePreview(null)).toBeNull();
+  });
+
+  it("shows a ready reply summary and otherwise the plain preview", () => {
+    const reply = message("assistant", "I fixed the **flaky** login test.");
+    expect(sidebarRowMessagePreview(reply, "Fixed flaky login test")).toBe(
+      "Fixed flaky login test",
+    );
+    expect(sidebarRowMessagePreview(reply, null)).toBe("I fixed the flaky login test.");
+    expect(sidebarRowMessagePreview(message("user", "Fix it"), "Stale summary")).toBe(
+      "You: Fix it",
+    );
+  });
+
+  it("asks for a summary only for a settled agent reply shown with message detail", () => {
+    const reply = message("assistant", "Done");
+    const request = {
+      rowDetail: "both" as const,
+      summariesEnabled: true,
+      status: "ready" as const,
+      message: reply,
+    };
+    expect(sidebarReplySummaryMessageId(request)).toBe(reply.id);
+    expect(sidebarReplySummaryMessageId({ ...request, status: "input" })).toBe(reply.id);
+    for (const change of [
+      { summariesEnabled: false },
+      { rowDetail: "branch" as const },
+      { status: "working" as const },
+      { status: "preparing" as const },
+      { message: message("user", "Fix it") },
+      { message: null },
+    ]) {
+      expect(sidebarReplySummaryMessageId({ ...request, ...change })).toBeNull();
+    }
   });
 });
 

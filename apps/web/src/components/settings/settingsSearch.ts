@@ -839,6 +839,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["generated thread titles prompt custom style naming rename regenerate"],
   },
   {
+    id: "reply-summaries",
+    title: "Summarize latest reply",
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: ["sidebar row latest message preview generated summary ai"],
+  },
+  {
+    id: "reply-summary-model",
+    title: "Reply summary model",
+    to: "/settings/threads",
+    // Hidden until summaries are on, so a search lands on the switch that shows it.
+    targetId: "reply-summaries",
+    scope: "environment-defaults",
+    searchTerms: ["sidebar latest message summary generation provider"],
+  },
+  {
     id: "app-version",
     title: "Version",
     to: "/settings/about",

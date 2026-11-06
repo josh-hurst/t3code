@@ -84,7 +84,7 @@ import {
   resolveThreadLastVisitedAt,
   shouldRecedeSidebarThread,
   resolveWorkingStartedAt,
-  sidebarMessagePreview,
+  sidebarRowMessagePreview,
   useRetainedValue,
   useSidebarRowSubscriptionLease,
   setFileDragActive,
@@ -116,6 +116,7 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } f
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { useThreadHasUnsentDraft } from "../../composerDraftStore";
+import { useSidebarReplySummary } from "./useSidebarReplySummary";
 
 // The fields thread rows show. Provider status pushes refresh `checkedAt`,
 // status and auth on every provider; leaving those out keeps each
@@ -823,8 +824,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const isRemote = thread.environmentId !== props.currentEnvironmentId;
   const showsScratchMachine = !thread.branch && props.scratchMachineLabel !== null;
   const showsBranch = props.rowDetail !== "message";
+  const replySummary = useSidebarReplySummary(thread, props.rowDetail, status);
   const messagePreview =
-    props.rowDetail === "branch" ? null : sidebarMessagePreview(thread.source.latestVisibleMessage);
+    props.rowDetail === "branch"
+      ? null
+      : sidebarRowMessagePreview(thread.source.latestVisibleMessage, replySummary);
   const showsBranchDetail = showsBranch && (Boolean(thread.branch) || showsScratchMachine);
 
   const detailsTooltip = (
