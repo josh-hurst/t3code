@@ -346,6 +346,14 @@ describe("serverSettings helpers", () => {
     });
   });
 
+  it("replaces the reply summary model whole, dropping the default's effort", () => {
+    const selection = createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-haiku");
+    const next = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      threadReplySummaryModelSelection: selection,
+    });
+    expect(next.threadReplySummaryModelSelection).toEqual(selection);
+  });
+
   it("falls back from a disabled source control writer provider without clearing its selection", () => {
     const instanceId = ProviderInstanceId.make("codex_writer");
     const sourceControlWriterModelSelection = createModelSelection(instanceId, "gpt-5.4-mini");

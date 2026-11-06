@@ -3596,6 +3596,7 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   forceStopThread: "orchestration.forceStopThread",
   getTurnItem: "orchestration.getTurnItem",
   getThreadUsage: "orchestration.getThreadUsage",
+  getReplySummary: "orchestration.getReplySummary",
   launchThread: "orchestration.launchThread",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
@@ -4140,6 +4141,18 @@ export const OrchestrationV2GetThreadUsageInput = Schema.Struct({
 });
 export type OrchestrationV2GetThreadUsageInput = typeof OrchestrationV2GetThreadUsageInput.Type;
 
+export const OrchestrationV2GetReplySummaryInput = Schema.Struct({
+  threadId: ThreadId,
+  messageId: MessageId,
+});
+export type OrchestrationV2GetReplySummaryInput = typeof OrchestrationV2GetReplySummaryInput.Type;
+
+/** Null when summaries are off, the message is not a finished reply, or generation failed. */
+export const OrchestrationV2ReplySummary = Schema.Struct({
+  summary: Schema.NullOr(Schema.String),
+});
+export type OrchestrationV2ReplySummary = typeof OrchestrationV2ReplySummary.Type;
+
 /**
  * Totals over every provider turn the thread has run. Input excludes cache reads and writes,
  * unlike a turn's own usage. `costUsd` is null when no turn has a cost, and `partial` marks
@@ -4306,6 +4319,10 @@ export const OrchestrationV2RpcSchemas = {
   getThreadUsage: {
     input: OrchestrationV2GetThreadUsageInput,
     output: OrchestrationV2ThreadUsage,
+  },
+  getReplySummary: {
+    input: OrchestrationV2GetReplySummaryInput,
+    output: OrchestrationV2ReplySummary,
   },
   launchThread: {
     input: OrchestrationV2ThreadLaunchInput,
