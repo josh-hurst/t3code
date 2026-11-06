@@ -5,6 +5,7 @@ import {
   VoiceTranscriptionError,
   type PreparedVoiceTranscription,
   type VoiceTranscriber,
+  type VoiceTranscriptPreview,
 } from "./transcription.ts";
 
 const isVoiceTranscriptionError = Schema.is(VoiceTranscriptionError);
@@ -90,6 +91,8 @@ export type VoiceInputControllerDependencies = {
       ) => Promise<string> | null)
     | undefined;
   readonly onPostProcessingError?: (error: unknown) => void;
+  /** Text a live transcription has recognized so far in the current recording. */
+  readonly onPreview?: (preview: VoiceTranscriptPreview) => void;
   readonly readDraft: () => VoiceDraftSnapshot | null;
   readonly commitDraft: (
     text: string,
@@ -342,7 +345,18 @@ export class VoiceInputController {
         const start = this.transcription.start;
         const uri = this.recordingUri;
         this.liveTranscription = runTranscriptionOperation(() =>
-          start(uri, { signal: abortController.signal }),
+          start(uri, {
+            signal: abortController.signal,
+            onPreview: (preview) => {
+              const phase = this.state.phase;
+              if (
+                this.isCurrent(operationToken) &&
+                (phase === "recording" || phase === "transcribing")
+              ) {
+                this.dependencies.onPreview?.(preview);
+              }
+            },
+          }),
         ).then(
           (text) => ({ text }),
           (error: unknown) => {

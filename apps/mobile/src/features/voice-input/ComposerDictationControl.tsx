@@ -18,6 +18,7 @@ import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { cn } from "../../lib/cn";
 import type { VoiceComposerPresentation } from "./voiceInputPresentation";
+import { useVoiceTranscriptPreview } from "./VoiceInputProvider";
 import { VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
 
 const DICTATION_TIMING = {
@@ -343,6 +344,28 @@ export function ComposerDictationError(props: {
           type="monochrome"
         />
       </Pressable>
+    </View>
+  );
+}
+
+const PREVIEW_TAIL_LENGTH = 240;
+
+/** What live dictation has heard so far; the last words may still change. */
+export function ComposerDictationPreview(props: { readonly ownerKey: string | null }) {
+  const preview = useVoiceTranscriptPreview(props.ownerKey);
+  if (!preview || !(preview.committed || preview.tentative)) return null;
+  // The newest words matter while speaking, so a long transcript shows its tail.
+  const committed =
+    preview.committed.length > PREVIEW_TAIL_LENGTH
+      ? `…${preview.committed.slice(-PREVIEW_TAIL_LENGTH).trimStart()}`
+      : preview.committed;
+  return (
+    <View accessibilityLabel="Live transcription" className="min-w-0 px-4 pt-3 pb-1">
+      <Text accessibilityLiveRegion="polite" className="text-sm text-foreground">
+        {committed}
+        {committed && preview.tentative ? " " : ""}
+        <Text className="text-sm text-foreground-muted">{preview.tentative}</Text>
+      </Text>
     </View>
   );
 }

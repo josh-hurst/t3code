@@ -5,13 +5,24 @@ export type VoiceTranscriptionOptions = {
   readonly signal: AbortSignal;
 };
 
+/** Text recognized so far: `committed` is final, `tentative` may still change. */
+export type VoiceTranscriptPreview = {
+  readonly committed: string;
+  readonly tentative: string;
+};
+
 export type VoiceStreamingSession = {
   readonly finish: (options: VoiceTranscriptionOptions) => Promise<string>;
 };
 
 export type PreparedVoiceTranscription = {
   readonly locale: string;
-  readonly start?: (uri: string, options: VoiceTranscriptionOptions) => Promise<string>;
+  readonly start?: (
+    uri: string,
+    options: VoiceTranscriptionOptions & {
+      readonly onPreview?: (preview: VoiceTranscriptPreview) => void;
+    },
+  ) => Promise<string>;
   readonly transcribe: (uri: string, options: VoiceTranscriptionOptions) => Promise<string>;
   /** Present when audio streams during capture; `finish` then replaces `transcribe`. */
   readonly streaming?: VoiceStreamingSession;

@@ -7,6 +7,7 @@ import {
   type VoiceInputControllerDependencies,
   type VoiceInputPhase,
   type VoiceInputState,
+  type VoiceTranscriptPreview,
 } from "@t3tools/client-runtime/voice-input";
 
 import { normalizeVoiceInputDecibels, VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
@@ -46,7 +47,7 @@ export type VoiceRecordingSample = {
 
 export type VoiceInputSessionDependencies = Omit<
   VoiceInputControllerDependencies,
-  "readDraft" | "commitDraft" | "onStateChange"
+  "readDraft" | "commitDraft" | "onStateChange" | "onPreview"
 > & {
   /** Reads the live recorder, or null when it is not capturing. */
   readonly sampleRecording: () => VoiceRecordingSample | null;
@@ -102,6 +103,9 @@ export class VoiceInputSession {
     focusedOwners: new Set(),
   };
   private readonly listeners = new Set<() => void>();
+  // Previews change several times a second, so only the preview view subscribes to them.
+  private preview: VoiceTranscriptPreview | null = null;
+  private readonly previewListeners = new Set<() => void>();
   private audioLevels = SILENT_LEVELS;
   private releaseKeepAwake: (() => void) | null = null;
   private meteringInterval: ReturnType<typeof setInterval> | null = null;
@@ -111,6 +115,7 @@ export class VoiceInputSession {
     this.controller = new VoiceInputController({
       ...dependencies,
       onStateChange: (state) => this.handleStateChange(state),
+      onPreview: (preview) => this.setPreview(preview),
       readDraft: () => this.target?.readDraft() ?? null,
       commitDraft: (text, selection) => this.target?.commitDraft(text, selection),
     });
@@ -134,6 +139,13 @@ export class VoiceInputSession {
   };
 
   readonly getSnapshot = (): VoiceInputSnapshot => this.snapshot;
+
+  readonly subscribePreview = (listener: () => void): (() => void) => {
+    this.previewListeners.add(listener);
+    return () => this.previewListeners.delete(listener);
+  };
+
+  readonly getPreview = (): VoiceTranscriptPreview | null => this.preview;
 
   setOwnerFocused(ownerKey: string, focused: boolean): void {
     if (this.snapshot.focusedOwners.has(ownerKey) === focused) return;
@@ -164,12 +176,17 @@ export class VoiceInputSession {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.listeners.clear();
+    this.previewListeners.clear();
   }
 
   private handleStateChange(state: VoiceInputState): void {
     if (!voiceInputBlocksSubmission(state)) {
       this.unsubscribe?.();
       this.unsubscribe = null;
+    }
+    // Kept through transcription and cleanup so the text does not vanish before it is inserted.
+    if (state.phase === "idle" || state.phase === "error" || state.phase === "preparing") {
+      this.setPreview(null);
     }
     const previousPhase = this.snapshot.state.phase;
     let elapsedSeconds = this.snapshot.elapsedSeconds;
@@ -222,6 +239,12 @@ export class VoiceInputSession {
     if (elapsedSeconds !== this.snapshot.elapsedSeconds) {
       this.publish({ ...this.snapshot, elapsedSeconds });
     }
+  }
+
+  private setPreview(preview: VoiceTranscriptPreview | null): void {
+    if (this.preview === preview) return;
+    this.preview = preview;
+    for (const listener of this.previewListeners) listener();
   }
 
   private setAudioLevels(levels: ReadonlyArray<number>): void {

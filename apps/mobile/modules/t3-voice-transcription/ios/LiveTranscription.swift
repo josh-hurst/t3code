@@ -6,16 +6,29 @@ import Speech
 /// to recognize when recording stops. The locale's assets were installed during prepare.
 @available(iOS 26, *)
 enum LiveTranscription {
-  static func run(_ buffers: AsyncStream<AVAudioPCMBuffer>, locale: String) async throws -> String {
-    let transcriber = SpeechTranscriber(locale: Locale(identifier: locale), preset: .transcription)
+  static func run(
+    _ buffers: AsyncStream<AVAudioPCMBuffer>,
+    locale: String,
+    onPreview: @escaping @Sendable (_ committed: String, _ tentative: String) -> Void
+  ) async throws -> String {
+    let transcriber = SpeechTranscriber(
+      locale: Locale(identifier: locale),
+      preset: .progressiveTranscription
+    )
     let analyzer = SpeechAnalyzer(modules: [transcriber])
     guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
     else { throw LiveTranscriptionException("No audio format is available for this language.") }
     let (inputs, input) = AsyncStream.makeStream(of: AnalyzerInput.self)
     let results = Task {
       var text: [String] = []
-      for try await result in transcriber.results where result.isFinal {
-        text.append(String(result.text.characters))
+      for try await result in transcriber.results {
+        let phrase = String(result.text.characters)
+        if result.isFinal {
+          text.append(phrase)
+          onPreview(normalized(text), "")
+        } else {
+          onPreview(normalized(text), normalized([phrase]))
+        }
       }
       return text
     }
@@ -33,16 +46,17 @@ enum LiveTranscription {
       try Task.checkCancellation()
       input.finish()
       try await analyzer.finalizeAndFinishThroughEndOfInput()
-      return try await results.value
-        .joined(separator: " ")
-        .split(whereSeparator: \.isWhitespace)
-        .joined(separator: " ")
+      return normalized(try await results.value)
     } catch {
       input.finish()
       results.cancel()
       await analyzer.cancelAndFinishNow()
       throw error
     }
+  }
+
+  private static func normalized(_ phrases: [String]) -> String {
+    phrases.joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
   }
 
   private static func convert(

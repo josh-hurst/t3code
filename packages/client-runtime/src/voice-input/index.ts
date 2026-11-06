@@ -32,4 +32,5 @@ export {
   type VoiceTranscriber,
   type VoiceTranscriptionErrorCode,
   type VoiceTranscriptionOptions,
+  type VoiceTranscriptPreview,
 } from "./transcription.ts";

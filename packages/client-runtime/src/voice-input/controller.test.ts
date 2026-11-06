@@ -517,23 +517,33 @@ describe("VoiceInputController", () => {
 
   it("starts streaming transcription during recording and commits only after stopping", async () => {
     const transcript = deferred<string>();
-    const start = vi.fn(() => transcript.promise);
+    let preview: ((text: { committed: string; tentative: string }) => void) | undefined;
+    const start = vi.fn((_uri: string, options: { onPreview?: NonNullable<typeof preview> }) => {
+      preview = options.onPreview;
+      return transcript.promise;
+    });
     const transcribe = vi.fn(async () => "replayed audio");
+    const previews = vi.fn();
     const harness = createHarness({
       getTranscriber: () => ({
         prepare: async () => ({ locale: "en-US", start, transcribe }),
       }),
+      onPreview: previews,
     });
     await harness.controller.start();
     expect(start).toHaveBeenCalledWith("file:///voice.m4a", {
       signal: expect.any(AbortSignal),
+      onPreview: expect.any(Function),
     });
     expect(harness.controller.currentState.phase).toBe("recording");
     expect(harness.commits).toEqual([]);
+    preview?.({ committed: "opening", tentative: "mid" });
 
     const stopping = harness.controller.stop();
     transcript.resolve("opening middle and final words");
     await stopping;
+    preview?.({ committed: "late", tentative: "" });
+    expect(previews.mock.calls).toEqual([[{ committed: "opening", tentative: "mid" }]]);
     expect(harness.commits[0]?.text).toBe("hello opening middle and final words");
     expect(transcribe).not.toHaveBeenCalled();
     expect(harness.deleted).toEqual(["file:///voice.m4a"]);

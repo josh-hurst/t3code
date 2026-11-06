@@ -11,6 +11,7 @@ import {
   type PreparedVoiceTranscription,
   type VoiceTranscriber,
   type VoiceTranscriptionOptions,
+  type VoiceTranscriptPreview,
 } from "@t3tools/client-runtime/voice-input";
 
 const isVoiceTranscriptionError = Schema.is(VoiceTranscriptionError);
@@ -19,6 +20,10 @@ type LiveTranscriptionModule = {
   readonly LiveVoiceRecorder?: new () => NativeVoiceRecorder<RecordingStatus, RecorderState>;
   startLive?(id: number, uri: string, locale: string): Promise<string>;
   cancel?(id: number): Promise<void>;
+  addListener?(
+    event: "liveTranscriptPreview",
+    listener: (event: { id: number } & VoiceTranscriptPreview) => void,
+  ): { remove(): void };
 };
 
 const live = requireOptionalNativeModule<LiveTranscriptionModule>("T3VoiceTranscription");
@@ -109,10 +114,16 @@ async function transcribeLive(
   startLive: NonNullable<LiveTranscriptionModule["startLive"]>,
   uri: string,
   locale: string,
-  { signal }: VoiceTranscriptionOptions,
+  {
+    signal,
+    onPreview,
+  }: VoiceTranscriptionOptions & { readonly onPreview?: (preview: VoiceTranscriptPreview) => void },
 ): Promise<string> {
   throwIfVoiceTranscriptionAborted(signal);
   const id = ++nextOperationId;
+  const subscription = live?.addListener?.("liveTranscriptPreview", (event) => {
+    if (event.id === id) onPreview?.({ committed: event.committed, tentative: event.tentative });
+  });
   let cancellation: Promise<void> | undefined;
   const abort = () => {
     cancellation = live?.cancel?.(id).catch(() => {});
@@ -126,6 +137,7 @@ async function transcribeLive(
     throwIfVoiceTranscriptionAborted(signal);
     throw wrapError("transcription-failed", "Voice transcription failed.", error);
   } finally {
+    subscription?.remove();
     signal.removeEventListener("abort", abort);
     await cancellation;
   }

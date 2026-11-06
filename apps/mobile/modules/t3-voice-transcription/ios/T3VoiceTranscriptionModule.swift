@@ -11,6 +11,8 @@ public class T3VoiceTranscriptionModule: Module {
   public func definition() -> ModuleDefinition {
     Name("T3VoiceTranscription")
 
+    Events("liveTranscriptPreview")
+
     Class(LiveVoiceRecorder.self) {
       Constructor { () -> LiveVoiceRecorder in
         let recorder = LiveVoiceRecorder()
@@ -49,7 +51,14 @@ public class T3VoiceTranscriptionModule: Module {
       guard let buffers = self.lock.withLock({ self.recorders.values.first { $0.url?.absoluteString == uri } })?
         .takeBuffers()
       else { throw LiveTranscriptionException("The voice recording is no longer available.") }
-      let task = Task { try await LiveTranscription.run(buffers, locale: locale) }
+      let task = Task {
+        try await LiveTranscription.run(buffers, locale: locale) { committed, tentative in
+          self.sendEvent(
+            "liveTranscriptPreview",
+            ["id": id, "committed": committed, "tentative": tentative]
+          )
+        }
+      }
       self.lock.withLock { self.operations[id] = task }
       defer { self.lock.withLock { _ = self.operations.removeValue(forKey: id) } }
       return try await task.value

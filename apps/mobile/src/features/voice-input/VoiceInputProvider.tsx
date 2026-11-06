@@ -186,6 +186,13 @@ const voiceInputAtom = Atom.make((get) => {
   return { session, audioLevels };
 }).pipe(Atom.keepAlive, Atom.withLabel("mobile:voice-input"));
 
+/** The live transcript of `ownerKey`'s recording, or null when it has none. */
+export function useVoiceTranscriptPreview(ownerKey: string | null) {
+  const { session } = useAtomValue(voiceInputAtom);
+  const preview = useSyncExternalStore(session.subscribePreview, session.getPreview);
+  return ownerKey !== null && session.ownerKey === ownerKey ? preview : null;
+}
+
 export function useGlobalVoiceInput() {
   const { session, audioLevels } = useAtomValue(voiceInputAtom);
   const isTranscriberAvailable = useAtomValue(voiceInputAvailableAtom);
