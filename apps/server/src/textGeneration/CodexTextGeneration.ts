@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -29,6 +30,10 @@ import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const CODEX_TIMEOUT_MS = 180_000;
+// codex-lite (~/Dev/workspace/codex-lite) sends just the prompt, schema and images over the
+// Codex login, without Codex's agent prompt and startup: ~1.5 s instead of ~4 s per call.
+const T3CODE_CODEX_LITE_PATH_ENV = "T3CODE_CODEX_LITE_PATH";
+const CODEX_LITE_DEFAULT_PATH = ".local/bin/codex-lite";
 const CODEX_MCP_LIST_TIMEOUT_MS = 10_000;
 // Plugins/apps add MCP servers; use trailing config overrides because --disable loses to user -c flags.
 const CODEX_NO_PLUGIN_ARGS = [
@@ -210,6 +215,78 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     Effect.orElseSucceed((): ReadonlyArray<string> => []),
   );
 
+  const runCli = Effect.fn("runCli")(function* (input: {
+    readonly operation: TextGenerationOperations.Operation;
+    readonly spawnCommand: {
+      readonly command: string;
+      readonly args: ReadonlyArray<string>;
+      readonly shell?: boolean | string;
+    };
+    readonly env: NodeJS.ProcessEnv;
+    readonly cwd: string;
+    readonly prompt: string;
+  }) {
+    const { operation } = input;
+    const child = yield* commandSpawner
+      .spawn(
+        ChildProcess.make(input.spawnCommand.command, input.spawnCommand.args, {
+          env: input.env,
+          cwd: input.cwd,
+          shell: input.spawnCommand.shell,
+          stdin: {
+            stream: Stream.encodeText(Stream.make(input.prompt)),
+          },
+          forceKillAfter: "1 second",
+        }),
+      )
+      .pipe(
+        Effect.mapError((cause) =>
+          normalizeCliError("codex", operation, cause, "Failed to spawn Codex CLI process"),
+        ),
+      );
+
+    const [stdout, stderr, exitCode] = yield* Effect.all(
+      [
+        readStreamAsString(operation, child.stdout),
+        readStreamAsString(operation, child.stderr),
+        child.exitCode.pipe(
+          Effect.mapError((cause) =>
+            normalizeCliError("codex", operation, cause, "Failed to read Codex CLI exit code"),
+          ),
+        ),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    if (exitCode !== 0) {
+      const stderrDetail = stderr.trim();
+      const stdoutDetail = stdout.trim();
+      const detail = stderrDetail.length > 0 ? stderrDetail : stdoutDetail;
+      return yield* new TextGenerationError({
+        operation,
+        detail:
+          detail.length > 0
+            ? `Codex CLI command failed: ${detail}`
+            : `Codex CLI command failed with code ${exitCode}.`,
+      });
+    }
+  });
+
+  // The codex-lite binary to use, or null. An explicit T3CODE_CODEX_LITE_PATH always wins; the
+  // default install is only used with the stock `codex` binary, so a custom binaryPath is kept.
+  const resolveCodexLite = Effect.fn("resolveCodexLite")(function* (
+    binaryPath: string,
+    env: NodeJS.ProcessEnv,
+  ) {
+    const explicit = env[T3CODE_CODEX_LITE_PATH_ENV]?.trim();
+    if (explicit === "" || explicit === "off") return null;
+    if (explicit === undefined && binaryPath !== "" && binaryPath !== "codex") return null;
+    const candidate =
+      explicit ?? path.join(yield* HostProcess.HomeDirectory, CODEX_LITE_DEFAULT_PATH);
+    const info = yield* fileSystem.stat(candidate).pipe(Effect.orElseSucceed(() => null));
+    return info?.type === "File" ? candidate : null;
+  });
+
   const runCodexJson = Effect.fn("runCodexJson")(function* <S extends Schema.Top>({
     operation,
     cwd,
@@ -268,6 +345,44 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
             }
           : {}),
       };
+      // codex-lite has no launch args or managed runtime of its own, so those keep codex exec.
+      const codexLite =
+        resolved || launchArgs !== ""
+          ? null
+          : yield* resolveCodexLite(effectiveConfig.binaryPath, env);
+      if (codexLite) {
+        const lite = yield* runCli({
+          operation,
+          spawnCommand: yield* resolveSpawnCommand(
+            codexLite,
+            [
+              "--model",
+              model,
+              "--effort",
+              reasoningEffort,
+              ...(serviceTier === "priority" ? ["--fast"] : []),
+              "--timeout",
+              String(Math.ceil((investigate?.timeoutMs ?? CODEX_TIMEOUT_MS) / 1000)),
+              "--output-schema",
+              schemaPath,
+              "--output-last-message",
+              outputPath,
+              ...imagePaths.flatMap((imagePath) => ["--image", imagePath]),
+              "-",
+            ],
+            { env },
+          ),
+          env,
+          cwd,
+          prompt,
+        }).pipe(Effect.result);
+        if (Result.isSuccess(lite)) return;
+        yield* Effect.logWarning("codex-lite failed; falling back to codex exec", {
+          operation,
+          detail: lite.failure.detail,
+        });
+      }
+
       const execLaunchArgs = codexExecLaunchArgs(launchArgs);
       const mcpServersOff = yield* listEnabledMcpServers({
         binary,
@@ -302,49 +417,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         ],
         { env: effectiveEnvironment },
       );
-      const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        env,
-        cwd,
-        shell: spawnCommand.shell,
-        stdin: {
-          stream: Stream.encodeText(Stream.make(prompt)),
-        },
-        forceKillAfter: "1 second",
-      });
-
-      const child = yield* commandSpawner
-        .spawn(command)
-        .pipe(
-          Effect.mapError((cause) =>
-            normalizeCliError("codex", operation, cause, "Failed to spawn Codex CLI process"),
-          ),
-        );
-
-      const [stdout, stderr, exitCode] = yield* Effect.all(
-        [
-          readStreamAsString(operation, child.stdout),
-          readStreamAsString(operation, child.stderr),
-          child.exitCode.pipe(
-            Effect.mapError((cause) =>
-              normalizeCliError("codex", operation, cause, "Failed to read Codex CLI exit code"),
-            ),
-          ),
-        ],
-        { concurrency: "unbounded" },
-      );
-
-      if (exitCode !== 0) {
-        const stderrDetail = stderr.trim();
-        const stdoutDetail = stdout.trim();
-        const detail = stderrDetail.length > 0 ? stderrDetail : stdoutDetail;
-        return yield* new TextGenerationError({
-          operation,
-          detail:
-            detail.length > 0
-              ? `Codex CLI command failed: ${detail}`
-              : `Codex CLI command failed with code ${exitCode}.`,
-        });
-      }
+      yield* runCli({ operation, spawnCommand, env, cwd, prompt });
     });
 
     const cleanup = Effect.all([removeTempFileDir(schemaPath), removeTempFileDir(outputPath)], {

@@ -164,6 +164,8 @@ function withFakeCodexEnv<A, E, R>(
     environment?: NodeJS.ProcessEnv;
     models?: ReadonlyArray<string>;
     managedRuntime?: boolean;
+    /** A fake codex-lite, reached through T3CODE_CODEX_LITE_PATH. */
+    lite?: FakeCodexInput;
   },
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
 ) {
@@ -171,10 +173,18 @@ function withFakeCodexEnv<A, E, R>(
     const fs = yield* FileSystem.FileSystem;
     const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-codex-text-" });
     const codexPath = yield* makeFakeCodexBinary(tempDir, input);
+    const litePath =
+      input.lite === undefined
+        ? undefined
+        : yield* makeFakeCodexBinary((yield* Path.Path).join(tempDir, "lite"), input.lite);
+    const environment =
+      litePath === undefined
+        ? input.environment
+        : { ...input.environment, T3CODE_CODEX_LITE_PATH: litePath };
     const config = decodeCodexSettings({ binaryPath: codexPath, launchArgs: input.launchArgs });
     const textGeneration = yield* makeCodexTextGeneration(
       config,
-      input.environment === undefined ? undefined : { ...process.env, ...input.environment },
+      environment === undefined ? undefined : { ...process.env, ...environment },
       Effect.succeed(
         (input.models ?? []).map((slug) => ({
           slug,
@@ -186,7 +196,8 @@ function withFakeCodexEnv<A, E, R>(
       input.managedRuntime
         ? Effect.succeed({
             config,
-            environment: input.environment ?? process.env,
+            environment:
+              environment === undefined ? process.env : { ...process.env, ...environment },
             revision: "test",
           })
         : undefined,
@@ -438,6 +449,137 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
               Effect.ensuring(fs.remove(imagePath).pipe(Effect.ignore)),
             );
 
+          expect(generated.branch).toBe("fix/ui-regression");
+        }),
+    ),
+  );
+  const PRIORITY_LOW_SELECTION = createModelSelection(
+    ProviderInstanceId.make("codex"),
+    "gpt-6-luna",
+    [
+      { id: "reasoningEffort", value: "low" },
+      { id: "serviceTier", value: "priority" },
+    ],
+  );
+
+  it.effect("generates through codex-lite when it is installed", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ title: "From codex exec" }),
+        exitCode: 1,
+        stderr: "codex exec should not run",
+        lite: {
+          output: JSON.stringify({ title: "From codex-lite" }),
+          requireArg: "--model gpt-6-luna --effort low --fast --timeout 180 --output-schema",
+          forbidArg: "exec",
+          stdinMustContain: "Describe this change",
+        },
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Describe this change",
+            modelSelection: PRIORITY_LOW_SELECTION,
+          });
+          expect(result.title).toBe("From codex-lite");
+        }),
+    ),
+  );
+
+  it.effect("falls back to codex exec when codex-lite fails", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ title: "From codex exec" }),
+        requireArg: "--ephemeral",
+        lite: {
+          output: JSON.stringify({ title: "From codex-lite" }),
+          exitCode: 1,
+          stderr: "codex-lite: HTTP 500 from backend",
+        },
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Describe this change",
+            modelSelection: PRIORITY_LOW_SELECTION,
+          });
+          expect(result.title).toBe("From codex exec");
+        }),
+    ),
+  );
+
+  it.effect("keeps codex exec when launch args are set", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ title: "From codex exec" }),
+        launchArgs: "--config model_provider=custom",
+        lite: { output: JSON.stringify({ title: "From codex-lite" }) },
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Describe this change",
+            modelSelection: PRIORITY_LOW_SELECTION,
+          });
+          expect(result.title).toBe("From codex exec");
+        }),
+    ),
+  );
+
+  it.effect("keeps codex exec for the managed runtime", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ title: "From codex exec" }),
+        managedRuntime: true,
+        lite: { output: JSON.stringify({ title: "From codex-lite" }) },
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Describe this change",
+            modelSelection: PRIORITY_LOW_SELECTION,
+          });
+          expect(result.title).toBe("From codex exec");
+        }),
+    ),
+  );
+
+  it.effect("passes image attachments to codex-lite", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ branch: "from-codex-exec" }),
+        exitCode: 1,
+        lite: { output: JSON.stringify({ branch: "fix/ui-regression" }), requireImage: true },
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const { attachmentsDir } = yield* ServerConfig.ServerConfig;
+          const attachmentId = "thread-1-lite-attachment";
+          const imagePath = path.join(attachmentsDir, `${attachmentId}.png`);
+          yield* fs.makeDirectory(attachmentsDir, { recursive: true });
+          yield* fs.writeFile(imagePath, Buffer.from("hello"));
+          const generated = yield* textGeneration
+            .generateBranchName({
+              modelSelection: PRIORITY_LOW_SELECTION,
+              cwd: process.cwd(),
+              message: "Fix layout bug from screenshot.",
+              attachments: [
+                {
+                  type: "image",
+                  id: attachmentId,
+                  name: "bug.png",
+                  mimeType: "image/png",
+                  sizeBytes: 5,
+                },
+              ],
+            })
+            .pipe(Effect.ensuring(fs.remove(imagePath).pipe(Effect.ignore)));
           expect(generated.branch).toBe("fix/ui-regression");
         }),
     ),
