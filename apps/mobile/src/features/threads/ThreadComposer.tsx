@@ -678,6 +678,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const handleSend = async (followUp?: ActiveTurnComposerAction) => {
     if (
       isSubmissionLocked ||
+      voiceInput.holdsSubmission() ||
       sendBlockedReason !== null ||
       pendingPastedTextAttachmentCountRef.current > 0 ||
       pendingNativeImagePasteCountRef.current > 0

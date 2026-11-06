@@ -13,6 +13,9 @@ import {
 import { normalizeVoiceInputDecibels, VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
 
 const VOICE_METERING_INTERVAL_MS = 80;
+// Send takes the place of the check mark when a transcript lands; a tap meant to skip
+// cleanup must not send the message.
+const SUBMISSION_HOLD_MS = 500;
 const IDLE_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
 const SILENT_LEVELS: ReadonlyArray<number> = Array<number>(VOICE_WAVEFORM_SAMPLE_COUNT).fill(0);
 
@@ -108,6 +111,7 @@ export class VoiceInputSession {
   private readonly previewListeners = new Set<() => void>();
   private audioLevels = SILENT_LEVELS;
   private releaseKeepAwake: (() => void) | null = null;
+  private inserted: { readonly ownerKey: string; readonly at: number } | null = null;
   private meteringInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(dependencies: VoiceInputSessionDependencies) {
@@ -155,6 +159,13 @@ export class VoiceInputSession {
     this.publish({ ...this.snapshot, focusedOwners });
   }
 
+  /** True just after a transcript was inserted into `ownerKey`'s draft. */
+  holdsSubmission(ownerKey: string): boolean {
+    return (
+      this.inserted?.ownerKey === ownerKey && Date.now() - this.inserted.at < SUBMISSION_HOLD_MS
+    );
+  }
+
   cancel(ownerKey: string | null): void {
     if (ownerKey !== null && this.ownerKey === ownerKey) this.controller.cancel();
   }
@@ -189,6 +200,14 @@ export class VoiceInputSession {
       this.setPreview(null);
     }
     const previousPhase = this.snapshot.state.phase;
+    const ownerKey = this.ownerKey;
+    if (
+      state.phase === "idle" &&
+      ownerKey !== null &&
+      (previousPhase === "transcribing" || previousPhase === "post-processing")
+    ) {
+      this.inserted = { ownerKey, at: Date.now() };
+    }
     let elapsedSeconds = this.snapshot.elapsedSeconds;
     if (state.phase !== previousPhase) {
       if (previousPhase === "recording") this.stopRecordingActivity();

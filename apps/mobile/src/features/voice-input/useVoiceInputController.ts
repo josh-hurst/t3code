@@ -76,6 +76,7 @@ export function useVoiceInputController(input: {
     freezesEditor: isBusy,
     blocksSubmission: isBusy,
     start,
+    holdsSubmission: () => input.ownerKey !== null && session.holdsSubmission(input.ownerKey),
     stop: global.stop,
     cancel: global.cancel,
   };
