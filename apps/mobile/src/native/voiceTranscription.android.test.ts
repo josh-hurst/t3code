@@ -45,7 +45,7 @@ it.each([false, true])(
     const probe = Promise.withResolvers<boolean>();
     mocks.checkAvailability.mockReturnValue(probe.promise);
     let settled = false;
-    const result = Promise.resolve(getLocalVoiceTranscriber()).then((transcriber) => {
+    const result = Promise.resolve(getLocalVoiceTranscriber(() => true)).then((transcriber) => {
       settled = true;
       return transcriber;
     });
@@ -70,7 +70,7 @@ it.each([
   mocks.cancel.mockResolvedValue(undefined);
   const rejection = Object.assign(new Error("Native SDK failure"), { code });
   (phase === "preparation" ? mocks.prepare : mocks.transcribe).mockRejectedValue(rejection);
-  const transcriber = await getLocalVoiceTranscriber();
+  const transcriber = await getLocalVoiceTranscriber(() => true);
   const commit = vi.fn();
   const draft = {
     ownerKey: "acceptance:dictation",

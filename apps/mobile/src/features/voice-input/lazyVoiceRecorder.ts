@@ -4,7 +4,8 @@ import {
 } from "@t3tools/client-runtime/voice-input";
 
 type Subscription = { remove(): void };
-type RecordingDestination = "local" | "environment";
+/** "live" records for on-device transcription during capture; recorders differ per kind. */
+type RecordingDestination = "local" | "live" | "environment";
 
 export interface VoiceRecordingInput {
   readonly uid: string;

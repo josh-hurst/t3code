@@ -8,6 +8,18 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn<(locale: string) => Promise<string>>(),
   transcribe: vi.fn<(audio: ArrayBufferLike, locale: string) => Promise<TranscriptionResult>>(),
   readAudio: vi.fn<() => Promise<ArrayBuffer>>(),
+  startLive: vi.fn<(id: number, uri: string, locale: string) => Promise<string>>(),
+  cancel: vi.fn<(id: number) => Promise<void>>(),
+}));
+
+vi.mock("expo", () => ({
+  requireOptionalNativeModule: () => ({
+    LiveVoiceRecorder: class {
+      readonly uri = "file:///live.caf";
+    },
+    startLive: mocks.startLive,
+    cancel: mocks.cancel,
+  }),
 }));
 
 vi.mock("@react-native-ai/apple/src/NativeAppleTranscription", () => ({
@@ -65,7 +77,7 @@ describe("getLocalVoiceTranscriber", () => {
     });
     const controller = new AbortController();
     const options = { signal: controller.signal };
-    const prepared = await (await getLocalVoiceTranscriber())!.prepare(options);
+    const prepared = await (await getLocalVoiceTranscriber(() => false))!.prepare(options);
     const result = prepared
       .transcribe("file:///voice.m4a", options)
       .catch((error: unknown) => error);
@@ -79,4 +91,17 @@ describe("getLocalVoiceTranscriber", () => {
     expect(error).toMatchObject({ code: "cancelled" });
     expect(mocks.transcribe).not.toHaveBeenCalled();
   });
+
+  it.each([true, false])(
+    "transcribes during recording only while live dictation is on (%s)",
+    async (live) => {
+      mocks.startLive.mockResolvedValue(" Hej världen. ");
+      const options = { signal: new AbortController().signal };
+      const prepared = await (await getLocalVoiceTranscriber(() => live))!.prepare(options);
+      expect(prepared.start !== undefined).toBe(live);
+      if (!prepared.start) return;
+      await expect(prepared.start("file:///live.caf", options)).resolves.toBe("Hej världen.");
+      expect(mocks.startLive).toHaveBeenCalledWith(expect.any(Number), "file:///live.caf", "sv-SE");
+    },
+  );
 });

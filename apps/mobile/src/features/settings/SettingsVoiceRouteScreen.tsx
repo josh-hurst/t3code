@@ -29,6 +29,7 @@ import {
   voiceSpeechStatusAtom,
   hasEnvironmentVoiceCapture,
 } from "../voice-input/voiceDestination";
+import { supportsLiveDictation } from "../../native/voiceRecorder";
 import { VoiceModelSection } from "./VoiceModelSection";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
@@ -179,6 +180,9 @@ export function SettingsVoiceRouteScreen() {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const ready = AsyncResult.isSuccess(preferencesResult) && !preferencesResult.waiting;
+  const liveDictationEnabled =
+    !AsyncResult.isSuccess(preferencesResult) ||
+    preferencesResult.value.liveDictationEnabled !== false;
   const cleanupEnabled =
     AsyncResult.isSuccess(preferencesResult) &&
     preferencesResult.value.voiceCleanupEnabled === true;
@@ -264,6 +268,23 @@ export function SettingsVoiceRouteScreen() {
             environmentId={grantEnvironment.environmentId}
             label={grantEnvironment.label}
           />
+        ) : null}
+        {!grant && transcriber !== null && supportsLiveDictation ? (
+          <>
+            <SettingsSection title="On-device dictation">
+              <SettingsSwitchRow
+                icon="bolt.circle"
+                label="Transcribe while recording"
+                value={liveDictationEnabled}
+                disabled={!ready}
+                onValueChange={(value) => savePreferences({ liveDictationEnabled: value })}
+              />
+            </SettingsSection>
+            <Text className="px-2 text-sm text-foreground-muted">
+              Text is ready moments after you stop, however long you talk. Turn this off to
+              transcribe the whole recording after you stop instead.
+            </Text>
+          </>
         ) : null}
         <SettingsSection title="Transcript cleanup">
           <SettingsSwitchRow

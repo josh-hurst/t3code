@@ -15,6 +15,7 @@ import {
 } from "../../lib/microphonePriority";
 import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";
 import { createVoiceRecorder } from "../../native/voiceRecorder";
+import { appAtomRegistry } from "../../state/atom-registry";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";
 import {
@@ -55,13 +56,18 @@ function keepScreenAwake(tag: string): () => void {
 export const deviceMicrophoneOrder = (saved?: ReadonlyArray<MicrophoneEntry>) =>
   microphoneOrder(saved, Platform.OS === "android" ? "android" : "ios");
 
+function liveDictationEnabled(): boolean {
+  const preferences = appAtomRegistry.get(mobilePreferencesAtom);
+  return !AsyncResult.isSuccess(preferences) || preferences.value.liveDictationEnabled !== false;
+}
+
 /** "checking" until the first availability probe settles; re-probed on foreground. */
 export const localVoiceTranscriberAtom = makePermissionStatusAtom<
   VoiceTranscriber | null | "checking"
 >({
   label: "mobile:voice-input:transcriber",
   initial: "checking",
-  read: () => getLocalVoiceTranscriber().catch(() => null),
+  read: () => getLocalVoiceTranscriber(liveDictationEnabled).catch(() => null),
 }).pipe(Atom.keepAlive);
 
 const voiceInputAvailableAtom = Atom.make((get) => {
@@ -89,11 +95,16 @@ const voiceInputAtom = Atom.make((get) => {
     void session.controller.appMovedToBackground();
   });
   const recorder = createLazyVoiceRecorder({
-    getDestination: () => (registry.get(voiceRouteAtom) === null ? "local" : "environment"),
+    getDestination: () =>
+      registry.get(voiceRouteAtom) !== null
+        ? "environment"
+        : liveDictationEnabled()
+          ? "live"
+          : "local",
     create: (destination) =>
-      destination === "local"
-        ? createVoiceRecorder(VOICE_RECORDING_OPTIONS)
-        : new AudioModule.AudioRecorder(VOICE_RECORDING_OPTIONS),
+      destination === "environment"
+        ? new AudioModule.AudioRecorder(VOICE_RECORDING_OPTIONS)
+        : createVoiceRecorder(VOICE_RECORDING_OPTIONS, destination === "live"),
     onStatus: (status: RecordingStatus) => {
       session.controller.handleRecorderStatus({
         isFinished: status.isFinished,

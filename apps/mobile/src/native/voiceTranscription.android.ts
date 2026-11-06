@@ -38,13 +38,20 @@ const nativeErrorMessages: Readonly<Record<string, string>> = {
 
 let nextOperationId = 0;
 
+const hasLiveVoiceRecorder = (module: GoogleTranscriptionModule | null) =>
+  Number(Platform.Version) >= 31 && module?.LiveVoiceRecorder !== undefined;
+
+export const supportsLiveVoiceRecorder = hasLiveVoiceRecorder(native);
+
 export function createLiveVoiceRecorder() {
-  return Number(Platform.Version) >= 31 && native?.LiveVoiceRecorder
+  return hasLiveVoiceRecorder(native) && native?.LiveVoiceRecorder
     ? new native.LiveVoiceRecorder()
     : null;
 }
 
-export async function getLocalVoiceTranscriber(): Promise<VoiceTranscriber | null> {
+export async function getLocalVoiceTranscriber(
+  isLive: () => boolean,
+): Promise<VoiceTranscriber | null> {
   if (!native || !(await native.checkAvailability())) return null;
   const module = native;
   return {
@@ -55,7 +62,7 @@ export async function getLocalVoiceTranscriber(): Promise<VoiceTranscriber | nul
       const startLive = module.startLive?.bind(module);
       return {
         locale: prepared.locale,
-        ...(module.LiveVoiceRecorder && startLive
+        ...(isLive() && hasLiveVoiceRecorder(module) && startLive
           ? {
               start: (uri: string, { signal }: { signal: AbortSignal }) =>
                 runOperation(module, signal, "transcription-failed", (id) =>

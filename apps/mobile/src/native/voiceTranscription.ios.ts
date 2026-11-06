@@ -1,6 +1,9 @@
 import * as Schema from "effect/Schema";
 import AppleTranscription from "@react-native-ai/apple/src/NativeAppleTranscription";
+import { requireOptionalNativeModule } from "expo";
+import type { RecorderState, RecordingStatus } from "expo-audio";
 import { File } from "expo-file-system";
+import type { NativeVoiceRecorder } from "../features/voice-input/lazyVoiceRecorder";
 
 import {
   VoiceTranscriptionError,
@@ -11,6 +14,22 @@ import {
 } from "@t3tools/client-runtime/voice-input";
 
 const isVoiceTranscriptionError = Schema.is(VoiceTranscriptionError);
+
+type LiveTranscriptionModule = {
+  readonly LiveVoiceRecorder?: new () => NativeVoiceRecorder<RecordingStatus, RecorderState>;
+  startLive?(id: number, uri: string, locale: string): Promise<string>;
+  cancel?(id: number): Promise<void>;
+};
+
+const live = requireOptionalNativeModule<LiveTranscriptionModule>("T3VoiceTranscription");
+let nextOperationId = 0;
+
+/** False when this build predates live dictation; the recorder then records to a file. */
+export const hasLiveVoiceRecorder = Boolean(live?.LiveVoiceRecorder && live.startLive);
+
+export function createLiveVoiceRecorder() {
+  return hasLiveVoiceRecorder && live?.LiveVoiceRecorder ? new live.LiveVoiceRecorder() : null;
+}
 
 function getDeviceLocale(): string {
   return Intl.DateTimeFormat().resolvedOptions().locale;
@@ -36,14 +55,17 @@ function getNativeErrorCode(error: unknown): string | undefined {
   return typeof error.code === "string" ? error.code : undefined;
 }
 
-export async function getLocalVoiceTranscriber(): Promise<VoiceTranscriber | null> {
+export async function getLocalVoiceTranscriber(
+  isLive: () => boolean,
+): Promise<VoiceTranscriber | null> {
   const locale = getDeviceLocale();
   if (!AppleTranscription.isAvailable(locale)) return null;
-  return { prepare: (options) => prepareVoiceTranscription(locale, options) };
+  return { prepare: (options) => prepareVoiceTranscription(locale, isLive(), options) };
 }
 
 async function prepareVoiceTranscription(
   locale: string,
+  isLive: boolean,
   { signal }: VoiceTranscriptionOptions,
 ): Promise<PreparedVoiceTranscription> {
   throwIfVoiceTranscriptionAborted(signal);
@@ -57,8 +79,12 @@ async function prepareVoiceTranscription(
   try {
     const supportedLocale = await AppleTranscription.prepare(locale);
     throwIfVoiceTranscriptionAborted(signal);
+    const startLive = live?.startLive?.bind(live);
     return {
       locale: supportedLocale,
+      ...(isLive && hasLiveVoiceRecorder && startLive
+        ? { start: (uri, options) => transcribeLive(startLive, uri, supportedLocale, options) }
+        : {}),
       transcribe: (uri, options) => transcribeVoiceRecording(uri, supportedLocale, options),
     };
   } catch (error) {
@@ -76,6 +102,32 @@ async function prepareVoiceTranscription(
       "Voice transcription could not prepare this language.",
       error,
     );
+  }
+}
+
+async function transcribeLive(
+  startLive: NonNullable<LiveTranscriptionModule["startLive"]>,
+  uri: string,
+  locale: string,
+  { signal }: VoiceTranscriptionOptions,
+): Promise<string> {
+  throwIfVoiceTranscriptionAborted(signal);
+  const id = ++nextOperationId;
+  let cancellation: Promise<void> | undefined;
+  const abort = () => {
+    cancellation = live?.cancel?.(id).catch(() => {});
+  };
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    const text = await startLive(id, uri, locale);
+    throwIfVoiceTranscriptionAborted(signal);
+    return text.trim();
+  } catch (error) {
+    throwIfVoiceTranscriptionAborted(signal);
+    throw wrapError("transcription-failed", "Voice transcription failed.", error);
+  } finally {
+    signal.removeEventListener("abort", abort);
+    await cancellation;
   }
 }
 

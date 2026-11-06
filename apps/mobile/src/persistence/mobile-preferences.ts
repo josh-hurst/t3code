@@ -115,6 +115,8 @@ export interface Preferences {
   readonly microphones?: ReadonlyArray<MicrophoneEntry>;
   /** Unset means off: transcripts go to a provider only after the user opts in. */
   readonly voiceCleanupEnabled?: boolean;
+  /** Unset means on: on-device dictation transcribes while recording where supported. */
+  readonly liveDictationEnabled?: boolean;
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
   readonly planModeEnabled?: boolean;
@@ -198,6 +200,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     followUpBehavior?: FollowUpBehavior;
     microphones?: ReadonlyArray<MicrophoneEntry>;
     voiceCleanupEnabled?: boolean;
+    liveDictationEnabled?: boolean;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     planModeEnabled?: boolean;
@@ -316,6 +319,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.voiceCleanupEnabled === "boolean") {
     preferences.voiceCleanupEnabled = parsed.voiceCleanupEnabled;
+  }
+  if (typeof parsed.liveDictationEnabled === "boolean") {
+    preferences.liveDictationEnabled = parsed.liveDictationEnabled;
   }
   if (typeof parsed.projectGroupingEnabled === "boolean") {
     preferences.projectGroupingEnabled = parsed.projectGroupingEnabled;

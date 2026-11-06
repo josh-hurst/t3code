@@ -43,6 +43,8 @@ const SETTINGS_SEARCH_TERMS = {
     "microphone order",
     "bluetooth",
     "transcript cleanup",
+    "live dictation",
+    "transcribe while recording",
     "punctuation",
   ],
   SettingsScheduledTasks: ["automations", "schedule", "cron", "recurring", "webhook"],
