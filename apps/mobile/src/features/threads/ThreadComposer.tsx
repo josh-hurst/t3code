@@ -180,6 +180,7 @@ function useCompactComposerEditor(text: ScaledTextRole, value: string) {
   return {
     isExpanded,
     containerStyle: { height: isExpanded ? height + 52 : compactRowHeight },
+    collapsedStyle: { height: compactRowHeight },
     editorStyle,
     onRowLayout: (event: { nativeEvent: { layout: { width: number } } }) => {
       rowWidth.set(event.nativeEvent.layout.width);
@@ -929,7 +930,10 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                         ? 0
                         : INLINE_EDITOR_MIN_WIDTH,
                   },
-                  compactEditor.containerStyle,
+                  // The hidden draft keeps only one row, so the dictation preview sits on the toolbar.
+                  showsCompactDictation
+                    ? compactEditor.collapsedStyle
+                    : compactEditor.containerStyle,
                   compactEditor.isExpanded ? { flex: 0, width: 0 } : undefined,
                 ]}
               ></Animated.View>
