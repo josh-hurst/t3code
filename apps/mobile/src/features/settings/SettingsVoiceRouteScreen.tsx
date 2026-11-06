@@ -36,6 +36,7 @@ import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActi
 import { SettingsDragHandle } from "./components/SettingsDragHandle";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
+import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import {
   deviceMicrophoneOrder,
   localVoiceTranscriberAtom,
@@ -178,6 +179,9 @@ export function SettingsVoiceRouteScreen() {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const ready = AsyncResult.isSuccess(preferencesResult) && !preferencesResult.waiting;
+  const cleanupEnabled =
+    AsyncResult.isSuccess(preferencesResult) &&
+    preferencesResult.value.voiceCleanupEnabled === true;
   const entries = deviceMicrophoneOrder(
     AsyncResult.isSuccess(preferencesResult) ? preferencesResult.value.microphones : undefined,
   );
@@ -261,6 +265,31 @@ export function SettingsVoiceRouteScreen() {
             label={grantEnvironment.label}
           />
         ) : null}
+        <SettingsSection title="Transcript cleanup">
+          <SettingsSwitchRow
+            icon="sparkles"
+            label="Clean up transcripts"
+            value={cleanupEnabled}
+            disabled={!ready}
+            onValueChange={(value) => {
+              if (!value) {
+                savePreferences({ voiceCleanupEnabled: false });
+                return;
+              }
+              Dialog.confirm({
+                title: "Send transcripts for cleanup?",
+                message:
+                  "Finished transcripts and nearby draft text will be sent to the text generation provider on the draft’s environment, which may be an external service. Audio is never sent to it.",
+                confirmText: "Turn on",
+                onConfirm: () => savePreferences({ voiceCleanupEnabled: true }),
+              });
+            }}
+          />
+        </SettingsSection>
+        <Text className="px-2 text-sm text-foreground-muted">
+          Fixes punctuation, numbers, and spoken corrections such as “make it 42, sorry, 24”. Tap
+          the check mark while it runs to insert the raw transcript instead.
+        </Text>
         {!grant && transcriber === null ? (
           <Text className="px-2 text-sm text-foreground-muted">{UNAVAILABLE_EXPLANATION}</Text>
         ) : null}

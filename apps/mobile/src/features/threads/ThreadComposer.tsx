@@ -571,6 +571,11 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const voiceInput = useVoiceInputController({
     ownerKey: composerDraftKey,
     label: props.selectedThread.title || "Untitled thread",
+    context: {
+      environmentId: props.environmentId,
+      projectId: project?.id ?? null,
+      projectName: project?.title ?? null,
+    },
     readDraftMessage: () => getComposerDraftSnapshot(composerDraftKey).text,
     subscribeToDraftChanges: (onChange) => appAtomRegistry.subscribe(composerDraftsAtom, onChange),
     selection: composerMenu.selection,

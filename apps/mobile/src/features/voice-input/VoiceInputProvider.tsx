@@ -25,7 +25,7 @@ import { createLazyVoiceRecorder } from "./lazyVoiceRecorder";
 import { VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
 import { VoiceInputSession } from "./voiceInputSession";
 import { createVoiceRecordingPermission } from "./voiceRecordingPermission";
-import { voiceRouteAtom } from "./voiceDestination";
+import { cleanUpTranscript, draftSpeechVocabulary, voiceRouteAtom } from "./voiceDestination";
 import { makePermissionStatusAtom } from "../../lib/permissionStatusAtom";
 import {
   acquireAudioSession,
@@ -66,7 +66,7 @@ export const localVoiceTranscriberAtom = makePermissionStatusAtom<
 
 const voiceInputAvailableAtom = Atom.make((get) => {
   const route = get(voiceRouteAtom);
-  if (route) return route.transcriber !== null;
+  if (route) return route.createTranscriber !== null;
   const transcriber = get(localVoiceTranscriberAtom);
   return transcriber !== null && transcriber !== "checking";
 });
@@ -120,12 +120,27 @@ const voiceInputAtom = Atom.make((get) => {
   });
   const session: VoiceInputSession = new VoiceInputSession({
     recorder,
+    retryFailedRecording: true,
     getTranscriber: () => {
       const route = registry.get(voiceRouteAtom);
-      if (route) return route.transcriber;
+      if (route)
+        return route.createTranscriber?.(() => draftSpeechVocabulary(session.context)) ?? null;
       const transcriber = registry.get(localVoiceTranscriberAtom);
       return transcriber === "checking" ? null : transcriber;
     },
+    postProcess: (transcript, { signal, draft }) =>
+      cleanUpTranscript({
+        context: session.context,
+        transcript,
+        draft,
+        signal,
+        isEnabled: () => {
+          const preferences = registry.get(mobilePreferencesAtom);
+          return (
+            AsyncResult.isSuccess(preferences) && preferences.value.voiceCleanupEnabled === true
+          );
+        },
+      }),
     requestPermission: permission.requestPermission,
     configureRecording: async () => {
       const token = acquireAudioSession("recording");
@@ -170,7 +185,11 @@ export function useGlobalVoiceInput() {
     audioLevels,
     isBusy: voiceInputBlocksSubmission(snapshot.state),
     session,
-    stop: () => session.controller.stop(),
+    // The confirm button finishes a recording, or skips cleanup and inserts the raw transcript.
+    stop: () => {
+      session.controller.skipPostProcessing();
+      return session.controller.stop();
+    },
     cancel: () => session.controller.cancel(),
   };
 }

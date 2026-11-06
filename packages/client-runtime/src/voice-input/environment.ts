@@ -151,14 +151,29 @@ export const transcribeEnvironmentPcm = (
       }),
   });
 
+type CleanupDraft = {
+  readonly text: string;
+  readonly selection: { readonly start: number; readonly end: number };
+};
+
+// Users are told cleanup sees at most 1,024 characters before, inside, and after the selection.
+function cleanupContext({ text, selection }: CleanupDraft): CleanupDraft {
+  const limit = 1_024;
+  const start = Math.max(0, Math.min(selection.start, text.length));
+  const end = Math.max(start, Math.min(selection.end, text.length));
+  const before = text.slice(Math.max(0, start - limit), start);
+  const selected = text.slice(start, Math.min(end, start + limit));
+  return {
+    text: before + selected + text.slice(end, end + limit),
+    selection: { start: before.length, end: before.length + selected.length },
+  };
+}
+
 /** Sends the transcript and draft context to a provider on `prepared`; a separate opt-in. */
 export const postProcessEnvironmentTranscript = (
   prepared: PreparedConnection,
   transcript: string,
-  draft: {
-    readonly text: string;
-    readonly selection: { readonly start: number; readonly end: number };
-  },
+  draft: CleanupDraft,
   options: SpeechPostProcessingOptions,
   canSend: () => boolean,
 ) =>
@@ -170,7 +185,10 @@ export const postProcessEnvironmentTranscript = (
     canSend,
     timeoutMs: INFERENCE_OR_DOWNLOAD_TIMEOUT_MS,
     run: ({ client, headers }) =>
-      client.postProcess({ headers, payload: { transcript, draft, options } }),
+      client.postProcess({
+        headers,
+        payload: { transcript, draft: cleanupContext(draft), options },
+      }),
   });
 
 export const updateEnvironmentSpeechAcceleration = (

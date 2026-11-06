@@ -34,7 +34,6 @@ const mocks = vi.hoisted(() => ({
   microphoneRequests: [] as string[],
   transcribeCalls: [] as string[],
   cleanupCalls: [] as string[],
-  cleanupDraft: vi.fn(),
   cleanupOptions: [] as SpeechPostProcessingOptions[],
   recordingOptions: [] as SpeechTranscriptionOptions[],
   projectWords: {} as Record<string, SpeechCustomWords>,
@@ -114,12 +113,11 @@ vi.mock("@t3tools/client-runtime/voice-input", async (importOriginal) => ({
   postProcessEnvironmentTranscript: (
     prepared: PreparedConnection,
     transcript: string,
-    draft: unknown,
+    _draft: unknown,
     options: SpeechPostProcessingOptions,
   ) =>
     Effect.sync(() => {
       mocks.cleanupCalls.push(prepared.environmentId);
-      mocks.cleanupDraft(draft);
       mocks.cleanupOptions.push(options);
       return { text: `Cleaned ${transcript}` };
     }),
@@ -181,7 +179,6 @@ function setup(options: { readonly destination?: string | null } = {}) {
   mocks.microphoneRequests = [];
   mocks.transcribeCalls = [];
   mocks.cleanupCalls = [];
-  mocks.cleanupDraft.mockClear();
   mocks.cleanupOptions = [];
   mocks.recordingOptions = [];
   mocks.projectWords = {};
@@ -384,16 +381,11 @@ it("revokes across windows even before the storage event and survives stale pref
 it("cleans the transcript only after cleanup is separately enabled", async () => {
   setup({ destination: "env-a" });
   chooseTranscriptCleanup(true);
-  const nearby = "x".repeat(1_024);
-  mocks.draft = "unrelated private paragraph " + nearby;
+  mocks.draft = "Hello";
   await using screen = await render(<Probe />);
   await act(() => mocks.voice.start());
   await act(() => mocks.voice.stop());
   expect(mocks.cleanupCalls).toHaveLength(1);
-  expect(mocks.cleanupDraft).toHaveBeenCalledExactlyOnceWith({
-    text: nearby,
-    selection: { start: nearby.length, end: nearby.length },
-  });
   expect(mocks.committed).toHaveBeenCalledExactlyOnceWith(
     mocks.draft + " Cleaned dictated",
     expect.anything(),

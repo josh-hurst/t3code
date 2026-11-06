@@ -213,6 +213,18 @@ preserves your existing draft. Navigating to another screen keeps dictation acti
 use the floating controls to finish or cancel. While recording, the screen stays
 awake; it can sleep normally once recording stops.
 
+Recordings sent to an environment carry the thread's project dictionary and project
+name as recognition hints. If a transcription fails, retry it from the error to
+transcribe the same recording again without speaking it twice.
+
+**Settings → Voice → Clean up transcripts** works like
+[Transcript cleanup](./voice-input.md#clean-up-transcripts-with-a-provider) on
+desktop, whether you transcribe on the device or on an environment. It is off by
+default. When on, the finished transcript and nearby draft text go to the text
+generation provider on the draft's environment, never the audio. Tap the check mark
+while it runs to insert the raw transcript; if cleanup fails or that environment is
+disconnected, the raw transcript is inserted.
+
 Choose a preferred order in **Settings → Voice**. Voice input requests the first
 connected microphone in the list. The list mixes kinds (built-in, other wired, other
 Bluetooth, and CarPlay on iOS) with wired and Bluetooth devices you have dictated

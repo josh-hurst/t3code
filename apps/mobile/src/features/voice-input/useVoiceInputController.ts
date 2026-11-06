@@ -7,13 +7,14 @@ import {
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
 import { useGlobalVoiceInput } from "./VoiceInputProvider";
-import { createVoiceInputTarget } from "./voiceInputSession";
+import { createVoiceInputTarget, type VoiceDraftContext } from "./voiceInputSession";
 
 const IDLE_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
 
 export function useVoiceInputController(input: {
   readonly ownerKey: string | null;
   readonly label: string;
+  readonly context?: VoiceDraftContext;
   readonly readDraftMessage: () => string | null;
   readonly subscribeToDraftChanges: (onChange: () => void) => () => void;
   readonly selection: ComposerEditorSelection;
@@ -61,6 +62,7 @@ export function useVoiceInputController(input: {
         captured.subscribeToDraftChanges,
       ),
       label: captured.label,
+      ...(captured.context ? { context: captured.context } : {}),
     });
   }, [session]);
   const state = global.ownerKey === input.ownerKey ? global.state : IDLE_STATE;

@@ -113,6 +113,8 @@ export interface Preferences {
   readonly composerEnterBehavior?: ComposerEnterBehavior;
   readonly followUpBehavior?: FollowUpBehavior;
   readonly microphones?: ReadonlyArray<MicrophoneEntry>;
+  /** Unset means off: transcripts go to a provider only after the user opts in. */
+  readonly voiceCleanupEnabled?: boolean;
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
   readonly planModeEnabled?: boolean;
@@ -195,6 +197,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     composerEnterBehavior?: ComposerEnterBehavior;
     followUpBehavior?: FollowUpBehavior;
     microphones?: ReadonlyArray<MicrophoneEntry>;
+    voiceCleanupEnabled?: boolean;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     planModeEnabled?: boolean;
@@ -310,6 +313,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
         ? [{ kind: entry.kind, uid: entry.uid, name: entry.name }]
         : [];
     });
+  }
+  if (typeof parsed.voiceCleanupEnabled === "boolean") {
+    preferences.voiceCleanupEnabled = parsed.voiceCleanupEnabled;
   }
   if (typeof parsed.projectGroupingEnabled === "boolean") {
     preferences.projectGroupingEnabled = parsed.projectGroupingEnabled;

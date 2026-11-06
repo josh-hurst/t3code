@@ -2,16 +2,20 @@ import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
   DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
+  type SpeechCustomWords,
 } from "@t3tools/contracts";
 import {
   getEnvironmentSpeechModels,
   getEnvironmentSpeechStatus,
+  postProcessEnvironmentTranscript,
   transcribeEnvironmentPcm,
   VoiceTranscriptionError,
+  type VoiceDraftSnapshot,
 } from "@t3tools/client-runtime/voice-input";
 import { FetchHttpClient, type HttpClient } from "effect/http";
 import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import { effectiveSpeechLanguage } from "@t3tools/shared/speech";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { effectiveSpeechLanguage, resolveSpeechVocabulary } from "@t3tools/shared/speech";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { Atom, AsyncResult, AtomRegistry } from "effect/reactivity";
@@ -25,6 +29,7 @@ import { connectionAtomRuntime } from "../../connection/runtime";
 import { uuidv4 } from "../../lib/uuid";
 import { createEnvironmentTranscriber } from "./environmentTranscriber";
 import { readVoiceGrant, writeVoiceGrant, type VoiceGrant } from "./voiceGrantStorage";
+import type { VoiceDraftContext } from "./voiceInputSession";
 
 const storedGrant = Atom.make(Effect.promise(readVoiceGrant)).pipe(Atom.keepAlive);
 const choice = Atom.make<VoiceGrant | null | undefined>(undefined).pipe(Atom.keepAlive);
@@ -53,11 +58,11 @@ const native = requireOptionalNativeModule<{
 }>("T3VoiceTranscription");
 export const hasEnvironmentVoiceCapture = typeof native?.decodeRecording === "function";
 
-export const voiceConnectionAtom = Atom.family((id: EnvironmentId) =>
+/** A connected environment this session may use for speech, whatever the phone can record. */
+const speechConnectionAtom = Atom.family((id: EnvironmentId) =>
   Atom.make((get) => {
     const environment = get(environmentPresentations.presentationAtom(id));
     if (
-      !hasEnvironmentVoiceCapture ||
       environment?.connection.phase !== "connected" ||
       !environment.serverConfig?.environment.capabilities.voiceTranscription ||
       !sessionHasScope(get(environmentSession.sessionStateAtom(id)), AuthOrchestrationOperateScope)
@@ -66,6 +71,57 @@ export const voiceConnectionAtom = Atom.family((id: EnvironmentId) =>
     return Option.getOrNull(get(environmentSession.preparedConnectionValueAtom(id)));
   }),
 );
+
+export const voiceConnectionAtom = Atom.family((id: EnvironmentId) =>
+  Atom.make((get) => (hasEnvironmentVoiceCapture ? get(speechConnectionAtom(id)) : null)),
+);
+
+/** The draft's project dictionary on its environment, with the project name as a hint. */
+export function draftSpeechVocabulary(context: VoiceDraftContext | null): SpeechCustomWords {
+  if (!context) return [];
+  const settings = appAtomRegistry.get(
+    environmentPresentations.presentationAtom(context.environmentId),
+  )?.serverConfig?.settings;
+  return resolveSpeechVocabulary({
+    personal: [],
+    project: settings
+      ? resolveProjectSettings(settings, context.projectId).settings.speechProjectCustomWords
+      : [],
+    hints: context.projectName ? [context.projectName] : [],
+  });
+}
+
+/**
+ * Sends a finished transcript and nearby draft text to the draft's own environment,
+ * never the audio destination. Returns null when cleanup does not apply to this draft.
+ */
+export function cleanUpTranscript(input: {
+  readonly context: VoiceDraftContext | null;
+  readonly transcript: string;
+  readonly draft: VoiceDraftSnapshot;
+  readonly signal: AbortSignal;
+  readonly isEnabled: () => boolean;
+}): Promise<string> | null {
+  if (!input.context || !input.isEnabled()) return null;
+  const connectionAtom = speechConnectionAtom(input.context.environmentId);
+  const prepared = appAtomRegistry.get(connectionAtom);
+  if (!prepared) return null;
+  const canSend = () => input.isEnabled() && appAtomRegistry.get(connectionAtom) === prepared;
+  return runSpeech(
+    postProcessEnvironmentTranscript(
+      prepared,
+      input.transcript,
+      input.draft,
+      {
+        speechCustomWords: draftSpeechVocabulary(input.context),
+        speechPostProcessingPrompt: { mode: "default", customInstructions: "" },
+      },
+      canSend,
+    ),
+    input.signal,
+    canSend,
+  ).then((result) => result.text);
+}
 
 // React Native's XMLHttpRequest fetch follows redirects. Expo's native transport honors redirect: "error".
 export function runSpeech<A, E>(
@@ -92,7 +148,11 @@ export function runSpeech<A, E>(
     { signal },
   );
 }
-function environmentTranscriber(prepared: PreparedConnection, canSend: () => boolean) {
+function environmentTranscriber(
+  prepared: PreparedConnection,
+  canSend: () => boolean,
+  getCustomWords: () => SpeechCustomWords,
+) {
   return createEnvironmentTranscriber({
     canSend,
     prepare: async (signal) => {
@@ -126,7 +186,12 @@ function environmentTranscriber(prepared: PreparedConnection, canSend: () => boo
     upload: async (pcm, signal) =>
       (
         await runSpeech(
-          transcribeEnvironmentPcm(prepared, pcm, DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS, canSend),
+          transcribeEnvironmentPcm(
+            prepared,
+            pcm,
+            { ...DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS, speechCustomWords: getCustomWords() },
+            canSend,
+          ),
           signal,
           canSend,
         )
@@ -170,12 +235,12 @@ export const voiceRouteAtom = Atom.make((get) => {
   const connectionAtom = voiceConnectionAtom(grant.destination.environmentId);
   const connection = get(connectionAtom);
   const registry = get.registry;
+  const canSend = () =>
+    registry.get(voiceGrantAtom) === grant && registry.get(connectionAtom) === connection;
   return {
-    transcriber:
+    createTranscriber:
       connection &&
-      environmentTranscriber(
-        connection,
-        () => registry.get(voiceGrantAtom) === grant && registry.get(connectionAtom) === connection,
-      ),
+      ((getCustomWords: () => SpeechCustomWords) =>
+        environmentTranscriber(connection, canSend, getCustomWords)),
   };
 });

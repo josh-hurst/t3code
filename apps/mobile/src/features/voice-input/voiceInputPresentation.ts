@@ -53,7 +53,6 @@ export function resolveVoiceComposerPresentation(
       };
     }
     case "transcribing":
-    case "post-processing":
       return {
         leadingAction: "cancel",
         trailingAction: "confirm",
@@ -61,6 +60,15 @@ export function resolveVoiceComposerPresentation(
         statusKind: "active",
         statusLabel: "Transcribing",
         confirmationEnabled: false,
+      };
+    case "post-processing":
+      return {
+        leadingAction: "cancel",
+        trailingAction: "confirm",
+        showsSend: false,
+        statusKind: "active",
+        statusLabel: "Cleaning up",
+        confirmationEnabled: true,
       };
   }
 }

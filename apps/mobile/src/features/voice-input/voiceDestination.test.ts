@@ -1,8 +1,14 @@
 import { EnvironmentId } from "@t3tools/contracts";
+import { decodeSpeechPcmRequest } from "@t3tools/shared/speech";
 import { Atom } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { appAtomRegistry } from "../../state/atom-registry";
-import { chooseVoiceDestination, voiceGrantAtom, voiceRouteAtom } from "./voiceDestination";
+import {
+  chooseVoiceDestination,
+  cleanUpTranscript,
+  voiceGrantAtom,
+  voiceRouteAtom,
+} from "./voiceDestination";
 import { readVoiceGrant } from "./voiceGrantStorage";
 
 const mocks = vi.hoisted(() => ({
@@ -123,15 +129,16 @@ it("keeps local as the default and never reuses consent for an offline or resele
     expect(appAtomRegistry.get(voiceRouteAtom)).toBeNull();
     expect(mocks.probe).not.toHaveBeenCalled();
     chooseVoiceDestination(EnvironmentId.make("offline"));
-    expect(appAtomRegistry.get(voiceRouteAtom)).toEqual({ transcriber: null });
+    expect(appAtomRegistry.get(voiceRouteAtom)).toEqual({ createTranscriber: null });
     const host = EnvironmentId.make("my-server");
+    const words = [{ term: "T3 Code", aliases: ["tee three code"] }];
     chooseVoiceDestination(host);
-    const first = appAtomRegistry.get(voiceRouteAtom)?.transcriber;
+    const first = appAtomRegistry.get(voiceRouteAtom)?.createTranscriber?.(() => words);
     expect(first).toBeTruthy();
     chooseVoiceDestination(null);
     expect(appAtomRegistry.get(voiceRouteAtom)).toBeNull();
     chooseVoiceDestination(host);
-    const current = appAtomRegistry.get(voiceRouteAtom)?.transcriber;
+    const current = appAtomRegistry.get(voiceRouteAtom)?.createTranscriber?.(() => words);
     await expect(first!.prepare({ signal: new AbortController().signal })).rejects.toThrow(
       "Your transcription choice changed.",
     );
@@ -159,6 +166,10 @@ it("keeps local as the default and never reuses consent for an offline or resele
       ["https://my-server.test/api/voice/status", "error"],
       ["https://my-server.test/api/voice/transcribe", "error"],
     ]);
+    const body = mocks.fetch.mock.calls[1]![1]!.body;
+    expect(
+      decodeSpeechPcmRequest(new Uint8Array(body as ArrayBuffer)).options.speechCustomWords,
+    ).toEqual(words);
     const failWrite = () => {
       throw new Error("Device storage is unavailable");
     };
@@ -169,6 +180,48 @@ it("keeps local as the default and never reuses consent for an offline or resele
     await expect(current!.prepare(options)).rejects.toThrow("Your transcription choice changed.");
   } finally {
     unmount();
+    appAtomRegistry.reset();
+  }
+});
+
+it("cleans up on the draft's environment only when enabled and connected", async () => {
+  const nearby = "x".repeat(1_024);
+  const text = "unrelated private paragraph " + nearby;
+  const draft = {
+    ownerKey: "draft",
+    text,
+    selection: { start: text.length, end: text.length },
+    revision: 0,
+  };
+  const signal = new AbortController().signal;
+  const cleanUp = (environmentId: string, isEnabled: () => boolean) =>
+    cleanUpTranscript({
+      context: {
+        environmentId: EnvironmentId.make(environmentId),
+        projectId: null,
+        projectName: null,
+      },
+      transcript: "make it 42 sorry 24",
+      draft,
+      signal,
+      isEnabled,
+    });
+  try {
+    chooseVoiceDestination(EnvironmentId.make("audio-host"));
+    expect(cleanUp("draft-host", () => false)).toBeNull();
+    expect(cleanUp("offline", () => true)).toBeNull();
+    mocks.fetch.mockResolvedValueOnce(Response.json({ text: "Make it 24." }));
+    await expect(cleanUp("draft-host", () => true)).resolves.toBe("Make it 24.");
+    expect(mocks.fetch.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://draft-host.test/api/voice/post-process",
+    ]);
+    const body = JSON.parse(String(mocks.fetch.mock.calls[0]![1]!.body)) as { draft: unknown };
+    expect(body.draft).toEqual({
+      text: nearby,
+      selection: { start: nearby.length, end: nearby.length },
+    });
+  } finally {
+    mocks.fetch.mockReset();
     appAtomRegistry.reset();
   }
 });

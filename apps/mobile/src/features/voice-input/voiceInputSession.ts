@@ -1,3 +1,4 @@
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import {
   VOICE_RECORDING_LIMIT_SECONDS,
   VoiceInputController,
@@ -14,9 +15,17 @@ const VOICE_METERING_INTERVAL_MS = 80;
 const IDLE_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
 const SILENT_LEVELS: ReadonlyArray<number> = Array<number>(VOICE_WAVEFORM_SAMPLE_COUNT).fill(0);
 
+/** Where the draft lives: its project's vocabulary and optional cleanup come from there. */
+export type VoiceDraftContext = {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId | null;
+  readonly projectName: string | null;
+};
+
 export type VoiceInputTarget = {
   readonly ownerKey: string;
   readonly label?: string;
+  readonly context?: VoiceDraftContext;
   readonly readDraft: () => VoiceDraftSnapshot | null;
   readonly commitDraft: VoiceInputControllerDependencies["commitDraft"];
   readonly subscribe: () => () => void;
@@ -113,6 +122,10 @@ export class VoiceInputSession {
 
   get label(): string | null {
     return this.target?.label ?? null;
+  }
+
+  get context(): VoiceDraftContext | null {
+    return this.target?.context ?? null;
   }
 
   readonly subscribe = (listener: () => void): (() => void) => {
