@@ -1419,6 +1419,17 @@ describe("/usage", () => {
       withUsageLimitsCommands([{ ...selected, slashCommands: ownCommand.slashCommands }], [])[0]
         ?.slashCommands,
     ).toEqual([USAGE_LIMITS_COMMAND]);
+    const unrelated = provider({ driver: ProviderDriverKind.make("claudeAgent") });
+    const disabled = provider({ ...unrelated, enabled: false, usageLimits: limits });
+    const mixed = withUsageLimitsCommands([selected, withWorkspace, unrelated, disabled], []);
+    expect(mixed.map((entry) => entry.slashCommands.map((command) => command.name))).toEqual([
+      ["usage"],
+      ["usage"],
+      [],
+      [],
+    ]);
+    expect(mixed[2]).toBe(unrelated);
+    expect(mixed[3]).toBe(disabled);
   });
 
   it("answers /usage and the older /usage-limits", () => {

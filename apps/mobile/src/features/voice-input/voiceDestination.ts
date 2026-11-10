@@ -1,11 +1,18 @@
 import {
   AuthOrchestrationOperateScope,
+  type CloudSpeechModelId,
+  type CloudSpeechProvider,
   type EnvironmentId,
   DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
   type SpeechCustomWords,
+  type VoiceTranscriptionDestination,
 } from "@t3tools/contracts";
 import {
   getEnvironmentSpeechModels,
+  getCloudSpeechKeys,
+  getCloudSpeechModels,
+  requireCloudSpeechKey,
+  transcribeCloudPcm,
   getEnvironmentSpeechStatus,
   postProcessEnvironmentTranscript,
   transcribeEnvironmentPcm,
@@ -39,18 +46,48 @@ export const voiceGrantAtom = Atom.make((get) => {
   return AsyncResult.getOrElse(get(storedGrant), () => null);
 });
 
-export function chooseVoiceDestination(environmentId: EnvironmentId | null) {
+let choiceRevision = 0;
+
+type CloudDestination = Extract<VoiceTranscriptionDestination, { kind: "cloud" }>;
+/** OpenRouter has no default model, so a cloud choice without one is no choice at all. */
+function cloudVoiceDestination(
+  environmentId: EnvironmentId,
+  provider: CloudSpeechProvider,
+  model?: CloudSpeechModelId,
+): CloudDestination | null {
+  if (provider === "openrouter")
+    return model ? { kind: "cloud", environmentId, provider, model } : null;
+  return { kind: "cloud", environmentId, provider };
+}
+
+export function chooseVoiceDestination(
+  environmentId: EnvironmentId | null,
+  provider?: CloudSpeechProvider,
+  model?: CloudSpeechModelId,
+) {
+  choiceRevision++;
   // A failed change must not leave the old destination armed in this session.
   appAtomRegistry.set(choice, null);
-  const grant: VoiceGrant | null =
+  const destination: VoiceTranscriptionDestination | null =
     environmentId === null
       ? null
-      : {
-          id: uuidv4(),
-          destination: { kind: "environment", environmentId },
-        };
+      : provider
+        ? cloudVoiceDestination(environmentId, provider, model)
+        : { kind: "environment", environmentId };
+  const grant: VoiceGrant | null = destination && { id: uuidv4(), destination };
   writeVoiceGrant(grant);
   appAtomRegistry.set(choice, grant);
+}
+
+export function pendingCloudVoiceChoice(
+  id: EnvironmentId,
+  provider: CloudSpeechProvider,
+  model?: CloudSpeechModelId,
+) {
+  const revision = ++choiceRevision;
+  return () => {
+    if (revision === choiceRevision) chooseVoiceDestination(id, provider, model);
+  };
 }
 
 const native = requireOptionalNativeModule<{
@@ -59,21 +96,30 @@ const native = requireOptionalNativeModule<{
 export const hasEnvironmentVoiceCapture = typeof native?.decodeRecording === "function";
 
 /** A connected environment this session may use for speech, whatever the phone can record. */
-const speechConnectionAtom = Atom.family((id: EnvironmentId) =>
-  Atom.make((get) => {
-    const environment = get(environmentPresentations.presentationAtom(id));
-    if (
-      environment?.connection.phase !== "connected" ||
-      !environment.serverConfig?.environment.capabilities.voiceTranscription ||
-      !sessionHasScope(get(environmentSession.sessionStateAtom(id)), AuthOrchestrationOperateScope)
-    )
-      return null;
-    return Option.getOrNull(get(environmentSession.preparedConnectionValueAtom(id)));
-  }),
-);
+const speechConnections = (capability: "voiceTranscription" | "cloudVoiceTranscription") =>
+  Atom.family((id: EnvironmentId) =>
+    Atom.make((get) => {
+      const environment = get(environmentPresentations.presentationAtom(id));
+      if (
+        environment?.connection.phase !== "connected" ||
+        !environment.serverConfig?.environment.capabilities[capability] ||
+        !sessionHasScope(
+          get(environmentSession.sessionStateAtom(id)),
+          AuthOrchestrationOperateScope,
+        )
+      )
+        return null;
+      return Option.getOrNull(get(environmentSession.preparedConnectionValueAtom(id)));
+    }),
+  );
+const speechConnectionAtom = speechConnections("voiceTranscription");
+const cloudSpeechConnectionAtom = speechConnections("cloudVoiceTranscription");
 
 export const voiceConnectionAtom = Atom.family((id: EnvironmentId) =>
   Atom.make((get) => (hasEnvironmentVoiceCapture ? get(speechConnectionAtom(id)) : null)),
+);
+export const cloudVoiceConnectionAtom = Atom.family((id: EnvironmentId) =>
+  Atom.make((get) => (hasEnvironmentVoiceCapture ? get(cloudSpeechConnectionAtom(id)) : null)),
 );
 
 /** The draft's project dictionary on its environment, with the project name as a hint. */
@@ -152,10 +198,17 @@ function environmentTranscriber(
   prepared: PreparedConnection,
   canSend: () => boolean,
   getCustomWords: () => SpeechCustomWords,
+  cloud?: CloudDestination,
 ) {
+  const provider = cloud?.provider;
+  const model = cloud?.provider === "openrouter" ? cloud.model : undefined;
   return createEnvironmentTranscriber({
     canSend,
     prepare: async (signal) => {
+      if (provider) {
+        await runSpeech(requireCloudSpeechKey(prepared, provider), signal, canSend);
+        return "auto";
+      }
       const status = await runSpeech(getEnvironmentSpeechStatus(prepared), signal, canSend);
       if (!status.supported)
         throw new VoiceTranscriptionError({ code: "unavailable", message: status.reason });
@@ -186,12 +239,21 @@ function environmentTranscriber(
     upload: async (pcm, signal) =>
       (
         await runSpeech(
-          transcribeEnvironmentPcm(
-            prepared,
-            pcm,
-            { ...DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS, speechCustomWords: getCustomWords() },
-            canSend,
-          ),
+          provider
+            ? transcribeCloudPcm(
+                prepared,
+                provider,
+                pcm,
+                DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
+                canSend,
+                model,
+              )
+            : transcribeEnvironmentPcm(
+                prepared,
+                pcm,
+                { ...DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS, speechCustomWords: getCustomWords() },
+                canSend,
+              ),
           signal,
           canSend,
         )
@@ -202,9 +264,10 @@ function environmentTranscriber(
 const speechAtom = <A, E>(
   id: EnvironmentId,
   read: (prepared: PreparedConnection) => Effect.Effect<A, E, HttpClient.HttpClient>,
+  connectionAtom = voiceConnectionAtom,
 ) =>
   Atom.make((get) => {
-    const prepared = get(voiceConnectionAtom(id));
+    const prepared = get(connectionAtom(id));
     return prepared
       ? Effect.tryPromise({
           try: (signal) => runSpeech(read(prepared), signal),
@@ -220,6 +283,14 @@ const speechAtom = <A, E>(
 export const voiceSpeechStatusAtom = Atom.family((id: EnvironmentId) =>
   speechAtom(id, getEnvironmentSpeechStatus),
 );
+export const cloudVoiceKeysAtom = Atom.family((id: EnvironmentId) =>
+  speechAtom(id, getCloudSpeechKeys, cloudVoiceConnectionAtom),
+);
+export const cloudVoiceModelsAtom = Atom.family((id: EnvironmentId | null) =>
+  id === null
+    ? Atom.make(Effect.succeed(null))
+    : speechAtom(id, getCloudSpeechModels, cloudVoiceConnectionAtom),
+);
 export const voiceSpeechModelsAtom = Atom.family((id: EnvironmentId) =>
   speechAtom(id, (prepared) => getEnvironmentSpeechModels(prepared)),
 );
@@ -232,7 +303,10 @@ export const voiceSpeechBenchmarksAtom = Atom.family((id: EnvironmentId) =>
 export const voiceRouteAtom = Atom.make((get) => {
   const grant = get(voiceGrantAtom);
   if (!grant) return null;
-  const connectionAtom = voiceConnectionAtom(grant.destination.environmentId);
+  const cloud = grant.destination.kind === "cloud" ? grant.destination : undefined;
+  const connectionAtom = (cloud ? cloudVoiceConnectionAtom : voiceConnectionAtom)(
+    grant.destination.environmentId,
+  );
   const connection = get(connectionAtom);
   const registry = get.registry;
   const canSend = () =>
@@ -241,6 +315,6 @@ export const voiceRouteAtom = Atom.make((get) => {
     createTranscriber:
       connection &&
       ((getCustomWords: () => SpeechCustomWords) =>
-        environmentTranscriber(connection, canSend, getCustomWords)),
+        environmentTranscriber(connection, canSend, getCustomWords, cloud)),
   };
 });
