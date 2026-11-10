@@ -3123,7 +3123,9 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
     ...createStageWorkspaceConfig({
       platform: "win",
       arch: input.arch,
-      allowBuilds: input.allowBuilds,
+      // koffi's prebuilt comes from @koromix/koffi-win32-*; its install script only
+      // verifies it by loading it, which fails off Windows and falls back to CMake.
+      allowBuilds: { ...input.allowBuilds, koffi: false },
       patchedDependencies: sidecarPatchedDependencies,
       overrides: input.overrides,
     }),
