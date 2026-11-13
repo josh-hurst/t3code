@@ -28,4 +28,14 @@ describe("buildThreadTitlePrompt", () => {
       "belongs to the project",
     );
   });
+  it("names the project to leave out of initial and regenerated titles", () => {
+    for (const previousTitle of [undefined, "Hyperdrive Config Crash"]) {
+      const { prompt } = buildThreadTitlePrompt({
+        message: "hyperdrive init crashes without a config",
+        previousTitle,
+        projectTitle: "Hyperdrive",
+      });
+      expect(prompt).toContain('Never include the project name ("Hyperdrive")');
+    }
+  });
 });

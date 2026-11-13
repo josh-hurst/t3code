@@ -1,4 +1,5 @@
 import { useAtomMount } from "@effect/atom-react";
+import { asLaunchingThread } from "@t3tools/client-runtime/state/thread-inbox";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
@@ -91,6 +92,7 @@ import {
   resolveWorkingStartedAt,
   sidebarRowMessagePreview,
   useRetainedValue,
+  withoutRemovedCheckout,
   useSidebarRowSubscriptionLease,
   setFileDragActive,
 } from "../Sidebar.logic";
@@ -480,9 +482,16 @@ export function SortableThreadRow(
   };
   // The sidebar arranges rows from quiet shells, which hold still while a
   // thread streams; reading the live shell here re-renders only this row.
+  const liveThread = useThreadShell(
+    scopeThreadRef(rowProps.thread.environmentId, rowProps.thread.id),
+  );
+  // A runtime on the arranged copy but not the run-less live shell is the list's launch overlay.
   const thread =
-    useThreadShell(scopeThreadRef(rowProps.thread.environmentId, rowProps.thread.id)) ??
-    rowProps.thread;
+    liveThread === null
+      ? rowProps.thread
+      : rowProps.thread.runtime !== null
+        ? asLaunchingThread(liveThread)
+        : liveThread;
   // Keyed by variant so a card/slim switch remounts the row.
   return <SidebarThreadRow key={rowProps.variant} {...rowProps} thread={thread} sortable={bag} />;
 }
@@ -567,7 +576,7 @@ type SidebarThreadRowProps = {
   wokeAt: string | null;
   isActive: boolean;
   // Set on the active row only; scrolls it into view when a reveal is owed.
-  revealRef?: ((row: HTMLElement, threadKey: string) => void) | undefined;
+  revealRef?: ((row: HTMLElement, threadKey: string) => (() => void) | undefined) | undefined;
   // Unlike isActive, never true for the ancestor standing in for an open
   // subagent: drafts and PR clicks care about which composer is on screen.
   isRouteThread: boolean;
@@ -587,7 +596,7 @@ type SidebarThreadRowProps = {
   onThreadActivate: (threadRef: ScopedThreadRef) => void;
   onStartRename: (threadRef: ScopedThreadRef, title: string) => void;
   onRenameTitleChange: (title: string) => void;
-  onCommitRename: (threadRef: ScopedThreadRef, title: string, originalTitle: string) => void;
+  onCommitRename: (threadRef: ScopedThreadRef, title: string) => void;
   onCancelRename: () => void;
   isRenaming: boolean;
   renamingTitle: string;
@@ -677,8 +686,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const { leaseLiveStatus, rowRef: leaseRowRef } = useSidebarRowSubscriptionLease(props.isActive);
   const { revealRef } = props;
   const rowRef = (row: HTMLElement | null) => {
-    if (row !== null) revealRef?.(row, threadKey);
-    return leaseRowRef(row);
+    const stopReveal = row === null ? undefined : revealRef?.(row, threadKey);
+    const releaseLease = leaseRowRef(row);
+    if (!stopReveal) return releaseLease;
+    return () => {
+      stopReveal();
+      releaseLease?.();
+    };
   };
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const localLastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
@@ -723,6 +737,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     JSON.stringify([thread.environmentId, gitCwd]),
     gitStatus.data,
   );
+  const checkoutThread = withoutRemovedCheckout(thread, visibleGitStatus);
   const pr = linkedPullRequestStatus?.pr ?? null;
   const supportsMultiplePullRequests = useSupportsMultiplePullRequests(thread.environmentId);
   const currentLinkedPr = supportsMultiplePullRequests
@@ -828,18 +843,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     : thread.modelSelection.model;
 
   const isRemote = thread.environmentId !== props.currentEnvironmentId;
-  const showsScratchMachine = !thread.branch && props.scratchMachineLabel !== null;
+  const showsScratchMachine = !checkoutThread.branch && props.scratchMachineLabel !== null;
   const showsBranch = props.rowDetail !== "message";
   const replySummary = useSidebarReplySummary(thread, props.rowDetail, status);
   const messagePreview =
     props.rowDetail === "branch"
       ? null
       : sidebarRowMessagePreview(thread.source.latestVisibleMessage, replySummary);
-  const showsBranchDetail = showsBranch && (Boolean(thread.branch) || showsScratchMachine);
+  const showsBranchDetail = showsBranch && (Boolean(checkoutThread.branch) || showsScratchMachine);
 
   const detailsTooltip = (
     <SidebarThreadTooltip
-      thread={thread}
+      thread={checkoutThread}
       project={props.project}
       projectDisplayName={props.projectDisplayName}
       environmentLabel={props.environmentLabel}
@@ -1043,7 +1058,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     <ThreadRenameInput
       title={renamingTitle}
       onTitleChange={onRenameTitleChange}
-      onCommit={() => onCommitRename(threadRef, renamingTitle, thread.title)}
+      onCommit={() => onCommitRename(threadRef, renamingTitle)}
       onCancel={onCancelRename}
     />
   ) : (
@@ -1177,10 +1192,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   // and code face mark it as a ref.
   const besidePreview = messagePreview !== null;
   const branchDetail =
-    showsBranch && thread.branch ? (
+    showsBranch && checkoutThread.branch ? (
       <>
-        <ThreadWorktreeIndicator thread={thread} />
-        {besidePreview && !thread.worktreePath ? (
+        <ThreadWorktreeIndicator thread={checkoutThread} />
+        {besidePreview && !checkoutThread.worktreePath ? (
           <GitBranchIcon aria-hidden className="size-3 shrink-0" />
         ) : null}
         <span
@@ -1189,7 +1204,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             besidePreview ? "max-w-[40%] font-mono text-2xs" : "flex-1",
           )}
         >
-          <MiddleTruncate value={thread.branch} showTitle={false} />
+          <MiddleTruncate value={checkoutThread.branch} showTitle={false} />
         </span>
       </>
     ) : showsBranch && showsScratchMachine ? (
@@ -1738,6 +1753,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
     JSON.stringify([thread.environmentId, gitCwd]),
     gitStatus.data,
   );
+  const checkoutThread = withoutRemovedCheckout(thread, visibleGitStatus);
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
     activeWorktreePath: thread.worktreePath,
@@ -1853,7 +1869,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
           </span>
         </TooltipTrigger>
         <SidebarThreadTooltip
-          thread={thread}
+          thread={checkoutThread}
           project={props.project}
           projectDisplayName={props.projectDisplayName}
           environmentLabel={props.environmentLabel}
