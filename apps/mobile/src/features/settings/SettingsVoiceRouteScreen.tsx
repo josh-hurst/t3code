@@ -347,7 +347,7 @@ export function SettingsVoiceRouteScreen() {
         ) : null}
         <SettingsSection title="Transcript cleanup">
           <SettingsSwitchRow
-            icon="text.badge.checkmark"
+            icon="pencil"
             label="Clean up transcripts"
             value={cleanupEnabled}
             disabled={!ready}

@@ -110,6 +110,7 @@ describe("applyAppearanceFontVariables", () => {
     const style = root.getAttribute("style");
     const gutter = (sans: string) => {
       applyAppearanceFontVariables(root, {
+        ...basePreferences,
         sans,
         code: "",
         composer: "",

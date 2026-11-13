@@ -158,7 +158,9 @@ describe("global voice input", () => {
   it("holds the composer's send briefly after a transcript is inserted", async () => {
     using now = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { session } = createSession();
-    await session.start(createTarget("first", () => "hello", vi.fn(), { start: 5, end: 5 }));
+    await session.start(
+      createVoiceInputTarget("first", () => "hello", vi.fn(), { start: 5, end: 5 }),
+    );
     expect(session.holdsSubmission("first")).toBe(false);
     await session.controller.stop();
     expect(session.holdsSubmission("first")).toBe(true);
