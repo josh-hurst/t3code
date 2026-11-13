@@ -321,6 +321,31 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
   return <ThreadListV2ShelfHeader {...props} kind="settled" />;
 });
 
+export const ThreadListV2FolderHeader = memo(function ThreadListV2FolderHeader(props: {
+  readonly folderKey: string;
+  readonly title: string;
+  readonly count: number;
+  readonly disabled?: boolean;
+  readonly expanded: boolean;
+  readonly onToggle: (folderKey: string) => void;
+  readonly pane?: "screen" | "sidebar";
+}) {
+  const { folderKey, onToggle } = props;
+  return (
+    <ThreadListV2Section
+      label={props.expanded ? props.title : `${props.title} (${props.count})`}
+      pane={props.pane}
+      disclosure={{
+        expanded: props.expanded,
+        disabled: props.disabled,
+        onToggle: () => onToggle(folderKey),
+        accessibilityLabel: `${props.title}, ${props.count} ${props.count === 1 ? "thread" : "threads"}`,
+        accessibilityHint: `${props.expanded ? "Collapses" : "Expands"} the project's threads.`,
+      }}
+    />
+  );
+});
+
 export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(props: {
   readonly pane?: "screen" | "sidebar";
   readonly hiddenCount: number;

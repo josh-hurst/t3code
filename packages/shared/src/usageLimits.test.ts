@@ -1099,6 +1099,56 @@ describe("pooled account columns", () => {
     expect(cursorUsageWindowDetails(ids.at(-1)!, pool)?.label).toBe(label);
   });
 
+  it.each([
+    {
+      driver: "codex",
+      plans: [
+        "ChatGPT Plus Subscription",
+        "ChatGPT Pro 100 Subscription",
+        "ChatGPT Pro 200 Subscription",
+      ],
+      weights: [1, 5, 20],
+      remaining: 81,
+      restores: [4, 15, 0],
+      capacityWeighted: true,
+      pace: "under",
+    },
+    {
+      driver: "claudeAgent",
+      plans: ["Claude Pro Subscription", "Claude Max Subscription", "Claude Ultra Subscription"],
+      weights: [1, 5, 10],
+      remaining: 69,
+      restores: [6, 25, 0],
+      capacityWeighted: true,
+      pace: "under",
+    },
+    {
+      driver: "codex",
+      plans: ["ChatGPT Plus Subscription", "ChatGPT Pro 100 Subscription", undefined],
+      weights: [1, 1, 1],
+      remaining: 40,
+      restores: [33, 27, 0],
+      capacityWeighted: false,
+      pace: "on",
+    },
+  ])("weights $driver quotas, resets, pace and columns for $plans", (test) => {
+    const accounts = test.plans.map((plan, index) => ({
+      ...account(String(index), [{ ...window, usedPercent: [100, 80, 0][index]! }]),
+      driver: ProviderDriverKind.make(test.driver),
+      plan,
+    }));
+    const snapshot = structuredClone(accounts);
+    const [pool] = collectLimitPools(accounts, now)[0]!.windows;
+    expect(pool).toMatchObject({
+      capacityWeighted: test.capacityWeighted,
+      remainingPercent: test.remaining,
+      pace: test.pace,
+    });
+    expect(pool!.columns.map((column) => column.weight)).toEqual(test.weights);
+    expect(pool!.resets.map((reset) => reset.restoresPercent)).toEqual(test.restores);
+    expect(accounts).toEqual(snapshot);
+  });
+
   // regression: #20349 sessions stay visible while the weekly quota is exhausted
   it.each([
     ["claudeAgent", "13:00", 40, "14:00", 100],
@@ -1244,6 +1294,25 @@ describe("pooled account columns", () => {
     expect(pool!.windows[1]!.members.map((member) => member.account.key)).toEqual(["b", "c"]);
     expect(pool!.windows[1]!.remainingPercent).toBe(40);
     expect(pool!.windows[1]!.resets.map((reset) => reset.restoresPercent)).toEqual([40, 20]);
+    const [weighted] = collectLimitPools(
+      pool!.accounts.map((account, index) => ({
+        ...account,
+        driver: ProviderDriverKind.make("codex"),
+        plan: [
+          "ChatGPT Plus Subscription",
+          "ChatGPT Pro 100 Subscription",
+          "ChatGPT Pro 200 Subscription",
+        ][index],
+      })),
+      now,
+    );
+    expect(keys(weighted!)).toEqual(keys(pool!));
+    expect(weighted!.windows.map((row) => row.columns.map((column) => column.weight))).toEqual([
+      [1, 5, 20],
+      [1, 5, 20],
+    ]);
+    expect(weighted!.windows[1]!.remainingPercent).toBe(52);
+    expect(weighted!.windows[1]!.resets.map((reset) => reset.restoresPercent)).toEqual([16, 32]);
   });
 
   it("falls back to weekly resets when no account reports a session", () => {

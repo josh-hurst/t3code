@@ -110,6 +110,18 @@ export function findHomeProjectScope(
   );
 }
 
+/**
+ * The thread list's project folders: the filtered project alone, or the open projects
+ * in filter-menu order with archived ones last, so their active threads keep a folder.
+ */
+export function resolveHomeProjectFolders(
+  scopes: ReadonlyArray<HomeProjectScope>,
+  selectedScope: HomeProjectScope | null,
+): ReadonlyArray<HomeProjectScope> {
+  if (selectedScope !== null) return [selectedScope];
+  return [...pickableProjectGroups(scopes), ...scopes.filter((scope) => scope.archived)];
+}
+
 export function sortHomeProjectScopes(input: {
   readonly scopes: ReadonlyArray<HomeProjectScope>;
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;

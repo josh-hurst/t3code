@@ -178,11 +178,14 @@ function PoolWindowCard({
   const navigation = useNavigation();
   const [barWidth, setBarWidth] = useState(0);
   // Each segment needs room for its account, percent and reset to label itself.
-  const segmentWidth = barWidth / Math.max(pool.columns.length, 1);
+  const totalWeight = pool.columns.reduce((sum, column) => sum + column.weight, 0);
+  const segmentWidth =
+    (barWidth * Math.min(...pool.columns.map((column) => column.weight))) / totalWeight;
   const inlineLabels = wide && segmentWidth >= 96;
   const inlineReset = wide && segmentWidth >= 150;
   const inlineName = wide && segmentWidth >= 220;
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
+  const accountAverage = pool.members.length > 1 && !pool.capacityWeighted;
   const openAccount = (account: LimitAccount) =>
     navigation.navigate("SettingsUsageAccount", {
       accountKey: account.key,
@@ -202,8 +205,13 @@ function PoolWindowCard({
             <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
               {pool.remainingPercent}%
             </Text>
-            <Text className="text-sm text-foreground-muted">left</Text>
+            <Text className="text-sm text-foreground-muted">
+              {accountAverage ? "average left" : "left"}
+            </Text>
           </View>
+          {accountAverage ? (
+            <Text className="text-xs text-foreground-muted">Accounts weighted equally.</Text>
+          ) : null}
         </View>
         {pool.pace ? (
           <Text className="text-xs text-foreground-tertiary">{PACE_LABEL[pool.pace]}</Text>
@@ -212,7 +220,8 @@ function PoolWindowCard({
       {description ? <Text className="text-xs text-foreground-muted">{description}</Text> : null}
       {nextRefill ? (
         <Text className="text-xs tabular-nums text-foreground-muted">
-          ↻ +{nextRefill.restoresPercent}%{" "}
+          ↻ +{nextRefill.restoresPercent}
+          {accountAverage ? " points" : "%"}{" "}
           {formatResetsIn(nextRefill.member.window, now)
             ?.replace("resets in ", "in ")
             .replace("resets now", "now")}
@@ -230,7 +239,8 @@ function PoolWindowCard({
           return (
             <View
               key={member.account.key}
-              className={wide ? "h-9 min-w-0 flex-1" : "h-7 min-w-0 flex-1"}
+              style={{ flex: member.weight }}
+              className={wide ? "h-9 min-w-0" : "h-7 min-w-0"}
             />
           );
         const { account, window } = member;
@@ -244,7 +254,8 @@ function PoolWindowCard({
             accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}`}
             accessibilityHint="Show account details"
             onPress={() => openAccount(account)}
-            className={wide ? "h-9 min-w-0 flex-1 rounded-md" : "h-7 min-w-0 flex-1 rounded-md"}
+            style={{ flex: member.weight }}
+            className={wide ? "h-9 min-w-0 rounded-md" : "h-7 min-w-0 rounded-md"}
           >
             <PaceGap timeLeft={timeLeft}>
               <View className="absolute inset-0 rounded-md bg-subtle" />
@@ -600,7 +611,9 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
               ) : null}
               {reset && reset.restoresPercent > 0 ? (
                 <Text className="text-sm text-foreground-muted">
-                  Restores {reset.restoresPercent}% of the pool
+                  {pool?.capacityWeighted || pool?.members.length === 1
+                    ? `Restores ${reset.restoresPercent}% of the pool`
+                    : `Adds ${reset.restoresPercent} points to the account average`}
                 </Text>
               ) : null}
             </View>

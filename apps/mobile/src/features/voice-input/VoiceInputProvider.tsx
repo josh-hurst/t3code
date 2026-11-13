@@ -5,7 +5,6 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { useSyncExternalStore } from "react";
 import { Platform } from "react-native";
 import { Atom, AsyncResult } from "effect/reactivity";
-import { makeMutable } from "react-native-reanimated";
 
 import {
   type MicrophoneEntry,
@@ -23,7 +22,7 @@ import {
   type VoiceTranscriber,
 } from "@t3tools/client-runtime/voice-input";
 import { createLazyVoiceRecorder } from "./lazyVoiceRecorder";
-import { VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
+import { createVoiceAudioLevels } from "./voiceInputMetering";
 import { VoiceInputSession } from "./voiceInputSession";
 import { createVoiceRecordingPermission } from "./voiceRecordingPermission";
 import { cleanUpTranscript, draftSpeechVocabulary, voiceRouteAtom } from "./voiceDestination";
@@ -86,9 +85,7 @@ const voiceInputAtom = Atom.make((get) => {
   // Mounted so the recorder can read and remember microphones synchronously.
   get.mount(mobilePreferencesAtom);
   get.mount(updateMobilePreferencesAtom);
-  const audioLevels = makeMutable<ReadonlyArray<number>>(
-    Array<number>(VOICE_WAVEFORM_SAMPLE_COUNT).fill(0),
-  );
+  const audioLevels = createVoiceAudioLevels();
   let keepAwakeSequence = 0;
   let audioToken: ReturnType<typeof acquireAudioSession> | null = null;
   const permission = createVoiceRecordingPermission(() => {

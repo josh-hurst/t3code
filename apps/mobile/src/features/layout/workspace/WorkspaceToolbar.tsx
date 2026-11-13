@@ -80,11 +80,20 @@ export function WorkspaceToolbar(props: {
     searchRef.current?.focus();
     return true;
   };
-  const cancelSearch = () => workspace.cancelSearch(selectedTab);
-  const searchFocused = () =>
-    tab.searchMode === "resting"
-      ? enterSearch()
-      : workspace.dispatch({ type: "search", tab: selectedTab });
+  const cancelSearch = () => {
+    // Closing the field does not always clear its native text, and reopening would show it.
+    searchRef.current?.clearText();
+    workspace.cancelSearch(selectedTab);
+  };
+  const searchFocused = () => {
+    if (tab.searchMode !== "resting") {
+      workspace.dispatch({ type: "search", tab: selectedTab });
+      return;
+    }
+    // A fresh search has no query; drop text the field kept from the last one.
+    searchRef.current?.clearText();
+    enterSearch();
+  };
   useHardwareKeyboardCommand("focusSearch", focusSearch);
   // Home draws the Settings list under the `Settings` route, which holds navigation focus.
   const settingsListOnTop = useNavigationState(

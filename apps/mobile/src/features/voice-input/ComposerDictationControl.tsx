@@ -1,6 +1,15 @@
 import type { VoiceInputPhase, VoiceInputState } from "@t3tools/client-runtime/voice-input";
-import { memo, useState, type ReactNode } from "react";
-import { Linking, Pressable, Text as SystemText, View, type LayoutChangeEvent } from "react-native";
+import { useIsFocused } from "@react-navigation/native";
+import { memo, useEffect, useState, type ReactNode } from "react";
+import {
+  Animated as NativeAnimated,
+  Easing as NativeEasing,
+  Linking,
+  Pressable,
+  Text as SystemText,
+  View,
+  type LayoutChangeEvent,
+} from "react-native";
 import Animated, {
   Easing,
   ReduceMotion,
@@ -9,7 +18,6 @@ import Animated, {
   useReducedMotion,
   withTiming,
   type EntryExitAnimationFunction,
-  type SharedValue,
 } from "react-native-reanimated";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
@@ -19,7 +27,8 @@ import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSi
 import { cn } from "../../lib/cn";
 import type { VoiceComposerPresentation } from "./voiceInputPresentation";
 import { useVoiceTranscriptPreview } from "./VoiceInputProvider";
-import { VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
+import { VOICE_WAVEFORM_SAMPLE_COUNT, type VoiceAudioLevels } from "./voiceInputMetering";
+import { useAppActive, useReduceMotionEnabled } from "../../lib/appState";
 
 const DICTATION_TIMING = {
   duration: 220,
@@ -80,8 +89,9 @@ const WAVEFORM_MIN_BAR_HEIGHT = 2;
 const WAVEFORM_BAR_SPACING = 5;
 const WAVEFORM_TIMING = {
   duration: 100,
-  easing: Easing.out(Easing.quad),
-  reduceMotion: ReduceMotion.System,
+  easing: NativeEasing.out(NativeEasing.quad),
+  useNativeDriver: true,
+  isInteraction: false,
 } as const;
 
 export function ComposerDictationDraftContent(props: {
@@ -146,31 +156,50 @@ export function ComposerDictationToolbar(props: {
 }
 
 const WaveformBar = memo(function WaveformBar(props: {
-  readonly audioLevels: SharedValue<ReadonlyArray<number>>;
+  readonly audioLevels: VoiceAudioLevels;
   readonly sampleIndex: number;
   readonly height?: number;
+  readonly active: boolean;
+  readonly reducedMotion: boolean;
 }) {
-  const { audioLevels, sampleIndex } = props;
+  const { audioLevels, sampleIndex, active, reducedMotion } = props;
   const height = props.height ?? WAVEFORM_BAR_HEIGHT;
-  const animatedStyle = useAnimatedStyle(() => {
-    const level = audioLevels.value[sampleIndex] ?? 0;
-    return {
-      opacity: withTiming(0.22 + level * 0.78, WAVEFORM_TIMING),
-      transform: [
-        {
-          scaleY: withTiming(
-            (WAVEFORM_MIN_BAR_HEIGHT + level * (height - WAVEFORM_MIN_BAR_HEIGHT)) / height,
-            WAVEFORM_TIMING,
-          ),
-        },
-      ],
+  const [level] = useState(() => new NativeAnimated.Value(0));
+
+  // Native-driven transforms avoid Reanimated shadow-tree commits for every waveform frame.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes visible bars to recorder samples and disposes their native animations when hidden
+  useEffect(() => {
+    if (!active) return;
+    let previous = audioLevels.getSnapshot()[sampleIndex] ?? 0;
+    level.setValue(previous);
+    const unsubscribe = audioLevels.subscribe(() => {
+      const next = audioLevels.getSnapshot()[sampleIndex] ?? 0;
+      if (next === previous) return;
+      previous = next;
+      if (reducedMotion) level.setValue(next);
+      else NativeAnimated.timing(level, { ...WAVEFORM_TIMING, toValue: next }).start();
+    });
+    return () => {
+      unsubscribe();
+      level.stopAnimation();
     };
-  });
+  }, [active, audioLevels, level, reducedMotion, sampleIndex]);
 
   return (
-    <Animated.View
+    <NativeAnimated.View
       className="w-0.5 rounded-full bg-foreground"
-      style={[{ height }, animatedStyle]}
+      style={{
+        height,
+        opacity: level.interpolate({ inputRange: [0, 1], outputRange: [0.22, 1] }),
+        transform: [
+          {
+            scaleY: level.interpolate({
+              inputRange: [0, 1],
+              outputRange: [WAVEFORM_MIN_BAR_HEIGHT / height, 1],
+            }),
+          },
+        ],
+      }}
     />
   );
 });
@@ -179,8 +208,11 @@ const COMPACT_WAVEFORM_BAR_COUNT = 8;
 const COMPACT_WAVEFORM_BAR_HEIGHT = 14;
 
 export const CompactVoiceWaveform = memo(function CompactVoiceWaveform(props: {
-  readonly audioLevels: SharedValue<ReadonlyArray<number>>;
+  readonly audioLevels: VoiceAudioLevels;
+  readonly visible: boolean;
 }) {
+  const active = useAppActive() && props.visible;
+  const reducedMotion = useReduceMotionEnabled();
   return (
     <View
       accessibilityElementsHidden
@@ -192,6 +224,8 @@ export const CompactVoiceWaveform = memo(function CompactVoiceWaveform(props: {
         <WaveformBar
           key={index}
           audioLevels={props.audioLevels}
+          active={active}
+          reducedMotion={reducedMotion}
           height={COMPACT_WAVEFORM_BAR_HEIGHT}
           sampleIndex={VOICE_WAVEFORM_SAMPLE_COUNT - COMPACT_WAVEFORM_BAR_COUNT + index}
         />
@@ -201,8 +235,11 @@ export const CompactVoiceWaveform = memo(function CompactVoiceWaveform(props: {
 });
 
 const VoiceWaveform = memo(function VoiceWaveform(props: {
-  readonly audioLevels: SharedValue<ReadonlyArray<number>>;
+  readonly audioLevels: VoiceAudioLevels;
+  readonly visible: boolean;
 }) {
+  const active = useAppActive() && props.visible;
+  const reducedMotion = useReduceMotionEnabled();
   const [barCount, setBarCount] = useState(0);
   const handleLayout = (event: LayoutChangeEvent) => {
     setBarCount(
@@ -228,6 +265,8 @@ const VoiceWaveform = memo(function VoiceWaveform(props: {
         <WaveformBar
           key={index}
           audioLevels={props.audioLevels}
+          active={active}
+          reducedMotion={reducedMotion}
           sampleIndex={VOICE_WAVEFORM_SAMPLE_COUNT - barCount + index}
         />
       ))}
@@ -371,11 +410,12 @@ export function ComposerDictationPreview(props: { readonly ownerKey: string | nu
 }
 
 export function ComposerDictationStatus(props: {
-  readonly audioLevels: SharedValue<ReadonlyArray<number>>;
+  readonly audioLevels: VoiceAudioLevels;
   readonly elapsedSeconds: number;
   readonly phase: VoiceInputPhase;
   readonly presentation: VoiceComposerPresentation;
 }) {
+  const focused = useIsFocused();
   const recording = props.phase === "recording";
   const waveformStyle = useAnimatedStyle(() => ({
     opacity: withTiming(recording ? 1 : 0, DICTATION_TIMING),
@@ -397,7 +437,7 @@ export function ComposerDictationStatus(props: {
           className="absolute inset-0 min-w-0 flex-row items-center gap-2 px-1"
           style={waveformStyle}
         >
-          <VoiceWaveform audioLevels={props.audioLevels} />
+          <VoiceWaveform audioLevels={props.audioLevels} visible={recording && focused} />
           <DictationElapsedTime className="text-foreground-muted" seconds={props.elapsedSeconds} />
         </Animated.View>
         <Animated.View className="absolute inset-0 justify-center px-2" style={labelStyle}>

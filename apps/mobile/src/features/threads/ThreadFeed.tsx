@@ -153,9 +153,14 @@ import { splitMarkdownDetails } from "../../lib/markdownDetails";
 import { markdownReferenceDefinitions, withReferenceDefinitions } from "../../lib/markdownDocument";
 import { hasWideMarkdownBlock } from "../../lib/wideMarkdownBlocks";
 import {
+  markdownInlineImageHeroes,
+  markdownWithImageGalleries,
+} from "../../lib/markdownImageSources";
+import {
   SelectableMarkdownText,
   type MarkdownFileContextMenu,
   type MarkdownImageRenderer,
+  type MarkdownImageRequest,
   type MarkdownImageSourceResolver,
   type MarkdownLinkCustomization,
   type NativeMarkdownTextStyle,
@@ -1153,19 +1158,37 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   const models = useModelMentions(props.environmentId, props.markdown);
   const liveMarkdown = useLiveThreadLinkLabels(props.markdown, props.environmentId);
   const threadIcons = useThreadChipIcons(props.environmentId, liveMarkdown);
+  const renderedMarkdown = useMemo(() => markdownWithImageGalleries(liveMarkdown), [liveMarkdown]);
+  const imageSwaps = useMemo(() => markdownInlineImageHeroes(renderedMarkdown), [renderedMarkdown]);
+  // Keyed by the image paragraph's own href; an inline thumbnail tap shows that thumbnail there.
+  const [shownImages, setShownImages] = useState<ReadonlyMap<string, MarkdownImageRequest>>(
+    () => new Map(),
+  );
   const linkHandlers: MarkdownLinkHandlers = {
     ...props.linkHandlers,
     linkCustomization: (href) =>
       withChipIcon(props.linkHandlers.linkCustomization?.(href), threadIcons.get(href)),
+    onImagePress: (href) => {
+      const swap = imageSwaps.get(href);
+      if (!swap) {
+        props.linkHandlers.onImagePress?.(href);
+        return;
+      }
+      setShownImages((current) =>
+        new Map(current).set(swap.hero, { href, alt: swap.alt, title: swap.title }),
+      );
+    },
   };
+  const renderImage: MarkdownImageRenderer = (image) =>
+    props.renderImage(shownImages.get(image.href) ?? image);
 
   return (
     <AssistantMarkdownBlocks
-      markdown={liveMarkdown}
+      markdown={renderedMarkdown}
       markdownStyles={props.markdownStyles}
       linkHandlers={linkHandlers}
       onUseArtifactTemplate={props.onUseArtifactTemplate}
-      renderImage={props.renderImage}
+      renderImage={renderImage}
       skills={props.skills}
       models={models}
     />

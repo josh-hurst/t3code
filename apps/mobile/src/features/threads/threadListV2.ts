@@ -360,8 +360,19 @@ export interface ThreadListV2Item {
   readonly isLast: boolean;
 }
 
+/** A project folder's threads start at `headerIndex` in the layout's items. */
+export interface ThreadListV2Folder {
+  readonly key: string;
+  readonly title: string;
+  readonly count: number;
+  readonly collapsed: boolean;
+  readonly headerIndex: number;
+}
+
 export interface ThreadListV2Layout {
   readonly items: ThreadListV2Item[];
+  /** Project folders that hold the active threads, in order; empty when folders are off. */
+  readonly folders: ReadonlyArray<ThreadListV2Folder>;
   readonly hiddenSettledCount: number;
   /** The settled rows the shelf may list, before its visible limit. */
   readonly listedSettledThreads: ReadonlyArray<EnvironmentThreadShell>;
@@ -407,6 +418,16 @@ export interface ThreadListV2WorkingShelfListItem {
   readonly disabled: boolean;
 }
 
+export interface ThreadListV2FolderListItem {
+  readonly type: "v2-folder";
+  readonly key: string;
+  readonly folderKey: string;
+  readonly title: string;
+  readonly count: number;
+  readonly expanded: boolean;
+  readonly disabled: boolean;
+}
+
 export interface ThreadListV2SnoozedShelfListItem {
   readonly type: "v2-snoozed-shelf";
   readonly key: "v2-snoozed-shelf";
@@ -428,6 +449,7 @@ export type ThreadListV2ListItem =
   | ThreadListV2ThreadListItem
   | ThreadListV2PendingListItem
   | ThreadListV2WorkingShelfListItem
+  | ThreadListV2FolderListItem
   | ThreadListV2SnoozedShelfListItem
   | ThreadListV2SettledShelfListItem;
 
@@ -438,6 +460,7 @@ export function isThreadListV2ListItem(value: {
     value.type === "v2-thread" ||
     value.type === "v2-pending" ||
     value.type === "v2-working-shelf" ||
+    value.type === "v2-folder" ||
     value.type === "v2-snoozed-shelf" ||
     value.type === "v2-settled-shelf"
   );
@@ -477,6 +500,15 @@ export function threadListV2ListItemsAreEqual(
     case "v2-working-shelf":
       return (
         previous.type === "v2-working-shelf" &&
+        previous.count === item.count &&
+        previous.expanded === item.expanded &&
+        previous.disabled === item.disabled
+      );
+    case "v2-folder":
+      return (
+        previous.type === "v2-folder" &&
+        previous.key === item.key &&
+        previous.title === item.title &&
         previous.count === item.count &&
         previous.expanded === item.expanded &&
         previous.disabled === item.disabled
@@ -521,6 +553,7 @@ function resolveThreadListV2ItemTimeLabel(
 export function buildThreadListV2ListItems(input: {
   readonly items: ReadonlyArray<ThreadListV2Item>;
   readonly pendingTasks: ReadonlyArray<PendingNewTask>;
+  readonly folders?: ReadonlyArray<ThreadListV2Folder>;
   readonly workingCount?: number;
   readonly workingShelfExpanded?: boolean;
   readonly workingShelfHeaderIndex?: number | null;
@@ -584,8 +617,31 @@ export function buildThreadListV2ListItems(input: {
   const snoozedEnd = settledShelfHeaderIndex ?? threadItems.length;
   const workingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
   const activeEnd = workingShelfHeaderIndex ?? workingEnd;
-  const result: ThreadListV2ListItem[] = [...pendingItems, ...threadItems.slice(0, activeEnd)];
   const shelfDisabled = input.shelfPreferencesLoading === true;
+  const result: ThreadListV2ListItem[] = [...pendingItems];
+  const folders = input.folders ?? [];
+  let folderIndex = 0;
+  // A collapsed folder can hold no rows, so several headers may share an index.
+  const pushFoldersAt = (index: number) => {
+    while (folderIndex < folders.length && folders[folderIndex]!.headerIndex <= index) {
+      const folder = folders[folderIndex]!;
+      result.push({
+        type: "v2-folder",
+        key: `v2-folder:${folder.key}`,
+        folderKey: folder.key,
+        title: folder.title,
+        count: folder.count,
+        expanded: !folder.collapsed,
+        disabled: shelfDisabled,
+      });
+      folderIndex += 1;
+    }
+  };
+  for (let index = 0; index < activeEnd; index += 1) {
+    pushFoldersAt(index);
+    result.push(threadItems[index]!);
+  }
+  pushFoldersAt(activeEnd);
   if (workingShelfHeaderIndex !== null && workingCount > 0) {
     result.push({
       type: "v2-working-shelf",
@@ -669,6 +725,19 @@ export function buildThreadListV2Items(input: {
   readonly inboxReturnAt?: (thread: EnvironmentThreadShell) => number | undefined;
   readonly snoozedShelfExpanded?: boolean;
   readonly settledShelfExpanded?: boolean;
+  /**
+   * Set to group active threads into these project folders, in order. A thread whose
+   * project is in no folder is left out, as in the web sidebar.
+   */
+  readonly projectFolders?: ReadonlyArray<{
+    readonly key: string;
+    readonly title: string;
+    readonly projectRefs: ReadonlyArray<{
+      readonly environmentId: EnvironmentId;
+      readonly projectId: ProjectId;
+    }>;
+  }> | null;
+  readonly collapsedFolderKeys?: ReadonlySet<string>;
   readonly selectedThreadKey?: string | null;
   readonly queuedThreadKeys?: ReadonlySet<string>;
   /** Whether the shelf may list a settled row yet; older settled rows load in pages. */
@@ -786,6 +855,7 @@ export function buildThreadListV2Items(input: {
         wokeAt: slim.has(thread) ? null : resolveThreadListV2WokeAt(thread, { now }),
         isLast: index === results.length - 1,
       })),
+      folders: [],
       hiddenSettledCount: 0,
       listedSettledThreads: [],
       workingCount: 0,
@@ -799,9 +869,12 @@ export function buildThreadListV2Items(input: {
     };
   }
 
-  const orderedActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
-    : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
+  const projectFolders = input.projectFolders ?? null;
+  // Folders keep the hand order, not the inbox's return order.
+  const orderedActive =
+    workingShelfEnabled && projectFolders === null
+      ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
+      : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
   const orderedWorking = sortWorkingThreadsBySend(working);
   const orderedSnoozed = [...snoozed].sort(
     (left, right) =>
@@ -860,7 +933,7 @@ export function buildThreadListV2Items(input: {
       isLast: false,
     });
   }
-  for (const thread of orderedActive) {
+  const pushActive = (thread: EnvironmentThreadShell) =>
     items.push({
       thread,
       variant: "card",
@@ -868,6 +941,38 @@ export function buildThreadListV2Items(input: {
       pinned: false,
       wokeAt: resolveThreadListV2WokeAt(thread, { now }),
       isLast: false,
+    });
+  const folders: ThreadListV2Folder[] = [];
+  if (projectFolders === null) {
+    for (const thread of orderedActive) pushActive(thread);
+  } else {
+    const threadsByFolder = projectFolders.map(() => [] as EnvironmentThreadShell[]);
+    const folderIndexByProject = new Map<string, number>();
+    projectFolders.forEach((folder, index) => {
+      for (const ref of folder.projectRefs) {
+        folderIndexByProject.set(`${ref.environmentId}:${ref.projectId}`, index);
+      }
+    });
+    for (const thread of orderedActive) {
+      const index = folderIndexByProject.get(`${thread.environmentId}:${thread.projectId}`);
+      if (index !== undefined) threadsByFolder[index]!.push(thread);
+    }
+    projectFolders.forEach((folder, index) => {
+      const threads = threadsByFolder[index]!;
+      if (threads.length === 0) return;
+      const collapsed = input.collapsedFolderKeys?.has(folder.key) === true;
+      folders.push({
+        key: folder.key,
+        title: folder.title,
+        count: threads.length,
+        collapsed,
+        headerIndex: items.length,
+      });
+      for (const thread of threads) {
+        if (!collapsed || `${thread.environmentId}:${thread.id}` === selectedThreadKey) {
+          pushActive(thread);
+        }
+      }
     });
   }
   const workingShelfHeaderIndex = orderedWorking.length > 0 ? items.length : null;
@@ -909,6 +1014,7 @@ export function buildThreadListV2Items(input: {
   }
   return {
     items,
+    folders,
     hiddenSettledCount: Math.max(0, settledTotal - pagedSettled.length),
     listedSettledThreads: listedSettled,
     workingCount: orderedWorking.length,

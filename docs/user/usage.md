@@ -112,8 +112,15 @@ setting removes it from `settings.json`.
 
 **Usage → Limits** pools every subscription account it can see per provider, so with several Codex
 or Claude accounts across your enabled environments and hubs you read one number per window rather than a
-list. Each window card shows how much of the pool is left and a bar with one segment per account,
-kept in the same column across windows. Accounts are ordered by their next 5-hour refill, soonest
+list. For known subscription tiers, the total, segment widths, pace, and reset contributions
+are weighted by plan allowance: Codex Plus, Pro 100, and Pro 200 use 1×, 5×, and 20×;
+Claude Pro, Max, and Ultra use 1×, 5×, and 10×. Each account's own percentage stays relative to
+its allowance. If a tier is unknown, the cards say **average left** and count accounts equally
+instead of presenting a combined allowance. Hubs that only report a generic subscription name
+use this account average.
+
+Each window has a bar with one segment per account, kept in the same column across windows.
+Accounts are ordered by their next 5-hour refill, soonest
 first. For an account with no weekly quota left, this is when its session becomes usable again.
 The first available window is used when no account reports a 5-hour limit. A gap means the
 account does not report that window. When the provider reports reset times, the card also says

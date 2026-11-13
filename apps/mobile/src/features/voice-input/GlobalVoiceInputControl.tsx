@@ -177,7 +177,7 @@ function EdgeDictationPill(props: {
             </Pressable>
             {phase === "recording" ? (
               <>
-                <CompactVoiceWaveform audioLevels={voice.audioLevels} />
+                <CompactVoiceWaveform audioLevels={voice.audioLevels} visible={expanded} />
                 <DictationElapsedTime
                   className="text-foreground-muted"
                   seconds={voice.elapsedSeconds}

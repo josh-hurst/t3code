@@ -132,6 +132,7 @@ function SegmentPopover({
   account,
   window,
   reset,
+  accountAverage,
   now,
   redeem,
   onRedeem,
@@ -139,6 +140,7 @@ function SegmentPopover({
   readonly account: LimitAccount;
   readonly window: LimitPoolMember["window"];
   readonly reset: LimitPoolWindow["resets"][number] | undefined;
+  readonly accountAverage: boolean;
   readonly now: number;
   readonly redeem: ReturnType<typeof useResetCredit> | null;
   readonly onRedeem: (choice: ResetCreditChoice) => void;
@@ -190,7 +192,11 @@ function SegmentPopover({
         ) : null}
         {timeLeft !== null ? <Row label="Even pace">{timeLeft}% left by now</Row> : null}
         {reset && reset.restoresPercent > 0 ? (
-          <Row label="Restores">+{reset.restoresPercent}% of pool</Row>
+          <Row label="Restores">
+            {accountAverage
+              ? `+${reset.restoresPercent} points to the account average`
+              : `+${reset.restoresPercent}% of pool`}
+          </Row>
         ) : null}
       </div>
       {choices.length > 0 && redeem ? (
@@ -285,11 +291,13 @@ function PoolSegment({
   readonly account: LimitAccount;
   readonly window: LimitPoolMember["window"];
   readonly reset: LimitPoolWindow["resets"][number] | undefined;
+  readonly accountAverage: boolean;
   readonly refillPercent: number;
   readonly color: string;
   readonly now: number;
   readonly index: number;
   readonly showAccountName: boolean;
+  readonly compact: boolean;
 }) {
   return account.redeem ? (
     <RedeemableSegment account={account} redeemAt={account.redeem} {...props} />
@@ -330,21 +338,24 @@ function SegmentTriggers({
   account,
   window,
   reset,
+  accountAverage,
   redeem,
   refillPercent,
   color,
   now,
   index,
   showAccountName,
+  compact,
 }: SegmentPayload & {
   readonly refillPercent: number;
   readonly color: string;
   readonly now: number;
   readonly index: number;
   readonly showAccountName: boolean;
+  readonly compact: boolean;
 }) {
   const popover = use(SegmentPopoverContext) ?? undefined;
-  const payload: SegmentPayload = { account, window, reset, redeem };
+  const payload: SegmentPayload = { account, window, reset, redeem, accountAverage };
   const remaining = remainingPercent(window);
   const timeLeft = paceRemainingPercent(window, now);
   const [segmentRef, paceMark] = usePaceMark(timeLeft);
@@ -395,11 +406,19 @@ function SegmentTriggers({
         ) : null}
         <span
           aria-hidden
-          className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-md text-3xs leading-none font-semibold text-foreground/80 tabular-nums @2xl/pool:hidden"
+          className={cn(
+            "absolute inset-0 flex items-center justify-center overflow-hidden rounded-md text-3xs leading-none font-semibold text-foreground/80 tabular-nums",
+            !compact && "@2xl/pool:hidden",
+          )}
         >
           {index}
         </span>
-        <div className="relative hidden h-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs @2xl/pool:flex">
+        <div
+          className={cn(
+            "relative hidden h-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs",
+            !compact && "@2xl/pool:flex",
+          )}
+        >
           {showAccountName ? (
             <AccountName
               account={account}
@@ -432,7 +451,7 @@ function SegmentTriggers({
           ) : null}
         </div>
       </PopoverTrigger>
-      <LegendRow payload={payload} color={color} now={now} index={index} />
+      <LegendRow payload={payload} color={color} now={now} index={index} compact={compact} />
     </>
   );
 }
@@ -442,11 +461,13 @@ function LegendRow({
   color,
   now,
   index,
+  compact,
 }: {
   readonly payload: SegmentPayload;
   readonly color: string;
   readonly now: number;
   readonly index: number;
+  readonly compact: boolean;
 }) {
   const popover = use(SegmentPopoverContext) ?? undefined;
   const { account, window } = payload;
@@ -459,7 +480,7 @@ function LegendRow({
       payload={payload}
       style={{ gridColumn: "1 / -1", gridRow: index + 1 }}
       render={<Button variant="ghost" size="compact" />}
-      className="min-w-0 @2xl/pool:hidden"
+      className={cn("min-w-0", !compact && "@2xl/pool:hidden")}
     >
       <span className="relative inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-3xs leading-none font-semibold text-foreground/80 tabular-nums">
         <span
@@ -504,11 +525,16 @@ function PoolBar({
   readonly now: number;
 }) {
   const restores = new Map(pool.resets.map((reset) => [reset.member.account.key, reset]));
+  const compact = pool.columns.some((column) => column.weight !== pool.columns[0]?.weight);
   return (
     <div className="@container/pool min-w-0">
       <div
         className="grid gap-x-1 gap-y-1"
-        style={{ gridTemplateColumns: `repeat(${pool.columns.length}, minmax(0, 1fr))` }}
+        style={{
+          gridTemplateColumns: pool.columns
+            .map((column) => `minmax(0, ${column.weight}fr)`)
+            .join(" "),
+        }}
       >
         {pool.columns.map((member, position) =>
           member.window ? (
@@ -517,11 +543,13 @@ function PoolBar({
               account={member.account}
               window={member.window}
               reset={restores.get(member.account.key)}
+              accountAverage={pool.members.length > 1 && !pool.capacityWeighted}
               refillPercent={member.refillPercent}
               color={normalizeProviderAccentColor(member.account.accentColor) ?? color}
               now={now}
               index={position + 1}
               showAccountName={pool.columns.length > 1}
+              compact={compact}
             />
           ) : pool.kind === "monthly" && member.account.limits.zeroSpendCap ? (
             <div
@@ -556,6 +584,7 @@ function PoolWindowCard({
   readonly description?: string | undefined;
 }) {
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
+  const accountAverage = pool.members.length > 1 && !pool.capacityWeighted;
   return (
     <div className="grid items-center gap-x-6 gap-y-3 rounded-lg border border-border/60 p-4 md:grid-cols-[11rem_minmax(0,1fr)]">
       <div className="flex flex-col gap-1">
@@ -567,14 +596,18 @@ function PoolWindowCard({
             {pool.remainingPercent}%
           </span>
           <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-            <span>left</span>
+            <span>{accountAverage ? "average left" : "left"}</span>
             {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
           </span>
         </span>
         {nextRefill && pool.columns.length > 1 ? (
           <span className="text-xs font-medium text-foreground tabular-nums">
-            ↻ +{nextRefill.restoresPercent}%
+            ↻ +{nextRefill.restoresPercent}
+            {accountAverage ? " points" : "%"}
           </span>
+        ) : null}
+        {accountAverage ? (
+          <span className="text-xs text-muted-foreground">Accounts weighted equally.</span>
         ) : null}
       </div>
       <PoolBar pool={pool} color={color} now={now} />

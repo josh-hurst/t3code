@@ -40,6 +40,8 @@ import {
   enrichedLinkVariantPattern,
 } from "../lib/enrichedLinkPresentation";
 
+const INLINE_IMAGE_SIZE = 28;
+
 function enrichedStyle(
   style: SelectableMarkdownTextProps["textStyle"],
   dark: boolean,
@@ -75,6 +77,9 @@ function enrichedStyle(
   };
   return {
     paragraph: body,
+    // React draws image paragraphs; this radius only rounds inline thumbnails (and list/table images).
+    image: { borderRadius: INLINE_IMAGE_SIZE / 2 },
+    inlineImage: { size: INLINE_IMAGE_SIZE },
     math: {
       fontSize: style.fontSize,
       color: style.color,

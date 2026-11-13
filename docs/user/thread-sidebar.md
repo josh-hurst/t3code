@@ -184,6 +184,11 @@ within its folder to reorder it, or drag a folder to reorder the folders, which 
 folder, or drag a thread onto it to mention the thread. Threads cannot be dragged into another
 folder, or pinned and settled by dragging, in this mode. Each device keeps its own choice.
 
+On mobile, turn on **Settings → Labs → Group by project**. Folders follow the project filter's
+order, and a project with no active threads has no folder. Tap a folder to open or close it; a
+closed folder shows how many threads it holds. Move up and Move down are off in this mode;
+**Arrange threads…** in a thread's menu still reorders them.
+
 ### Choose what shows under a thread's title
 
 **Settings → General → Thread row details** sets the line under each thread's title on web and

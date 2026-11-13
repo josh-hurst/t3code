@@ -573,6 +573,82 @@ describe("buildThreadListV2Items", () => {
 
     expect(items.map((item) => item.thread.id)).toEqual(["local", "remote"]);
   });
+
+  it("groups active threads into project folders below pinned and above the shelves", () => {
+    const remoteEnvironmentId = EnvironmentId.make("environment-remote");
+    const app = ProjectId.make("app");
+    const docs = ProjectId.make("docs");
+    const layout = buildThreadListV2Items({
+      threads: [
+        makeThread({
+          id: ThreadId.make("pinned"),
+          projectId: docs,
+          title: "Pinned",
+          pinnedAt: NOW,
+        }),
+        makeThread({ id: ThreadId.make("docs-open"), projectId: docs, title: "Docs open" }),
+        makeThread({ id: ThreadId.make("docs-other"), projectId: docs, title: "Docs other" }),
+        makeThread({
+          environmentId: remoteEnvironmentId,
+          id: ThreadId.make("app-remote"),
+          projectId: app,
+          title: "App remote",
+        }),
+        makeThread({ id: ThreadId.make("unknown"), projectId: ProjectId.make("gone"), title: "?" }),
+        makeThread({
+          id: ThreadId.make("settled"),
+          projectId: app,
+          title: "Settled",
+          settledOverride: "settled",
+          settledAt: NOW,
+        }),
+      ],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      projectFolders: [
+        {
+          key: "app",
+          title: "App",
+          projectRefs: [
+            { environmentId, projectId: app },
+            { environmentId: remoteEnvironmentId, projectId: app },
+          ],
+        },
+        { key: "docs", title: "Docs", projectRefs: [{ environmentId, projectId: docs }] },
+        { key: "empty", title: "Empty", projectRefs: [] },
+      ],
+      collapsedFolderKeys: new Set(["docs"]),
+      selectedThreadKey: `${environmentId}:docs-open`,
+    });
+
+    expect(layout.items.map((item) => item.thread.id)).toEqual([
+      "pinned",
+      "app-remote",
+      "docs-open",
+      "settled",
+    ]);
+    expect(layout.folders).toEqual([
+      { key: "app", title: "App", count: 1, collapsed: false, headerIndex: 1 },
+      { key: "docs", title: "Docs", count: 2, collapsed: true, headerIndex: 2 },
+    ]);
+    const listItems = buildThreadListV2ListItems({
+      items: layout.items,
+      pendingTasks: [],
+      folders: layout.folders,
+      settledCount: layout.settledCount,
+      settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
+    });
+    expect(listItems.map((item) => item.key)).toEqual([
+      `v2-thread:${environmentId}:pinned`,
+      "v2-folder:app",
+      `v2-thread:${remoteEnvironmentId}:app-remote`,
+      "v2-folder:docs",
+      `v2-thread:${environmentId}:docs-open`,
+      "v2-settled-shelf",
+      `v2-thread:${environmentId}:settled`,
+    ]);
+  });
 });
 
 describe("buildThreadListV2Items settled paging", () => {

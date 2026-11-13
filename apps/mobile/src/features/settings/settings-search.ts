@@ -115,6 +115,9 @@ const SETTINGS_SEARCH_TERMS = {
     "link machine",
     "fast worktree checkout",
     "clone cache",
+    "group by project",
+    "project folders",
+    "boring sidebar",
   ],
   SettingsEnvironmentMaintenance: ["updates", "provider updates", "restart", "manage environments"],
   SettingsAbout: [

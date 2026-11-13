@@ -1,5 +1,28 @@
 export const VOICE_WAVEFORM_SAMPLE_COUNT = 64;
 
+export function createVoiceAudioLevels() {
+  let levels: ReadonlyArray<number> = Array<number>(VOICE_WAVEFORM_SAMPLE_COUNT).fill(0);
+  const listeners = new Set<() => void>();
+  return {
+    getSnapshot: () => levels,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    set: (next: ReadonlyArray<number>) => {
+      levels = next;
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
+export type VoiceAudioLevels = Pick<
+  ReturnType<typeof createVoiceAudioLevels>,
+  "getSnapshot" | "subscribe"
+>;
+
 const VOICE_NOISE_FLOOR_DECIBELS = -60;
 const VOICE_NOISE_FLOOR_AMPLITUDE = 10 ** (VOICE_NOISE_FLOOR_DECIBELS / 20);
 

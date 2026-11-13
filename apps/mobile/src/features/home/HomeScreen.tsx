@@ -70,6 +70,7 @@ import { threadListEnvironmentsAtom } from "../../state/presentation";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import {
+  ThreadListV2FolderHeader,
   ThreadListV2PendingRow,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
@@ -91,6 +92,7 @@ import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeProjectScopes,
   findHomeProjectScope,
+  resolveHomeProjectFolders,
   type HomeProjectSortOrder,
 } from "./homeThreadList";
 import { createSwipeRowActivation } from "./swipe-row-activation";
@@ -386,7 +388,15 @@ export function HomeScreen(props: HomeScreenProps) {
     toggleSettledShelf,
     toggleSnoozedShelf,
     toggleWorkingShelf,
+    projectFoldersEnabled,
+    collapsedFolderKeys,
+    toggleFolder,
   } = useThreadListV2ShelfPreferences();
+  const projectFolders = useMemo(
+    () =>
+      projectFoldersEnabled ? resolveHomeProjectFolders(projectScopes, v2ScopedProjectGroup) : null,
+    [projectFoldersEnabled, projectScopes, v2ScopedProjectGroup],
+  );
   const now = useThreadListNow(props.threads);
   const listEnvironments = useAtomValue(threadListEnvironmentsAtom);
   const {
@@ -428,6 +438,8 @@ export function HomeScreen(props: HomeScreenProps) {
     workingShelfExpanded,
     snoozedShelfExpanded,
     settledShelfExpanded,
+    projectFolders,
+    collapsedFolderKeys,
     selectedThreadKey,
   });
   // Called as `props.onSelectThread(...)`, the compiler would cache this handler on the whole
@@ -495,6 +507,18 @@ export function HomeScreen(props: HomeScreenProps) {
           disabled={item.disabled}
           expanded={item.expanded}
           onToggle={toggleWorkingShelf}
+        />
+      );
+    }
+    if (item.type === "v2-folder") {
+      return (
+        <ThreadListV2FolderHeader
+          folderKey={item.folderKey}
+          title={item.title}
+          count={item.count}
+          disabled={item.disabled}
+          expanded={item.expanded}
+          onToggle={toggleFolder}
         />
       );
     }

@@ -440,8 +440,11 @@ export interface LimitPoolWindow {
   readonly kind: ServerProviderUsageWindow["kind"];
   readonly label: string;
   readonly members: readonly LimitPoolMember[];
+  readonly capacityWeighted: boolean;
   readonly columns: ReadonlyArray<
-    LimitPoolMember | { readonly account: LimitAccount; readonly window: null }
+    (LimitPoolMember | { readonly account: LimitAccount; readonly window: null }) & {
+      readonly weight: number;
+    }
   >;
   readonly remainingPercent: number;
   readonly usedPercent: number;
@@ -553,6 +556,9 @@ const CLAUDE_SESSION_CAPACITY: Record<string, number> = { Pro: 1, Max: 5, Ultra:
 
 function planCapacity(account: LimitAccount, kind: ServerProviderUsageWindow["kind"]) {
   if (!account.plan) return undefined;
+  const subscriptionCapacity = SUBSCRIPTION_CAPACITY.get(`${account.driver}:${account.plan}`);
+  if (subscriptionCapacity !== undefined && (kind === "session" || kind === "weekly"))
+    return subscriptionCapacity;
   if (account.driver === "codex" && (kind === "session" || kind === "weekly")) {
     return CODEX_PLAN_CAPACITY[account.plan];
   }
@@ -611,6 +617,15 @@ function poolMember(account: LimitAccount, reported: ServerProviderUsageWindow, 
   };
 }
 
+const SUBSCRIPTION_CAPACITY = new Map([
+  ["codex:ChatGPT Plus Subscription", 1],
+  ["codex:ChatGPT Pro 100 Subscription", 5],
+  ["codex:ChatGPT Pro 200 Subscription", 20],
+  ["claudeAgent:Claude Pro Subscription", 1],
+  ["claudeAgent:Claude Max Subscription", 5],
+  ["claudeAgent:Claude Ultra Subscription", 10],
+]);
+
 function poolWindows(accounts: readonly LimitAccount[], now: number): readonly LimitPoolWindow[] {
   const byKey = new Map<string, LimitPoolMember[]>();
   for (const account of accounts) {
@@ -630,21 +645,23 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
     const memberByAccount = new Map(members.map((member) => [member.account.key, member]));
     const first = members[0]!.window;
     const id = members[0]!.account.driver === "codex" ? key : first.id;
-    // One unknown plan makes the pool incomparable by plan, so every member then counts once.
-    const capacities = members.map((m) => planCapacity(m.account, first.kind));
-    const weights = capacities.every((capacity) => capacity !== undefined)
-      ? capacities
-      : members.map(() => 1);
-    const weightOf = new Map(members.map((m, index) => [m, weights[index]!]));
-    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+    const capacities = new Map(
+      accounts.map((account) => [account, planCapacity(account, first.kind)]),
+    );
+    const knownCapacities = accounts.every((account) => capacities.get(account) !== undefined);
+    const capacityWeighted =
+      knownCapacities && (first.kind === "session" || first.kind === "weekly");
+    const weight = (account: LimitAccount) => (capacityWeighted ? capacities.get(account)! : 1);
+    const totalWeight = members.reduce((sum, member) => sum + weight(member.account), 0);
     const usedPercent =
-      members.reduce((sum, m) => sum + m.window.usedPercent * weightOf.get(m)!, 0) / totalWeight;
+      members.reduce((sum, member) => sum + member.window.usedPercent * weight(member.account), 0) /
+      totalWeight;
     // Judge pace only for windows with reset clocks; others add spend without elapsed time.
     const timed = members.flatMap((m) => {
       const share = elapsedShare(m.window, now);
       return share === null
         ? []
-        : [{ used: m.window.usedPercent, elapsed: share, weight: weightOf.get(m)! }];
+        : [{ used: m.window.usedPercent, elapsed: share, weight: weight(m.account) }];
     });
     const timedWeight = timed.reduce((sum, t) => sum + t.weight, 0);
     const timedUsed = timed.reduce((sum, t) => sum + t.used * t.weight, 0) / timedWeight;
@@ -662,7 +679,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
                 member,
                 at,
                 restoresPercent: Math.round(
-                  (member.refillPercent * weightOf.get(member)!) / totalWeight,
+                  (member.refillPercent * weight(member.account)) / totalWeight,
                 ),
               },
             ];
@@ -673,9 +690,11 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       kind: first.kind,
       label: first.label,
       members,
-      columns: accounts.map(
-        (account) => memberByAccount.get(account.key) ?? { account, window: null },
-      ),
+      capacityWeighted,
+      columns: accounts.map((account) => ({
+        ...(memberByAccount.get(account.key) ?? { account, window: null }),
+        weight: weight(account),
+      })),
       usedPercent: Math.round(usedPercent),
       remainingPercent: Math.round(100 - usedPercent),
       pace: meanElapsed === null ? null : paceOfShares(timedUsed, meanElapsed),

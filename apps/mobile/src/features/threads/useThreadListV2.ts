@@ -64,9 +64,13 @@ export function useThreadListV2(input: {
   readonly workingShelfExpanded: boolean;
   readonly snoozedShelfExpanded: boolean;
   readonly settledShelfExpanded: boolean;
+  readonly projectFolders: LayoutInput["projectFolders"];
+  readonly collapsedFolderKeys: ReadonlySet<string>;
   readonly selectedThreadKey: string | null;
 }) {
   const { threads, workingShelfEnabled } = input;
+  // Neighbors in the active order can sit in other folders, so rows do not move there.
+  const activeRowsMove = !workingShelfEnabled && input.projectFolders == null;
   const layoutTime = useMemo(
     () => threadListV2LayoutTime({ threads, now: input.now, searchQuery: input.searchQuery }),
     [threads, input.now, input.searchQuery],
@@ -101,7 +105,7 @@ export function useThreadListV2(input: {
       });
     return new Map([
       ...sectionAvailability("pinned"),
-      ...(workingShelfEnabled ? [] : sectionAvailability("active")),
+      ...(activeRowsMove ? sectionAvailability("active") : []),
     ]);
   }, [
     threads,
@@ -112,7 +116,7 @@ export function useThreadListV2(input: {
     input.settlementEnvironmentIds,
     input.snoozeEnvironmentIds,
     input.queuedThreadKeys,
-    workingShelfEnabled,
+    activeRowsMove,
   ]);
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const scopes = useMemo(
@@ -151,6 +155,8 @@ export function useThreadListV2(input: {
         isWorking: inbox.isWorking,
         snoozedShelfExpanded: input.snoozedShelfExpanded,
         settledShelfExpanded: input.settledShelfExpanded,
+        projectFolders: input.projectFolders,
+        collapsedFolderKeys: input.collapsedFolderKeys,
         selectedThreadKey: input.selectedThreadKey,
         isListedSettled: isListed,
         unloadedSettledCount: unloadedCount(
@@ -183,6 +189,8 @@ export function useThreadListV2(input: {
       inbox.isWorking,
       input.snoozedShelfExpanded,
       input.settledShelfExpanded,
+      input.projectFolders,
+      input.collapsedFolderKeys,
       input.selectedThreadKey,
       isListed,
       unloadedCount,
@@ -214,6 +222,7 @@ export function useThreadListV2(input: {
       buildThreadListV2ListItems({
         items: layout.items,
         pendingTasks,
+        folders: layout.folders,
         workingCount: layout.workingCount,
         workingShelfExpanded: input.workingShelfExpanded,
         workingShelfHeaderIndex: layout.workingShelfHeaderIndex,

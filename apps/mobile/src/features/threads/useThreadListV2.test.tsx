@@ -59,6 +59,8 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
     workingShelfExpanded: false,
     snoozedShelfExpanded: false,
     settledShelfExpanded: true,
+    projectFolders: null,
+    collapsedFolderKeys: new Set(),
     selectedThreadKey: null,
   };
   const seen: Array<ReturnType<typeof useThreadListV2>> = [];

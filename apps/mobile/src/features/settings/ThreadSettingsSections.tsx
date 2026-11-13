@@ -43,6 +43,7 @@ export function SettingsLabsRouteScreen() {
         contentContainerClassName="gap-6 px-5 pt-4"
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
+        <ProjectFoldersSettingsSection />
         <MachineBetaSection
           title="Linked environments"
           icon="link"
@@ -235,6 +236,30 @@ export function NewThreadSettingsSection() {
         onValueChange={(value) => savePreferences({ useLastProjectForNewThreads: value })}
       />
     </SettingsSection>
+  );
+}
+
+function ProjectFoldersSettingsSection() {
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const projectFoldersEnabled =
+    AsyncResult.isSuccess(preferences) && preferences.value.projectFoldersEnabled === true;
+
+  return (
+    <View className="gap-3">
+      <SettingsSection title="Beta">
+        <SettingsSwitchRow
+          icon="folder"
+          label="Group by project"
+          value={projectFoldersEnabled}
+          onValueChange={(value) => savePreferences({ projectFoldersEnabled: value })}
+        />
+      </SettingsSection>
+      <Text className="px-2 text-sm text-foreground-muted">
+        Group threads into project folders. Pinned threads stay on top, and Working, Snoozed and
+        Settled stay below the folders.
+      </Text>
+    </View>
   );
 }
 
