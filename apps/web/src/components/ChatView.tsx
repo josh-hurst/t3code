@@ -131,9 +131,14 @@ import { WorkspaceMutationIdContext } from "./chat/ChatMarkdownMedia";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   assistantCitationFromLocation,
+  assistantCitationNavigation,
   useSideChatCitationReveal,
 } from "../lib/assistantCitationNavigation";
-import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
+import {
+  captureAssistantMessageSpan,
+  type AssistantCitationSourceAnchor,
+} from "~/lib/assistantTextSelection";
+import { closingQuestionSpan } from "./chat/awaitingQuestion.logic";
 import { useStore } from "zustand";
 import { shallow } from "zustand/vanilla/shallow";
 import { useShallow } from "zustand/react/shallow";
@@ -2611,6 +2616,25 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
+  // Opens the question like a citation, which scrolls to it and briefly highlights it. Off
+  // screen, or with no question sentence to match, it only scrolls to the end.
+  const showAwaitingQuestion = () => {
+    const messageId = activeThreadShell?.card?.messageId;
+    const message = messageId ? { environmentId, threadId, messageId } : null;
+    const selector =
+      message && awaitingQuestion
+        ? captureAssistantMessageSpan(document, message, (text) =>
+            closingQuestionSpan(text, awaitingQuestion),
+          )
+        : null;
+    if (!message || !selector) {
+      scrollToEnd(true);
+      return;
+    }
+    void navigate(
+      assistantCitationNavigation({ version: 1, ...message, ...selector }, activeThreadShell),
+    );
+  };
   const composerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;
     const defaultSelection =
@@ -2672,7 +2696,7 @@ export default function ChatView(props: ChatViewProps) {
     const awaitingQuestionItems =
       awaitingQuestion === null
         ? []
-        : [awaitingQuestionBannerItem(awaitingQuestion, () => scrollToEnd(true))];
+        : [awaitingQuestionBannerItem(awaitingQuestion, showAwaitingQuestion)];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...feedbackBannerItems,

@@ -110,10 +110,9 @@ export function threadStatusKind(thread: ThreadStatusInput): ThreadStatusKind | 
   ) {
     return "connecting";
   }
-  if (
-    (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) ||
-    backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])
-  ) {
+  // A turn still running, blocked on another thread, outranks the last reply's card: you
+  // already answered that card's question by starting this turn.
+  if (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) {
     return "waiting";
   }
   if (hasUnseenFailure(thread)) return "failed";
@@ -125,8 +124,10 @@ export function threadStatusKind(thread: ThreadStatusInput): ThreadStatusKind | 
   ) {
     return "plan";
   }
-  // An open question outranks "Done": it is what the thread needs, read or not.
+  // A finished reply's open question outranks the background work it left running, and "Done":
+  // it is what the thread needs, read or not.
   if (threadCardHasOpenAsk(thread.card)) return "question";
+  if (backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])) return "waiting";
   if (hasUnseenCompletion(thread)) return "completed";
   return null;
 }

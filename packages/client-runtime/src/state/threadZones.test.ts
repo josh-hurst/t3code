@@ -78,6 +78,8 @@ const card = (...kinds: ThreadCardOpenKind[]) => ({
   at: T0,
 });
 
+const subagentTask = { taskId: "bg-0", kind: "subagent" } as const;
+
 describe("threadNeedsYou", () => {
   // Visited at T1: a run that finished at T2 is unseen, one at T0 is seen.
   const seen = { lastVisitedAt: T1 };
@@ -95,6 +97,31 @@ describe("threadNeedsYou", () => {
       "waiting",
       false,
       false,
+    ],
+    [
+      "waiting on a thread, the last reply's ask already answered",
+      { runtime: runtime("running"), blockedOnThreadWait: true, card: card("ask") },
+      "waiting",
+      true,
+      true,
+    ],
+    [
+      "finished while a subagent works",
+      { latestRun: run("completed", T0), pendingBackgroundTasks: [subagentTask] },
+      "waiting",
+      false,
+      false,
+    ],
+    [
+      "finished on a question while a subagent works",
+      {
+        latestRun: run("completed", T0),
+        pendingBackgroundTasks: [subagentTask],
+        card: card("ask"),
+      },
+      "question",
+      true,
+      true,
     ],
     ["unseen failure", { latestRun: run("failed", T2) }, "failed", true, true],
     [

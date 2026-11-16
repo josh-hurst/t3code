@@ -16,18 +16,22 @@ export type AssistantCitationSourceAnchor = {
   viewport: HTMLElement;
 };
 
+type AssistantMessageRef = Pick<AssistantCitation, "environmentId" | "threadId" | "messageId">;
+
+function findAssistantMessageSource(document: Document, message: AssistantMessageRef) {
+  return [...document.querySelectorAll<HTMLElement>("[data-assistant-citation-source]")].find(
+    (element) =>
+      element.dataset.assistantCitationSource === message.messageId &&
+      element.dataset.assistantCitationEnvironment === message.environmentId &&
+      element.dataset.assistantCitationThread === message.threadId,
+  );
+}
+
 export function findAssistantCitationSourceAnchor(
   document: Document,
   citation: AssistantCitation,
 ): AssistantCitationSourceAnchor | null {
-  const source = [
-    ...document.querySelectorAll<HTMLElement>("[data-assistant-citation-source]"),
-  ].find(
-    (element) =>
-      element.dataset.assistantCitationSource === citation.messageId &&
-      element.dataset.assistantCitationEnvironment === citation.environmentId &&
-      element.dataset.assistantCitationThread === citation.threadId,
-  );
+  const source = findAssistantMessageSource(document, citation);
   const viewport = source?.closest<HTMLElement>("[data-assistant-citation-viewport]");
   if (!source || !viewport) return null;
   const range = resolveAssistantCitationRange(source, citation);
@@ -263,6 +267,19 @@ export function captureAssistantMessageOpening(
   let rawEnd = Math.min(text.trimEnd().length, rawStart + RESPONSE_OPENING_LENGTH);
   if (splitsSurrogatePair(text, rawEnd)) rawEnd -= 1;
   return createAssistantTextSelector(text, rawStart, rawEnd);
+}
+
+/** Selects the span `pick` finds in a reply as rendered; null while the reply is off screen. */
+export function captureAssistantMessageSpan(
+  document: Document,
+  message: AssistantMessageRef,
+  pick: (text: string) => { readonly start: number; readonly end: number } | null,
+): AssistantTextSelector | null {
+  const source = findAssistantMessageSource(document, message);
+  if (!source) return null;
+  const { text } = readAssistantText(source);
+  const span = pick(text);
+  return span === null ? null : createAssistantTextSelector(text, span.start, span.end);
 }
 
 function rawTextOffset(text: string, normalizedOffset: number): number {
