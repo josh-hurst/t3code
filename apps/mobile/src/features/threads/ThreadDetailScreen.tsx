@@ -206,6 +206,7 @@ import { ComposerQueuedEditBanner } from "./ComposerQueuedEdit";
 import { useThreadQueuedCount } from "./ThreadQueueControl";
 import { ThreadGuestShareBar } from "./ThreadGuestShareBar";
 import { ThreadSideChatsRow } from "./ThreadSideChatsRow";
+import { AwaitingQuestionNotice } from "./AwaitingQuestionNotice";
 import type { ThreadContentPresentation } from "./threadContentPresentation";
 import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-scroll-position";
 import { useOpenLinkedThread } from "./useOpenLinkedThread";
@@ -1694,6 +1695,17 @@ function ThreadDetailBody(
                     {freshSessionAvailable ? (
                       <FreshSessionNotice threadKey={selectedThreadKey} />
                     ) : null}
+                    {props.draftMode ? null : (
+                      <AwaitingQuestionNotice
+                        thread={props.selectedThread}
+                        // A pending approval or question already has its own card here.
+                        idle={
+                          !props.activeThreadBusy &&
+                          props.activePendingApproval === null &&
+                          props.activePendingUserInput === null
+                        }
+                      />
+                    )}
                     {props.compactBeforeSend ? (
                       <View className="px-4 pb-3">
                         <Notice
