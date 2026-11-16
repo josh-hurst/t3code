@@ -15,10 +15,7 @@ import {
 } from "./threadOrder";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
-import {
-  createOpenThreadPlacementHold,
-  createOpenThreadTouchHold,
-} from "@t3tools/client-runtime/state/thread-zones";
+import { createOpenThreadPlacementHold } from "@t3tools/client-runtime/state/thread-zones";
 import {
   CommandId,
   EnvironmentId,
@@ -1881,6 +1878,7 @@ describe("self-filing list", () => {
       title: id,
       createdAt: localIso(0, -7),
       lastVisitedAt: at,
+      latestUserMessageAt: at,
     });
   const finishedUnseen = (id: string, completedHour: number) =>
     makeThread({
@@ -2172,8 +2170,7 @@ describe("self-filing list", () => {
     );
   });
 
-  it("keeps the open thread in place until it is left", () => {
-    const touchHold = createOpenThreadTouchHold();
+  it("keeps the open thread in Needs you until it is left, and Trail rows put when opened", () => {
     const placementHold = createOpenThreadPlacementHold();
     const layoutWith = (threads: EnvironmentThreadShell[], openId: string | null) => {
       const key = openId === null ? null : `${environmentId}:${openId}`;
@@ -2183,7 +2180,6 @@ describe("self-filing list", () => {
           trailExpanded: false,
           day,
           holdNeedsYou: placementHold(key),
-          heldTouch: touchHold(threads.find((thread) => thread.id === openId)),
         },
       }).layout;
     };
@@ -2206,7 +2202,8 @@ describe("self-filing list", () => {
     const held = layoutWith([visited, other], "old");
     expect(ids(held)).toEqual(["other", "old"]);
     expect(held.items[1]?.thread).toBe(visited);
-    expect(ids(layoutWith([visited, other], null))).toEqual(["old", "other"]);
+    // Leaving it does not move it either: only sending to a thread moves it in the Trail.
+    expect(ids(layoutWith([visited, other], null))).toEqual(["other", "old"]);
   });
 
   it("compares section headers by the threads Clear would settle", () => {

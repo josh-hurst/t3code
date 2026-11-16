@@ -4,24 +4,20 @@ import { isThreadWorking } from "@t3tools/client-runtime/state/thread-inbox";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import {
-  createOpenThreadTouchHold,
   sortNeedsYouThreads,
   sortTrailThreads,
   splitTrail,
   threadCardOwedLabel,
   threadCardRowLine,
-  threadLastTouchAt,
+  threadLastSentAt,
   threadLaterLead,
   threadNeedsYou,
   threadStatusKind,
   threadStatusWord,
   threadWaitingSince,
   trailDayLabel,
-  withHeldThreadTouch,
   type ThreadStatusKind,
 } from "@t3tools/client-runtime/state/thread-zones";
-
-type HeldTouch = ReturnType<ReturnType<typeof createOpenThreadTouchHold>>;
 
 import { filterSidebarV2VisibleThreads, resolveSidebarThreadSection } from "../Sidebar.logic";
 
@@ -63,7 +59,7 @@ const NO_KEYS: ReadonlySet<string> = new Set();
 
 /**
  * Splits the active bucket into Needs you (longest wait first) and the Trail
- * (latest touch first). The Trail shows its first rows; expanded, it adds the
+ * (latest message you sent first). The Trail shows its first rows; expanded, it adds the
  * rest under day labels, or under project labels when `projectOf` is set.
  */
 export function arrangeTideActive(input: {
@@ -73,33 +69,14 @@ export function arrangeTideActive(input: {
   readonly trailExpanded: boolean;
   readonly routeKey: string | null;
   readonly projectOf: TideProjectOf | null;
-  /** From `createOpenThreadTouchHold`: the open thread sorts by its visit time when opened. */
-  readonly heldTouch?: HeldTouch;
 }) {
   const needsYou = sortNeedsYouThreads(input.active.filter(input.isNeedsYou));
-  const held = input.heldTouch ?? null;
-  // The held copy only sorts; the rows drawn are the threads passed in.
-  const original = new Map<Thread, Thread>();
-  const sortable = input.active
-    .filter((thread) => !input.isNeedsYou(thread))
-    .map((thread) => {
-      const copy = withHeldThreadTouch(thread, held);
-      if (copy !== thread) original.set(copy, thread);
-      return copy;
-    });
-  const restore = (threads: readonly Thread[]) =>
-    threads.map((thread) => original.get(thread) ?? thread);
-  const sortedTrail = sortTrailThreads(sortable);
-  const split = splitTrail(sortedTrail, { now: input.nowMs });
-  const trail = restore(sortedTrail);
-  const head = restore(split.head);
-  const moreToday = restore(split.moreToday);
-  const earlier = restore(split.earlier);
-  const touchAt = (thread: Thread) => threadLastTouchAt(withHeldThreadTouch(thread, held));
+  const trail = sortTrailThreads(input.active.filter((thread) => !input.isNeedsYou(thread)));
+  const { head, moreToday, earlier } = splitTrail(trail, { now: input.nowMs });
   // The time each row shows is the one it is sorted by, so the column reads in order.
   const timeAtByKey = new Map<string, number>([
     ...needsYou.map((thread) => [keyOf(thread), threadWaitingSince(thread)] as const),
-    ...trail.map((thread) => [keyOf(thread), touchAt(thread)] as const),
+    ...trail.map((thread) => [keyOf(thread), threadLastSentAt(thread)] as const),
   ]);
   const rest = [...moreToday, ...earlier];
   if (!input.trailExpanded) {
@@ -126,7 +103,7 @@ export function arrangeTideActive(input: {
       ? {
           threads: rest,
           groupLabelByKey: groupLabels(rest, (thread) =>
-            today.has(thread) ? null : trailDayLabel(touchAt(thread), input.nowMs),
+            today.has(thread) ? null : trailDayLabel(threadLastSentAt(thread), input.nowMs),
           ),
           projectLabelledKeys: NO_KEYS,
         }

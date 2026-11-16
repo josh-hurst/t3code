@@ -23,11 +23,9 @@ import {
   threadLaterLead,
   threadRowLineText,
   threadRowProjectName,
-  threadLastTouchAt,
+  threadLastSentAt,
   threadNeedsYou,
   trailMoreLabel,
-  withHeldThreadTouch,
-  type createOpenThreadTouchHold,
 } from "@t3tools/client-runtime/state/thread-zones";
 import {
   threadSearchMatchKey,
@@ -637,7 +635,7 @@ function resolveThreadListV2ItemTimeLabel(
   // A held row with no wake label is set aside or a standing check: it has no time to show.
   if (showSnoozeWakeLabel || snoozed) return "";
   // The Trail is ordered by your last touch, so its rows show that time and read in order.
-  if (inTrail) return relativeTime(new Date(threadLastTouchAt(thread)).toISOString());
+  if (inTrail) return relativeTime(new Date(threadLastSentAt(thread)).toISOString());
   if (
     variant === "card" &&
     (resolveThreadListV2Status(thread) !== "ready" ||
@@ -856,11 +854,9 @@ type ThreadListV2TideInput = {
   readonly day: number;
   /** From `createOpenThreadPlacementHold`, called with `selectedThreadKey`. */
   readonly holdNeedsYou?: (key: string, needsYou: boolean, sentAt: string | null) => boolean;
-  /** From `createOpenThreadTouchHold`, called with the selected thread. */
-  readonly heldTouch?: ReturnType<ReturnType<typeof createOpenThreadTouchHold>>;
 };
 
-/** Splits the active threads into Needs you (longest wait first) and the Trail (latest touch first). */
+/** Splits the active threads into Needs you (longest wait first) and the Trail (latest message you sent first). */
 function arrangeThreadListV2Tide(
   active: ReadonlyArray<EnvironmentThreadShell>,
   tide: ThreadListV2TideInput,
@@ -877,21 +873,9 @@ function arrangeThreadListV2Tide(
         : thread.latestUserAuthoredMessageAt) ?? null;
     ((tide.holdNeedsYou?.(keyOf(thread), needs, sentAt) ?? needs) ? needsYou : rest).push(thread);
   }
-  // The held copy only sorts; rows keep the shells passed in, which row equality compares.
-  const held = tide.heldTouch ?? null;
-  const original = new Map<EnvironmentThreadShell, EnvironmentThreadShell>();
-  const sorted = sortTrailThreads(
-    rest.map((thread) => {
-      const copy = withHeldThreadTouch(thread, held);
-      if (copy !== thread) original.set(copy, thread);
-      return copy;
-    }),
-  );
-  const restore = (threads: ReadonlyArray<EnvironmentThreadShell>) =>
-    threads.map((thread) => original.get(thread) ?? thread);
-  const split = splitTrail(sorted, { now: tide.day });
-  const trail = restore(sorted);
-  const folded = restore([...split.moreToday, ...split.earlier]);
+  const trail = sortTrailThreads(rest);
+  const split = splitTrail(trail, { now: tide.day });
+  const folded = [...split.moreToday, ...split.earlier];
   return {
     needsYou: sortNeedsYouThreads(needsYou),
     trail,
@@ -899,10 +883,7 @@ function arrangeThreadListV2Tide(
     visibleTrail:
       tide.trailExpanded || folded.length === 0
         ? trail
-        : [
-            ...restore(split.head),
-            ...folded.filter((thread) => keyOf(thread) === selectedThreadKey),
-          ],
+        : [...split.head, ...folded.filter((thread) => keyOf(thread) === selectedThreadKey)],
     trailMore:
       folded.length === 0
         ? null

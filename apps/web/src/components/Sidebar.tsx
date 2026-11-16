@@ -38,7 +38,6 @@ import {
 } from "@t3tools/client-runtime/state/thread-inbox";
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
-  createOpenThreadTouchHold,
   sortLaterThreads,
   threadRowProjectName,
   trailMoreLabel,
@@ -373,7 +372,6 @@ const TRAIL_GROUP_BY_PROJECT_KEY = "t3code:sidebar:trail-group-by-project";
 
 const inboxReturns = createInboxReturnTracker();
 const openThreadPlacement = createOpenThreadPlacementHold();
-const openThreadTouch = createOpenThreadTouchHold();
 
 type SidebarOptimisticDrop = {
   readonly key: string;
@@ -581,9 +579,6 @@ function useSidebarThreads(input: {
   ];
   const needsYouKeys = new Set(partition.activeThreads.filter(isNeedsYou).map(threadShellKey));
   const needsYouOnTop = needsYouKeys.size > 0 && !needsYouInFolders;
-  const heldTouch = tide
-    ? openThreadTouch(threads.find((thread) => threadShellKey(thread) === routeRowThreadKey))
-    : null;
   const arrangeTide = (active: readonly EnvironmentThreadShell[]) =>
     arrangeTideActive({
       active,
@@ -592,7 +587,6 @@ function useSidebarThreads(input: {
       trailExpanded,
       routeKey: routeRowThreadKey,
       projectOf: groupProjectOf,
-      heldTouch,
     });
   const tideActive = tide ? arrangeTide(partition.activeThreads) : null;
   const activeThreads =

@@ -15,7 +15,6 @@ import {
   type OrchestrationV2ThreadShell,
   type ThreadCardOpenKind,
 } from "@t3tools/contracts";
-import { createOpenThreadTouchHold } from "@t3tools/client-runtime/state/thread-zones";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -82,6 +81,7 @@ function thread(
     id: ThreadId.make(id),
     lineage: { ...base.lineage, rootThreadId: ThreadId.make(id) },
     lastVisitedAt: at(hoursAgo(touchedHoursAgo)),
+    latestUserMessageAt: at(hoursAgo(touchedHoursAgo)),
     ...raw,
   });
 }
@@ -165,47 +165,29 @@ describe("arrangeTideActive", () => {
   });
 });
 
-it("holds the open thread's Trail slot while reading it advances its visit time", () => {
-  const hold = createOpenThreadTouchHold();
-  const rows = (open: EnvironmentThreadShell, others: readonly EnvironmentThreadShell[]) =>
-    ids(
-      arrangeTideActive({
-        active: [open, ...others],
-        isNeedsYou: () => false,
-        nowMs: NOW,
-        trailExpanded: false,
-        routeKey: keyOf(open.id),
-        projectOf: null,
-        heldTouch: hold(open),
-      }).trail,
-    );
-  const others = [thread("a", 1), thread("c", 3)];
-  const opened = thread("b", 2);
-  expect(rows(opened, others)).toEqual(["a", "b", "c"]);
-  // The visit lands: without the hold, "b" would jump above "a" under the pointer.
-  const read = thread("b", 0);
-  expect(rows(read, others)).toEqual(["a", "b", "c"]);
-  // Its time is the one it sorts by, so the column stays in order.
-  const timeAt = (open: EnvironmentThreadShell) =>
-    arrangeTideActive({
+it("keeps a Trail row in place when it is opened, and moves it when you send to it", () => {
+  const rows = (open: EnvironmentThreadShell, others: readonly EnvironmentThreadShell[]) => {
+    const arranged = arrangeTideActive({
       active: [open, ...others],
       isNeedsYou: () => false,
       nowMs: NOW,
       trailExpanded: false,
       routeKey: keyOf(open.id),
       projectOf: null,
-      heldTouch: hold(open),
-    }).timeAtByKey.get(keyOf("b"));
-  expect(timeAt(read)).toBe(Date.parse(hoursAgo(2)));
-  // So would the open itself, which the server stamps on the thread.
-  const reopened = thread("b", 2, { opens: { openedAt: NOW, score: 1, picks: [] } });
-  expect(rows(reopened, others)).toEqual(["a", "b", "c"]);
-  // Sending it a message re-sorts it.
-  const sent = thread("b", 0, { latestUserMessageAt: at(hoursAgo(0)) });
-  expect(rows(sent, others)).toEqual(["b", "a", "c"]);
-  // Leaving releases the hold.
-  hold(undefined);
-  expect(hold(read)?.lastVisitedAt).toBe(read.lastVisitedAt);
+    });
+    return { ids: ids(arranged.trail), timeAt: arranged.timeAtByKey.get(keyOf(open.id)) };
+  };
+  const others = [thread("a", 1), thread("c", 3)];
+  expect(rows(thread("b", 2), others).ids).toEqual(["a", "b", "c"]);
+  // Reading it and the server's open stamp leave it put, and its time stays the one it sorts by.
+  const read = thread("b", 2, {
+    lastVisitedAt: at(hoursAgo(0)),
+    opens: { openedAt: NOW, score: 1, picks: [] },
+  });
+  expect(rows(read, others)).toEqual({ ids: ["a", "b", "c"], timeAt: Date.parse(hoursAgo(2)) });
+  // Sending it a message moves it.
+  const sent = thread("b", 2, { latestUserMessageAt: at(hoursAgo(0)) });
+  expect(rows(sent, others).ids).toEqual(["b", "a", "c"]);
 });
 
 it("labels History by the day each thread was settled", () => {

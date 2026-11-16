@@ -377,24 +377,22 @@ export function threadWaitingSince(thread: WaitingSinceInput): number {
   );
 }
 
-type LastTouchInput = Pick<
+type LastSentInput = Pick<
   EnvironmentThreadShell,
-  "createdAt" | "lastVisitedAt" | "latestUserMessageAt" | "latestUserAuthoredMessageAt" | "opens"
+  "createdAt" | "latestUserMessageAt" | "latestUserAuthoredMessageAt"
 >;
 
 /**
- * The user's last touch: the later of opening the thread and writing to it.
- * `lastVisitedAt` is a read watermark that follows the thread's own updates, so it
- * stands in for the open time only on threads opened before opens were recorded.
+ * When you last wrote to the thread, or its creation before that. Opening a thread and its runs
+ * finishing never move it, so a row stays where it was while you read.
  */
-export function threadLastTouchAt(thread: LastTouchInput): number {
+export function threadLastSentAt(thread: LastSentInput): number {
   const sentAt =
     thread.latestUserAuthoredMessageAt === undefined
       ? thread.latestUserMessageAt
       : thread.latestUserAuthoredMessageAt;
   return Math.max(
     toSortableTimestamp(thread.createdAt) ?? 0,
-    thread.opens?.openedAt ?? toSortableTimestamp(thread.lastVisitedAt ?? undefined) ?? 0,
     toSortableTimestamp(sentAt ?? undefined) ?? 0,
   );
 }
@@ -423,15 +421,11 @@ export function sortNeedsYouThreads<T extends SortKeyInput & WaitingSinceInput>(
   return sortByTimestamp(threads, threadWaitingSince, 1);
 }
 
-/** Finished runs not yet opened first, then latest touch first. */
-export function sortTrailThreads<
-  T extends SortKeyInput & LastTouchInput & Pick<EnvironmentThreadShell, "latestRun">,
->(threads: readonly T[]): T[] {
-  const sorted = sortByTimestamp(threads, threadLastTouchAt, -1);
-  return [
-    ...sorted.filter((thread) => hasUnseenCompletion(thread)),
-    ...sorted.filter((thread) => !hasUnseenCompletion(thread)),
-  ];
+/** Latest message you sent first. */
+export function sortTrailThreads<T extends SortKeyInput & LastSentInput>(
+  threads: readonly T[],
+): T[] {
+  return sortByTimestamp(threads, threadLastSentAt, -1);
 }
 
 const TRAIL_VISIBLE_COUNT = 8;
@@ -444,7 +438,7 @@ function startOfLocalDay(timestampMs: number, dayOffset = 0): number {
 }
 
 /** `trail` must already be sorted by `sortTrailThreads`. */
-export function splitTrail<T extends LastTouchInput>(
+export function splitTrail<T extends LastSentInput>(
   trail: readonly T[],
   options: { readonly now: number; readonly visibleCount?: number },
 ): { readonly head: T[]; readonly moreToday: T[]; readonly earlier: T[] } {
@@ -453,7 +447,7 @@ export function splitTrail<T extends LastTouchInput>(
   const moreToday: T[] = [];
   const earlier: T[] = [];
   for (const thread of trail.slice(visibleCount)) {
-    (threadLastTouchAt(thread) >= todayStart ? moreToday : earlier).push(thread);
+    (threadLastSentAt(thread) >= todayStart ? moreToday : earlier).push(thread);
   }
   return { head: trail.slice(0, visibleCount), moreToday, earlier };
 }
@@ -511,54 +505,5 @@ export function createOpenThreadPlacementHold() {
       if (held === null || held.sentAt !== sentAt) held = { key, needsYou, sentAt };
       return held.needsYou;
     };
-  };
-}
-
-type HeldThreadTouch = {
-  readonly key: string;
-  readonly lastVisitedAt: EnvironmentThreadShell["lastVisitedAt"];
-  readonly opens: EnvironmentThreadShell["opens"];
-};
-
-type TouchHoldInput = SortKeyInput & LastTouchInput;
-
-const touchKeyOf = (thread: SortKeyInput) => `${thread.environmentId}:${thread.id}`;
-
-/** The held thread as it was when opened, for sorting only; other threads pass through. */
-export function withHeldThreadTouch<T extends TouchHoldInput>(
-  thread: T,
-  held: HeldThreadTouch | null,
-): T {
-  if (held === null || touchKeyOf(thread) !== held.key) return thread;
-  const { lastVisitedAt: _visited, opens: _opens, ...rest } = thread;
-  return {
-    ...rest,
-    ...(held.lastVisitedAt === undefined ? {} : { lastVisitedAt: held.lastVisitedAt }),
-    ...(held.opens === undefined ? {} : { opens: held.opens }),
-  } as T;
-}
-
-/**
- * Keeps the open thread's place in the Trail as it was when opened. Opening and
- * reading a thread both advance its last touch, which would move the row being
- * looked at. Leaving it, or sending it a message (a new `sentAt`), re-sorts it.
- * Call with the open thread on each pass.
- */
-export function createOpenThreadTouchHold() {
-  let held: (HeldThreadTouch & { readonly sentAt: string | null }) | null = null;
-  return (openThread: TouchHoldInput | undefined): HeldThreadTouch | null => {
-    if (openThread === undefined) {
-      held = null;
-      return null;
-    }
-    const key = touchKeyOf(openThread);
-    const sentAt =
-      (openThread.latestUserAuthoredMessageAt === undefined
-        ? openThread.latestUserMessageAt
-        : openThread.latestUserAuthoredMessageAt) ?? null;
-    if (held?.key !== key || held.sentAt !== sentAt) {
-      held = { key, sentAt, lastVisitedAt: openThread.lastVisitedAt, opens: openThread.opens };
-    }
-    return held;
   };
 }

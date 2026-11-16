@@ -413,52 +413,26 @@ describe("sortNeedsYouThreads", () => {
 });
 
 describe("sortTrailThreads", () => {
-  it("orders by your last touch, never by agent activity", () => {
-    const visited = shell("visited", {}, { lastVisitedAt: T2 });
-    const busy = shell("busy", {}, { lastVisitedAt: T1, latestRun: run("completed", T0) });
-    expect(sortTrailThreads([busy, visited]).map(({ id }) => id)).toEqual(["visited", "busy"]);
+  it("orders by the last message you sent, never by opening it or agent activity", () => {
+    const sent = shell("sent", {}, { latestUserAuthoredMessageAt: T2 });
+    const older = shell("older", {}, { latestUserAuthoredMessageAt: T1 });
+    const order = (threads: EnvironmentThreadShell[]) =>
+      sortTrailThreads(threads).map(({ id }) => id);
+    expect(order([older, sent])).toEqual(["sent", "older"]);
 
-    // A finished run you have not opened leads the Trail until you open it.
-    const unread = shell("unread", {}, { lastVisitedAt: T0, latestRun: run("completed", T1) });
-    expect(sortTrailThreads([visited, busy, unread]).map(({ id }) => id)).toEqual([
-      "unread",
-      "visited",
-      "busy",
-    ]);
-
-    const messaged = { ...busy, latestUserAuthoredMessageAt: T3 };
-    expect(sortTrailThreads([visited, messaged]).map(({ id }) => id)).toEqual(["busy", "visited"]);
+    // Opening and reading it, a finished run you have not opened, and un-settling leave it put.
+    const touched = {
+      ...older,
+      lastVisitedAt: T3,
+      opens: { openedAt: Date.parse(T3), score: 1, picks: [] },
+      latestRun: run("completed", T3),
+      unsettledAt: T3,
+    };
+    expect(order([sent, touched])).toEqual(["sent", "older"]);
 
     // Older servers send only latestUserMessageAt.
     const legacy = shell("legacy", {}, { latestUserMessageAt: T3 });
-    expect(sortTrailThreads([visited, legacy]).map(({ id }) => id)).toEqual(["legacy", "visited"]);
-
-    // Opening an idle thread counts, though its read watermark stays at its last update.
-    const reopened = shell(
-      "reopened",
-      {},
-      { lastVisitedAt: T0, opens: { openedAt: Date.parse(T3), score: 1, picks: [] } },
-    );
-    expect(sortTrailThreads([visited, reopened]).map(({ id }) => id)).toEqual([
-      "reopened",
-      "visited",
-    ]);
-
-    // Un-settling does not, even when it drags the read watermark along with the
-    // thread's update: Undo after clearing the Trail puts rows back in order.
-    const restored = shell(
-      "restored",
-      {},
-      {
-        lastVisitedAt: T3,
-        unsettledAt: T3,
-        opens: { openedAt: Date.parse(T1), score: 1, picks: [] },
-      },
-    );
-    expect(sortTrailThreads([visited, restored]).map(({ id }) => id)).toEqual([
-      "visited",
-      "restored",
-    ]);
+    expect(order([sent, legacy])).toEqual(["legacy", "sent"]);
   });
 });
 
@@ -466,7 +440,11 @@ describe("splitTrail", () => {
   it("shows eight rows, then splits the rest at local midnight", () => {
     const now = new Date(2026, 10, 15, 10, 0).getTime();
     const touched = (id: string, at: Date) =>
-      shell(id, {}, { createdAt: "2026-01-01T00:00:00.000Z", lastVisitedAt: at.toISOString() });
+      shell(
+        id,
+        {},
+        { createdAt: "2026-01-01T00:00:00.000Z", latestUserAuthoredMessageAt: at.toISOString() },
+      );
     const recent = Array.from({ length: 8 }, (_, index) =>
       touched(`recent-${index}`, new Date(2026, 10, 15, 9, 50 - index)),
     );

@@ -1,8 +1,5 @@
 import type { OlderSettledScope } from "@t3tools/client-runtime/state/threads";
-import {
-  createOpenThreadPlacementHold,
-  createOpenThreadTouchHold,
-} from "@t3tools/client-runtime/state/thread-zones";
+import { createOpenThreadPlacementHold } from "@t3tools/client-runtime/state/thread-zones";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useMemo, useState, useSyncExternalStore } from "react";
@@ -83,10 +80,7 @@ export function useThreadListV2(input: {
 }) {
   const { threads, workingShelfEnabled } = input;
   // Per list: the home screen and the sidebar can have different threads open.
-  const [openThreadHolds] = useState(() => ({
-    placement: createOpenThreadPlacementHold(),
-    touch: createOpenThreadTouchHold(),
-  }));
+  const [openNeedsYouHold] = useState(createOpenThreadPlacementHold);
   const tideDay = useMemo(() => {
     const day = new Date(input.now);
     day.setHours(0, 0, 0, 0);
@@ -164,14 +158,7 @@ export function useThreadListV2(input: {
       ? {
           trailExpanded: input.trailExpanded,
           day: tideDay,
-          holdNeedsYou: openThreadHolds.placement(selectedThreadKey),
-          heldTouch: openThreadHolds.touch(
-            selectedThreadKey === null
-              ? undefined
-              : threads.find(
-                  (thread) => `${thread.environmentId}:${thread.id}` === selectedThreadKey,
-                ),
-          ),
+          holdNeedsYou: openNeedsYouHold(selectedThreadKey),
         }
       : undefined;
     const projectTitleByKey = new Map(
@@ -247,7 +234,7 @@ export function useThreadListV2(input: {
     input.tide,
     input.trailExpanded,
     tideDay,
-    openThreadHolds,
+    openNeedsYouHold,
   ]);
   useOlderSettledShelfGrowth(olderSettledShelf, layout.listedSettledThreads);
   const contentOnlyThreadKeys = useKeySet([...layout.contentOnlyThreadKeys].sort().join("\n"));
