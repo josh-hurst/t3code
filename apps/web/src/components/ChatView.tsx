@@ -51,6 +51,7 @@ import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { freshSessionBannerItem } from "./chat/ComposerFreshSession";
+import { awaitingQuestionBannerItem, useAwaitingQuestion } from "./chat/AwaitingQuestionBanner";
 import { armFreshSession, disarmFreshSession, useFreshSessionArmed } from "./chat/freshSessionArms";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
 import { useWorktreeSetup } from "./chat/useWorktreeSetup";
@@ -1503,6 +1504,12 @@ export default function ChatView(props: ChatViewProps) {
   });
   const isWorking =
     phase === "running" || isSendBusy || isCompacting || runlessWorkStartedAt !== null;
+  // A pending approval or question already has its own panel in the composer.
+  const awaitingQuestion = useAwaitingQuestion(
+    environmentId,
+    activeThreadShell ?? null,
+    !isWorking && !activePendingApproval && !activePendingUserInput,
+  );
   const activeContextWindow = deriveLatestContextWindowSnapshot(
     serverVisibleTurnItems ?? [],
     activeThreadLiveTokenUsage,
@@ -2662,6 +2669,10 @@ export default function ChatView(props: ChatViewProps) {
       freshSessionAvailable && freshSessionArmed && activePendingApproval === null
         ? [freshSessionBannerItem(() => disarmFreshSession(routeThreadKey))]
         : [];
+    const awaitingQuestionItems =
+      awaitingQuestion === null
+        ? []
+        : [awaitingQuestionBannerItem(awaitingQuestion, () => scrollToEnd(true))];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...feedbackBannerItems,
@@ -2671,6 +2682,7 @@ export default function ChatView(props: ChatViewProps) {
         ...usageLimitsItems,
         ...projectCloneItems,
         ...freshSessionItems,
+        ...awaitingQuestionItems,
         ...systemComposerBannerItems,
       ];
     }
@@ -2682,6 +2694,7 @@ export default function ChatView(props: ChatViewProps) {
       ...usageLimitsItems,
       ...projectCloneItems,
       ...freshSessionItems,
+      ...awaitingQuestionItems,
       ...systemComposerBannerItems,
       branchMismatchBannerItem({
         mismatchKey: activeBranchMismatchKey,
