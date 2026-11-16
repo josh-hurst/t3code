@@ -136,9 +136,10 @@ import {
 } from "../lib/assistantCitationNavigation";
 import {
   captureAssistantMessageSpan,
+  createAssistantTextSelector,
   type AssistantCitationSourceAnchor,
 } from "~/lib/assistantTextSelection";
-import { closingQuestionSpan } from "./chat/awaitingQuestion.logic";
+import { askSpanInReply, findAskInThread } from "./chat/awaitingQuestion.logic";
 import { useStore } from "zustand";
 import { shallow } from "zustand/vanilla/shallow";
 import { useShallow } from "zustand/react/shallow";
@@ -2616,18 +2617,24 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
-  // Opens the question like a citation, which scrolls to it and briefly highlights it. Off
-  // screen, or with no question sentence to match, it only scrolls to the end.
+  // Opens where a reply states the question like a citation, which scrolls there and briefly
+  // highlights it. With nothing in the thread to match, it only scrolls to the end.
   const showAwaitingQuestion = () => {
-    const messageId = activeThreadShell?.card?.messageId;
-    const message = messageId ? { environmentId, threadId, messageId } : null;
+    // The timeline's own message list holds only your messages; replies live in the projection.
+    const found = awaitingQuestion
+      ? findAskInThread(serverProjection?.messages ?? [], awaitingQuestion)
+      : null;
+    if (!found || !awaitingQuestion) {
+      scrollToEnd(true);
+      return;
+    }
+    const message = { environmentId, threadId, messageId: found.messageId };
+    // Text on screen is exact; the markdown's plain text stands in for a reply scrolled away.
     const selector =
-      message && awaitingQuestion
-        ? captureAssistantMessageSpan(document, message, (text) =>
-            closingQuestionSpan(text, awaitingQuestion),
-          )
-        : null;
-    if (!message || !selector) {
+      captureAssistantMessageSpan(document, message, (text) =>
+        askSpanInReply(text, awaitingQuestion),
+      ) ?? createAssistantTextSelector(found.text, found.start, found.end);
+    if (!selector) {
       scrollToEnd(true);
       return;
     }
