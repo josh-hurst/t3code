@@ -36,11 +36,20 @@ const layerNoProject = Layer.mergeAll(
   Layer.mock(ProjectEnrichment.ProjectEnrichmentService)({}),
 );
 
-it.effect("completes finalization when the post-checkpoint workspace refresh fails", () => {
+it.effect.each([
+  {
+    label: "completes finalization when the workspace refresh fails",
+    refresh: "fails",
+    cleared: [],
+  },
+  { label: "leaves commit items when the checkout has changes", refresh: "dirty", cleared: [] },
+  { label: "clears commit items when the checkout is clean", refresh: "clean", cleared: ["/repo"] },
+] as const)("$label", ({ refresh, cleared }) => {
   const threadId = ThreadId.make("thread_refresh_failure");
   const runId = RunId.make("run_refresh_failure");
   const scopeId = CheckpointScopeId.make("scope_refresh_failure");
   const captured: string[] = [];
+  const cleanCheckouts: string[] = [];
   const layer = RunFinalization.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -62,6 +71,7 @@ it.effect("completes finalization when the post-checkpoint workspace refresh fai
           refresh: () =>
             Effect.gen(function* () {
               captured.push("refresh");
+              if (refresh !== "fails") return refresh === "clean";
               return yield* new RunFinalization.RunFinalizationRefreshError({
                 cwd: "/repo",
                 cause: new Error("Git command timed out"),
@@ -69,6 +79,11 @@ it.effect("completes finalization when the post-checkpoint workspace refresh fai
             }),
           refreshAfterTurn: () => Effect.void,
         }),
+        Layer.succeed(RunFinalization.RunFinalizationCleanCheckout, (cwd) =>
+          Effect.sync(() => {
+            cleanCheckouts.push(cwd);
+          }),
+        ),
       ),
     ),
   );
@@ -76,6 +91,7 @@ it.effect("completes finalization when the post-checkpoint workspace refresh fai
     const service = yield* RunFinalization.RunFinalizationService;
     yield* service.finalize({ threadId, runId, scopeId });
     assert.deepEqual(captured, ["checkpoint", "refresh"]);
+    assert.deepEqual(cleanCheckouts, [...cleared]);
   }).pipe(Effect.provide(layer));
 });
 
@@ -156,7 +172,8 @@ it.effect.each(
   );
   return Effect.gen(function* () {
     const observer = yield* RunFinalization.RunFinalizationObserver;
-    yield* observer.refresh({ cwd: "/repo", threadId, runId });
+    // Every row's checkout is clean, the default branch's early return included.
+    assert.isTrue(yield* observer.refresh({ cwd: "/repo", threadId, runId }));
     if (scenario.expected.length > 0) yield* Deferred.await(lookedUp);
     assert.deepEqual(refreshed, [...scenario.expected]);
   }).pipe(Effect.provide(layer));

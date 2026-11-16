@@ -60,6 +60,7 @@ import {
   ORCHESTRATION_PROTOCOL_VERSION,
   OrchestrationV2DispatchCommandError,
   OrchestrationV2GetShellSnapshotError,
+  ThreadContentsError,
   OrchestrationV2GetThreadProjectionError,
   OrchestrationV2ThreadLaunchError,
   type OrchestrationProjectShell,
@@ -170,6 +171,9 @@ import {
 import { dedupeSnapshotBodies } from "@t3tools/shared/orchestrationV2DedupedBodies";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
+import * as ContentsBackfillService from "./orchestration-v2/ContentsBackfillService.ts";
+import * as OpenItemService from "./orchestration-v2/OpenItemService.ts";
+import * as ThreadEntryStore from "./orchestration-v2/ThreadEntryStore.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
@@ -1440,6 +1444,13 @@ export const layerWsRpc = (
       const scratchThreadPromotion = yield* ScratchThreadPromotion.ScratchThreadPromotion;
       const eventLoopMonitor = yield* EventLoopMonitor.EventLoopMonitor;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
+      const openItems = yield* OpenItemService.OpenItemService;
+      const contentsBackfill = yield* ContentsBackfillService.ContentsBackfillService;
+      const openItemsFailure = (message: string) => (cause: OpenItemService.OpenItemServiceError) =>
+        new ThreadContentsError({ message, cause });
+      const threadEntries = yield* ThreadEntryStore.ThreadEntryStore;
+      const entriesFailure = (message: string) => (cause: ThreadEntryStore.ThreadEntryStoreError) =>
+        new ThreadContentsError({ message, cause });
 
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
@@ -1872,6 +1883,7 @@ export const layerWsRpc = (
           shellThreadFamilies: true,
           threadLinkMetadata: true,
           shellOlderSettled: true,
+          threadEntries: true,
           threadResumeCompletionMarker: true,
           threadSnapshotPagination: true,
           threadFind: true,
@@ -2112,6 +2124,37 @@ export const layerWsRpc = (
                 }),
             ),
           ),
+        [ORCHESTRATION_V2_WS_METHODS.listThreadEntries]: (input) =>
+          threadEntries
+            .listForThread(input.threadId)
+            .pipe(Effect.mapError(entriesFailure("Failed to load the thread's topics"))),
+        [ORCHESTRATION_V2_WS_METHODS.listEntries]: (input) =>
+          threadEntries.list(input).pipe(Effect.mapError(entriesFailure("Failed to load topics"))),
+        [ORCHESTRATION_V2_WS_METHODS.getOpenItemCounts]: () =>
+          openItems.counts().pipe(Effect.mapError(openItemsFailure("Failed to count open items"))),
+        [ORCHESTRATION_V2_WS_METHODS.markPublished]: (input) =>
+          openItems
+            .markPublished(input)
+            .pipe(Effect.mapError(openItemsFailure("Failed to mark the project published"))),
+        [ORCHESTRATION_V2_WS_METHODS.undoPublished]: (input) =>
+          openItems
+            .undoPublished(input.markerId)
+            .pipe(Effect.mapError(openItemsFailure("Failed to undo the publish"))),
+        [ORCHESTRATION_V2_WS_METHODS.refreshOpenItems]: (input) =>
+          openItems.refresh(input.projectIds).pipe(
+            Effect.map((cleared) => ({ cleared })),
+            Effect.mapError(openItemsFailure("Failed to re-check the checkouts")),
+          ),
+        [ORCHESTRATION_V2_WS_METHODS.resolveOpenItem]: (input) =>
+          openItems
+            .resolveItem(input)
+            .pipe(Effect.mapError(openItemsFailure("Failed to mark the item done"))),
+        [ORCHESTRATION_V2_WS_METHODS.estimateContentsBackfill]: (input) =>
+          contentsBackfill.estimate(input),
+        [ORCHESTRATION_V2_WS_METHODS.startContentsBackfill]: (input) =>
+          contentsBackfill.start(input),
+        [ORCHESTRATION_V2_WS_METHODS.getContentsBackfill]: () => contentsBackfill.status,
+        [ORCHESTRATION_V2_WS_METHODS.cancelContentsBackfill]: () => contentsBackfill.cancel,
         [ORCHESTRATION_V2_WS_METHODS.getWorktreeThreadIds]: (input) =>
           readOmittableShellRows(
             { worktreePath: input.worktreePath },

@@ -326,7 +326,6 @@ it.effect(
           messageId: MessageId.make("message:settlement:question"),
           at: DateTime.formatIso(old),
           runId: RunId.make("run:settlement:question"),
-          chapters: [],
         },
       });
       yield* createRun(asking);

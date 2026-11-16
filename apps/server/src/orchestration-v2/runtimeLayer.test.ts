@@ -85,6 +85,7 @@ import * as RuntimeLayer from "./runtimeLayer.ts";
 import { shellStreamItemFromThreadShell } from "./ShellStream.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
+import { followUpMessageIds, followUpPrompt } from "./ThreadFollowUp.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "../project/ScratchThreadPromotion.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
@@ -9557,6 +9558,63 @@ it.layer(layerSharedApplicationDataPlaneTest)("pending provider interruption", (
 });
 
 it.layer(layerTest)("snooze queued runs", (it) => {
+  it.effect("the Later sweep's send starts a marked run and records it on the follow-up", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threads = yield* ThreadManagementService.ThreadManagementService;
+      const threadId = ThreadId.make("later-sweep-send");
+      const projectId = ProjectId.make("later-sweep-send-project");
+      yield* seedProject({
+        projectId,
+        title: "Later",
+        workspaceRoot: process.cwd(),
+        defaultModelSelection: modelSelection,
+        createdAt: DateTime.formatIso(yield* DateTime.now),
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make(`create:${threadId}`),
+        threadId,
+        projectId,
+        title: "Rollout",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.follow-up.set",
+        commandId: CommandId.make(`arm:${threadId}`),
+        threadId,
+        question: "Did the rollout finish?",
+        reason: "Rollout",
+        dueAt: DateTime.formatIso(DateTime.add(yield* DateTime.now, { minutes: 1 })),
+        armedBy: "user",
+      });
+      const followUp = (yield* orchestrator.getThreadProjection(threadId)).thread.followUp!;
+      // Exactly what LaterFollowUpWorker sends.
+      const sent = yield* threads.sendToThread({
+        projectId,
+        threadId,
+        ...followUpMessageIds(threadId, followUp),
+        text: followUpPrompt(followUp, 3),
+        attachments: [],
+        mode: "queue",
+        followUp: true,
+        createdBy: "agent",
+        creationSource: "server",
+      });
+      assert.equal(sent.message.followUp, true);
+      const thread = (yield* orchestrator.getThreadProjection(threadId)).thread;
+      assert.isDefined(thread.followUp?.sentAt);
+      assert.equal(thread.followUp?.runId, sent.run.id);
+      assert.isNull(thread.snoozedUntil ?? null);
+    }),
+  );
+
   it.effect.each(["notification", "delegated-completion", "user", "limited-user"] as const)(
     "only user messages block snooze with a queued %s run, unless a usage limit holds them",
     (kind) =>

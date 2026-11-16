@@ -1,7 +1,11 @@
 import { McpAttachmentInput } from "../attachment/input.ts";
 import {
+  IsoDateTime,
+  MarkPublishedResult,
+  MessageId,
   NonNegativeInt,
   ModelSelection,
+  ThreadCardOpenKind,
   TrimmedNonEmptyString,
   ThreadId,
   RunId,
@@ -34,6 +38,7 @@ import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as OpenItemService from "../../../orchestration-v2/OpenItemService.ts";
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -178,6 +183,44 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
   .annotate(Tool.Destructive, true)
   .annotate(Tool.OpenWorld, true);
 
+const OpenItemsTool = Tool.make("t3_open_items", {
+  ...shared,
+  description:
+    "What is still owed in a project: publishes, commits, checks, questions. Omit `projectId` for this thread's project. `list` before answering whether it is safe to publish. `mark_published` only after the user says they have published; it clears the waiting-on-publish items and starts post-publish checks. `resolve`: one listed item that is done, by its `threadId` and `key`.",
+  parameters: Schema.Struct({
+    environmentId: OrchestratorMcpEnvironmentTarget,
+    action: Schema.Literals(["list", "mark_published", "resolve"]),
+    projectId: Schema.optional(ProjectId),
+    threadId: Schema.optional(ThreadId),
+    key: Schema.optional(Schema.String.check(Schema.isMaxLength(200))),
+  }),
+  success: Schema.Union([
+    Schema.Struct({
+      items: Schema.Array(
+        Schema.Struct({
+          kind: ThreadCardOpenKind,
+          text: Schema.String,
+          dueAt: Schema.optional(IsoDateTime),
+          key: Schema.String,
+          threadId: ThreadId,
+          link: Schema.optional(Schema.String),
+          /** The thread's topic the item is filed with. */
+          topic: Schema.String,
+          /** The reply that left it open. */
+          messageId: MessageId,
+          settled: Schema.Boolean,
+        }),
+      ),
+      lastPublishedAt: Schema.NullOr(IsoDateTime),
+    }),
+    MarkPublishedResult,
+    Schema.Struct({ resolved: Schema.Literal(true) }),
+  ]),
+  dependencies: [...shared.dependencies, OpenItemService.OpenItemService],
+})
+  .annotate(Tool.Title, "Still open in a project")
+  .annotate(Tool.Destructive, true);
+
 export const ProjectToolkit = Toolkit.make(
   ThreadLaunchTool,
   ProjectListTool,
@@ -186,4 +229,5 @@ export const ProjectToolkit = Toolkit.make(
   ProjectUpdateTool,
   ProjectDeleteTool,
   ProjectCloneTool,
+  OpenItemsTool,
 );

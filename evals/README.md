@@ -10,7 +10,8 @@ Write or run an eval when a change affects what a model sees or does: agent inst
 | [thread-titles](thread-titles/)     | Whether generated thread titles name the right subject.                                              |
 | [pr-content](pr-content/)           | Whether PR generation describes the diff when project instructions try to redirect it.               |
 | [voice-cleanup](voice-cleanup/)     | Whether optional dictation cleanup edits only the spoken text and preserves its meaning.             |
-| [reply-summaries](reply-summaries/) | Whether thread cards keep a reply's detail and state, and list only what it leaves open.             |
+| [reply-summaries](reply-summaries/) | Whether thread cards keep a reply's detail and state, list only what it leaves open, and file runs.  |
+| [topic-regroup](topic-regroup/)     | Whether a long thread's runs are grouped into the topics a person would look for.                    |
 | [test-signal](test-signal/)         | Whether a cheap model running the test-signal check flags low-signal tests.                          |
 
 ## Run an eval

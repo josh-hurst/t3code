@@ -14,6 +14,7 @@ import {
   AuthSourceControlWriteScope,
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
+  ORCHESTRATION_V2_WS_METHODS,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -49,6 +50,35 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.serverPrepareTriage)).toBe(
       AuthOrchestrationOperateScope,
     );
+  });
+
+  it("keeps publishing, which starts post-publish runs, behind operate scope", () => {
+    for (const method of [
+      ORCHESTRATION_V2_WS_METHODS.markPublished,
+      ORCHESTRATION_V2_WS_METHODS.undoPublished,
+      ORCHESTRATION_V2_WS_METHODS.refreshOpenItems,
+      ORCHESTRATION_V2_WS_METHODS.resolveOpenItem,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
+    }
+    expect(requiredScopeForRpcMethod(ORCHESTRATION_V2_WS_METHODS.getOpenItemCounts)).toBe(
+      AuthOrchestrationReadScope,
+    );
+  });
+
+  it("keeps starting a backfill, which spends model calls, behind operate scope", () => {
+    for (const method of [
+      ORCHESTRATION_V2_WS_METHODS.startContentsBackfill,
+      ORCHESTRATION_V2_WS_METHODS.cancelContentsBackfill,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
+    }
+    for (const method of [
+      ORCHESTRATION_V2_WS_METHODS.estimateContentsBackfill,
+      ORCHESTRATION_V2_WS_METHODS.getContentsBackfill,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
+    }
   });
 
   it("separates passive terminal observation from operations that can change a shell", () => {

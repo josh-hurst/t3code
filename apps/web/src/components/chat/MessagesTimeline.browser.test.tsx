@@ -602,6 +602,25 @@ describe("MessagesTimeline messages", () => {
     await vi.waitFor(() => expect(viewport.scrollTop).toBeLessThan(atEnd));
   });
 
+  it("opens at the message a History topic names, then lets go of it", async () => {
+    setup();
+    const onDone = vi.fn();
+    const props = baseProps();
+    const entries = Array.from({ length: 16 }, (_, index) => [
+      message(`Question ${index}`, {}, `user-${index}`),
+      message(`Answer ${index}`, { role: "assistant" }, `assistant-${index}`),
+    ]).flat();
+    await using screen = await renderTimeline(entries, {
+      ...props,
+      openAtMessage: { messageId: "user-1", onDone },
+    });
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    await vi.waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    await expect.element(screen.getByText("Question 1")).toBeVisible();
+    // It opened near the top, not at the end where a thread opens by default.
+    expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeGreaterThan(100);
+  });
+
   it("disables the minimap's next turn button at the bottom of the thread", async () => {
     setup();
     const props = baseProps();

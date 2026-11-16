@@ -2,9 +2,18 @@ import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 
-import { NodeId, RunAttemptId, TrimmedNonEmptyString } from "./index.ts";
+import {
+  isThreadSetAside,
+  NodeId,
+  RunAttemptId,
+  THREAD_SET_ASIDE_UNTIL,
+  TrimmedNonEmptyString,
+} from "./index.ts";
 import {
   latestProviderTurnForAttempt,
+  OrchestrationV2AppThreadJson,
+  OrchestrationV2Command,
+  OrchestrationV2DomainEventJson,
   OrchestrationV2ProviderCapabilities,
   OrchestrationV2ProviderThread,
   OrchestrationV2ProviderThreadJson,
@@ -19,6 +28,8 @@ import {
 
 const now = DateTime.makeUnsafe("2026-04-20T00:00:00.000Z");
 
+const decodeAppThreadJson = Schema.decodeUnknownSync(OrchestrationV2AppThreadJson);
+const encodeAppThreadJson = Schema.encodeSync(OrchestrationV2AppThreadJson);
 const decodeOrchestrationV2TurnItemJson = Schema.decodeUnknownSync(OrchestrationV2TurnItemJson);
 const encodeOrchestrationV2TurnItemJson = Schema.encodeSync(OrchestrationV2TurnItemJson);
 const decodeOrchestrationV2Subagent = Schema.decodeUnknownSync(OrchestrationV2Subagent);
@@ -33,6 +44,9 @@ const decodeOrchestrationV2ProviderThread = Schema.decodeUnknownSync(Orchestrati
 const decodeOrchestrationV2ProviderCapabilities = Schema.decodeUnknownSync(
   OrchestrationV2ProviderCapabilities,
 );
+const decodeEventJson = Schema.decodeUnknownSync(OrchestrationV2DomainEventJson);
+const encodeEventJson = Schema.encodeSync(OrchestrationV2DomainEventJson);
+const decodeCommand = Schema.decodeUnknownSync(OrchestrationV2Command);
 
 describe("orchestration V2 contracts", () => {
   it("decodes thread event types from a newer server as skippable items", () => {
@@ -488,6 +502,165 @@ describe("thread open stats", () => {
     const card = { line: "Done", topics: [], open: [], messageId: "message", at: "2026-10-01" };
     expect(decode({ ...shell, card }).card).toEqual(card);
     expect(decode({ ...shell, card: { ...card, open: [{ kind: "later" }] } }).card).toBeNull();
+    // So does a follow-up; a thread from before Later has none.
+    const followUp = { reason: "Test run", dueAt: null, armedBy: "agent", quietCount: 1 };
+    expect(decode({ ...shell, followUp }).followUp).toEqual(followUp);
+    expect(decode({ ...shell, followUp: { ...followUp, armedBy: "cron" } }).followUp).toBeNull();
+    expect(decode(shell).followUp).toBeUndefined();
+    expect(decode(shell).standingCheck).toBeUndefined();
+  });
+
+  it("round-trips a set-aside thread and drops a follow-up this build cannot send", () => {
+    const thread = {
+      id: "thread-test",
+      projectId: "project-test",
+      title: "Thread",
+      providerInstanceId: "codex",
+      modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      activeProviderThreadId: null,
+      lineage: { rootThreadId: "thread-test", parentThreadId: null, relationshipToParent: null },
+      forkedFrom: null,
+      createdBy: "user",
+      creationSource: "web",
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+      archivedAt: null,
+      deletedAt: null,
+      snoozedUntil: THREAD_SET_ASIDE_UNTIL,
+      standingCheck: true,
+      followUp: {
+        question: "Did the nightly test finish?",
+        reason: "Nightly test",
+        dueAt: "2026-10-02T09:00:00.000Z",
+        armedAt: "2026-10-01T00:00:00.000Z",
+        armedBy: "agent",
+        quietCount: 0,
+      },
+    };
+    const decoded = decodeAppThreadJson(thread);
+    expect(isThreadSetAside(decoded.snoozedUntil)).toBe(true);
+    expect(decoded.standingCheck).toBe(true);
+    const encoded = encodeAppThreadJson(decoded);
+    expect(encoded.snoozedUntil).toBe(THREAD_SET_ASIDE_UNTIL);
+    expect(encoded.followUp).toEqual(thread.followUp);
+    expect(
+      decodeAppThreadJson({ ...thread, followUp: { ...thread.followUp, question: "" } }).followUp,
+    ).toBeNull();
+  });
+
+  it("reads a card stored with chapters, without them", () => {
+    const card = {
+      line: "Fixed the login test",
+      topics: ["login test"],
+      open: [{ kind: "ask", text: "Merge PR 412 now?" }],
+      messageId: "message-2",
+      at: "2026-10-01T00:00:00.000Z",
+      runId: "run-2",
+    };
+    const stored = { ...card, chapters: [{ line: "Started", messageId: "message-1" }] };
+    const thread = decodeAppThreadJson({
+      id: "thread-test",
+      projectId: "project-test",
+      title: "Thread",
+      providerInstanceId: "codex",
+      modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      activeProviderThreadId: null,
+      lineage: { rootThreadId: "thread-test", parentThreadId: null, relationshipToParent: null },
+      forkedFrom: null,
+      createdBy: "user",
+      creationSource: "web",
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+      archivedAt: null,
+      deletedAt: null,
+      card: stored,
+    });
+    expect(thread.card).toEqual(card);
+    const event = decodeEventJson({
+      id: "event-1",
+      threadId: "thread-test",
+      type: "thread.card-updated",
+      occurredAt: "2026-10-01T00:00:00.000Z",
+      payload: { card: stored },
+    });
+    expect(event.type === "thread.card-updated" && event.payload.card).toEqual(card);
+  });
+});
+
+describe("thread contents", () => {
+  it("round-trips an entries update event", () => {
+    const event = {
+      id: "event-1",
+      threadId: "thread-test",
+      type: "thread.entries-updated",
+      occurredAt: "2026-10-01T00:00:00.000Z",
+      payload: {
+        entries: [
+          {
+            id: "thread-test:e1",
+            threadId: "thread-test",
+            title: "Login test",
+            titleSource: "model",
+            outcome: "Fixed; two retries removed",
+            open: [{ kind: "verify", text: "Check on a phone", runId: "run-1" }],
+            runs: [
+              { runId: "run-1", source: "online" },
+              { runId: "run-2", source: "owner", second: true },
+            ],
+            startMessageId: "message-1",
+            endMessageId: "message-4",
+            startedAt: "2026-10-01T00:00:00.000Z",
+            endedAt: "2026-10-01T01:00:00.000Z",
+            status: "active",
+          },
+        ],
+        runLines: [
+          {
+            runId: "run-2",
+            threadId: "thread-test",
+            ordinal: 2,
+            userMessageId: "message-3",
+            replyMessageId: "message-4",
+            line: null,
+            ownerText: "go on",
+            startedBy: "owner",
+            startedAt: "2026-10-01T00:30:00.000Z",
+            repliedAt: "2026-10-01T01:00:00.000Z",
+          },
+        ],
+        state: {
+          revision: 3,
+          nextEntrySeq: 2,
+          ownerRuns: 2,
+          lastRunOrdinal: 2,
+          lastReplyAt: "2026-10-01T01:00:00.000Z",
+          runsSinceRegroup: 2,
+          regroupRequestedThrough: 0,
+          regroupedThrough: 0,
+          regroupedAt: null,
+        },
+      },
+    };
+    expect(encodeEventJson(decodeEventJson(event))).toEqual(event);
+  });
+
+  it("moves a run to an existing entry or a new one", () => {
+    const move = { type: "thread.entry.move-run", commandId: "c", threadId: "t", runId: "r" };
+    expect(decodeCommand({ ...move, target: { entryId: "t:e1" } })).toMatchObject({
+      target: { entryId: "t:e1" },
+    });
+    expect(decodeCommand({ ...move, target: { newTitle: "Billing" } })).toMatchObject({
+      target: { newTitle: "Billing" },
+    });
+    expect(() => decodeCommand({ ...move, target: {} })).toThrow();
   });
 });
 

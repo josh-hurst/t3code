@@ -11,6 +11,8 @@ import {
   type ModelSelection,
   type RuntimeMode,
   type OrchestrationV2ThreadShell,
+  MessageId,
+  PublishMarkerId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -32,6 +34,7 @@ import * as DocumentText from "../../../provider/DocumentText.ts";
 import { OrchestratorRuntimeModeAboveCeilingError } from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as OpenItemService from "../../../orchestration-v2/OpenItemService.ts";
 import * as ServerConfig from "../../../config.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as Project from "../../../project/ProjectService.ts";
@@ -905,4 +908,75 @@ it.effect("an update the project refuses tells the agent why", () =>
 
     expect(refused.at(-1)?.result).toMatchObject({ code: "invalid_request", message: detail });
   }),
+);
+
+it.effect.each([
+  { access: "approval-required", marks: false },
+  { access: "full-access", marks: true },
+] as const)(
+  "any client lists what is still open; only a full-access one marks a publish (%s)",
+  ({ access, marks }) =>
+    Effect.gen(function* () {
+      const harness = clientLaunchHarness({ runtimeModeCeiling: access, launched: [] });
+      const marked: Array<ReadonlyArray<ProjectId>> = [];
+      const threadId = ThreadId.make("thread:open-items");
+      const dependencies = Layer.merge(
+        harness.dependencies,
+        Layer.mock(OpenItemService.OpenItemService)({
+          list: () =>
+            Effect.succeed({
+              items: [
+                {
+                  threadId,
+                  projectId: harness.projectId,
+                  threadTitle: "Release",
+                  threadSettled: true,
+                  entryTitle: "Store release",
+                  messageId: MessageId.make("message:open-items"),
+                  kind: "ship" as const,
+                  text: "Publish 2.4.0",
+                  key: "ship:publish 2 4 0",
+                },
+              ],
+              lastPublishedAt: null,
+            }),
+          markPublished: ({ projectIds }) =>
+            Effect.sync(() => {
+              marked.push(projectIds);
+              return {
+                markerId: PublishMarkerId.make("publish:1"),
+                cleared: 1,
+                followUpsStarted: 0,
+              };
+            }),
+        }),
+      );
+      const toolkit = yield* ProjectToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+            Layer.provide(dependencies),
+          ),
+        ),
+      );
+      const call = (action: "list" | "mark_published") =>
+        toolkit.handle("t3_open_items", { action, projectId: harness.projectId }).pipe(
+          Stream.unwrap,
+          Stream.runCollect,
+          Effect.provide(dependencies),
+          Effect.map((results) => results.at(-1)?.result),
+        );
+
+      expect(yield* call("list")).toMatchObject({
+        items: [{ kind: "ship", key: "ship:publish 2 4 0", threadId, topic: "Store release" }],
+        lastPublishedAt: null,
+      });
+      const published = yield* call("mark_published");
+      if (marks) {
+        expect(published).toMatchObject({ markerId: "publish:1", cleared: 1 });
+        expect(marked).toEqual([[harness.projectId]]);
+      } else {
+        expect(published).toMatchObject({ code: "capability_denied" });
+        expect(marked).toEqual([]);
+      }
+    }),
 );

@@ -6,6 +6,7 @@ import {
 } from "@t3tools/contracts";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { AutoSettleDaysField } from "./components/AutoSettleDaysField";
+import { NumberField } from "../../components/ui/NumberField";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -102,6 +103,7 @@ export function AutoSettleSettingsRows(props: {
     patch: Partial<AutoSettleSettings> & {
       autoResumeLimitedThreads?: boolean;
       snoozeLimitedThreads?: boolean;
+      laterRecheckLimit?: number;
     },
   ) => props.write(patch);
 
@@ -144,6 +146,31 @@ export function AutoSettleSettingsRows(props: {
             disabled={disabledFor("snoozeLimitedThreads")}
             onValueChange={(value) => writeToAll({ snoozeLimitedThreads: value })}
           />
+        </SettingsSection>
+      ) : null}
+      {!projectSelected ? (
+        <SettingsSection title="Later">
+          <View className="gap-1 px-4 py-4 android:py-3">
+            <View className="flex-row items-center gap-4">
+              <Text className="flex-1 text-foreground text-lg android:text-base">
+                Unattended re-checks
+              </Text>
+              <NumberField
+                value={referenceSettings.laterRecheckLimit}
+                min={0}
+                max={10}
+                label="Unattended re-checks per thread"
+                formatValue={(value) => (value === 0 ? "Off" : String(value))}
+                disabled={disabledFor("laterRecheckLimit")}
+                onValueChange={(value) => writeToAll({ laterRecheckLimit: value })}
+              />
+            </View>
+            <Text className="text-sm text-foreground-muted">
+              An agent can schedule its own re-check in a thread and run it later without you. After
+              this many in a row with no news, it must report what it found. Off stops agents from
+              scheduling re-checks; yours still work.
+            </Text>
+          </View>
         </SettingsSection>
       ) : null}
       <SettingsSection title="Auto-settle">

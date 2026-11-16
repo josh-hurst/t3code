@@ -110,6 +110,7 @@ function shouldPublishAgentAwarenessEvent(
     case "thread.guest-share-updated":
     case "thread.snoozed":
     case "thread.unsnoozed":
+    case "thread.follow-up-updated":
     case "thread.auto-settle-set":
     case "thread.pinned":
     case "thread.unpinned":
@@ -119,6 +120,7 @@ function shouldPublishAgentAwarenessEvent(
     case "thread.visited":
     case "thread.visit-recorded":
     case "thread.card-updated":
+    case "thread.entries-updated":
     case "thread.marked-unread":
     case "thread.runtime-mode-updated":
     case "thread.interaction-mode-updated":
@@ -319,6 +321,20 @@ const waitingApprovalId = (thread: AgentAwarenessThread | null) =>
     ? thread.pendingRuntimeRequest?.id
     : undefined;
 
+/**
+ * A run that ended while its thread was snoozed: a quiet re-check, a standing check, or a thread
+ * the user snoozed. Its completion must not ring the phone; questions and failures still do.
+ */
+function completedWhileSnoozed(thread: AgentAwarenessThread): boolean {
+  const completedAt = thread.latestRunCompletedAt;
+  return (
+    completedAt != null &&
+    thread.snoozedUntil != null &&
+    DateTime.isGreaterThan(thread.snoozedUntil, completedAt) &&
+    (thread.snoozedAt == null || !DateTime.isGreaterThan(thread.snoozedAt, completedAt))
+  );
+}
+
 function resolveAgentAwarenessRelayPublishSnapshot(input: {
   readonly environmentId: EnvironmentId;
   readonly thread: Option.Option<AgentAwarenessThread>;
@@ -359,9 +375,10 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
   const childDrivesWait =
     input.pendingSubagentRequest !== null &&
     state?.phase !== projectThreadAwarenessV2(awarenessInput)?.phase;
+  const quiet = state?.phase === "completed" && completedWhileSnoozed(input.thread.value);
   return {
     projectId: input.thread.value.projectId,
-    state: sanitizeRelayAgentActivityState(state),
+    state: quiet ? null : sanitizeRelayAgentActivityState(state),
     subagentWait: childDrivesWait ? input.pendingSubagentRequest : null,
     reason: "snapshot",
   };

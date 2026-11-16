@@ -1696,7 +1696,12 @@ describe("PullRequestSyncReactor", () => {
             id: EventId.make("sibling-synced"),
             threadId: linked.id,
             occurredAt: DateTime.makeUnsafe(NOW),
-            payload: { ...v2PullRequestThread(linked), lastVisitedAt: null, card: null },
+            payload: {
+              ...v2PullRequestThread(linked),
+              lastVisitedAt: null,
+              card: null,
+              followUp: null,
+            },
           });
           yield* Queue.take(fixture.snapshotReads);
           yield* reactor.drain;

@@ -45,7 +45,34 @@ import { AuthMcpClientAccess } from "./auth.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
-import { ThreadCard, ThreadCardSummary } from "./threadCard.ts";
+import { ThreadCard, ThreadCardOpenKind, ThreadCardSummary } from "./threadCard.ts";
+import {
+  ContentsBackfillEstimate,
+  ContentsBackfillEstimateInput,
+  ContentsBackfillStartInput,
+  ContentsBackfillStartResult,
+  ContentsBackfillStatus,
+  ListEntriesInput,
+  ListEntriesResult,
+  ListThreadEntriesInput,
+  ListThreadEntriesResult,
+  MarkPublishedInput,
+  MarkPublishedResult,
+  OpenItemCountsResult,
+  RefreshOpenItemsInput,
+  RefreshOpenItemsResult,
+  ResolveOpenItemInput,
+  ThreadContentsTopic,
+  ThreadEntriesUpdate,
+  ThreadEntry,
+  ThreadEntryFiling,
+  ThreadEntryId,
+  ThreadEntryOpenItem,
+  ThreadRunLine,
+  UndoPublishedInput,
+  UndoPublishedResult,
+} from "./threadEntries.ts";
+import { ThreadFollowUp, ThreadFollowUpSummary } from "./threadLater.ts";
 import { ThreadTitleRegenerationOutcome } from "./threadTitle.ts";
 import {
   OrchestrationSearchThreadsInput,
@@ -466,6 +493,13 @@ const LenientThreadCard = Schema.NullOr(ThreadCard).pipe(
 const LenientThreadCardSummary = Schema.NullOr(ThreadCardSummary).pipe(
   Schema.catchDecoding(() => Effect.succeedSome(null)),
 );
+// A follow-up this build cannot read is dropped rather than sent.
+const LenientThreadFollowUp = Schema.NullOr(ThreadFollowUp).pipe(
+  Schema.catchDecoding(() => Effect.succeedSome(null)),
+);
+const LenientThreadFollowUpSummary = Schema.NullOr(ThreadFollowUpSummary).pipe(
+  Schema.catchDecoding(() => Effect.succeedSome(null)),
+);
 
 const OrchestrationV2LastTitleRegeneration = Schema.Struct({
   ...ThreadTitleRegenerationOutcome.fields,
@@ -529,6 +563,9 @@ export const OrchestrationV2AppThread = Schema.Struct({
   ),
   opens: Schema.optional(LenientThreadOpens),
   card: Schema.optional(LenientThreadCard),
+  followUp: Schema.optional(LenientThreadFollowUp),
+  /** The owner made this thread a standing check: its scheduled runs file quietly. */
+  standingCheck: Schema.optional(Schema.Boolean),
   /** Set when the user or an agent names the thread; automatic retitles then leave it alone. */
   titleEditedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   /** The first generated title could not name the subject; retitle once the first run ends. */
@@ -1387,6 +1424,8 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
   notification: Schema.optional(OrchestrationV2Notification),
   ...OrchestrationV2CreationFields,
   scheduledTaskId: Schema.optional(ScheduledTaskId),
+  /** The question a Later follow-up sent; it is not the user writing. */
+  followUp: Schema.optional(Schema.Literal(true)),
   /** A scheduled delivery that named no model; it runs on the thread's selection at start. */
   followsThreadSelection: Schema.optional(Schema.Literal(true)),
   senderThreadId: Schema.optional(ThreadId),
@@ -2013,6 +2052,7 @@ export const OrchestrationV2DomainEvent = Schema.Union([
       "thread.model-selection-updated",
       "thread.provider-switched",
       "thread.guest-share-updated",
+      "thread.follow-up-updated",
     ]),
     payload: OrchestrationV2AppThread,
   }),
@@ -2030,6 +2070,12 @@ export const OrchestrationV2DomainEvent = Schema.Union([
     ...OrchestrationV2EventBase.fields,
     type: Schema.Literal("thread.card-updated"),
     payload: OrchestrationV2ThreadCardUpdate,
+  }),
+  /** The thread's Contents changed. Like a card, never the thread's activity. */
+  Schema.Struct({
+    ...OrchestrationV2EventBase.fields,
+    type: Schema.Literal("thread.entries-updated"),
+    payload: ThreadEntriesUpdate,
   }),
   Schema.Struct({
     ...OrchestrationV2EventBase.fields,
@@ -2277,6 +2323,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   opens: Schema.optional(LenientThreadOpens),
   card: Schema.optional(LenientThreadCardSummary),
+  followUp: Schema.optional(LenientThreadFollowUpSummary),
+  standingCheck: Schema.optional(Schema.Boolean),
   titleRegeneration: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
@@ -2965,6 +3013,7 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
       "thread.model-selection-updated",
       "thread.provider-switched",
       "thread.guest-share-updated",
+      "thread.follow-up-updated",
     ]),
     payload: OrchestrationV2AppThreadJson,
   }),
@@ -2982,6 +3031,11 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
     ...OrchestrationV2JsonEventBaseFields,
     type: Schema.Literal("thread.card-updated"),
     payload: OrchestrationV2ThreadCardUpdate,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2JsonEventBaseFields,
+    type: Schema.Literal("thread.entries-updated"),
+    payload: ThreadEntriesUpdate,
   }),
   Schema.Struct({
     ...OrchestrationV2JsonEventBaseFields,
@@ -3191,6 +3245,88 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     reason: Schema.Literal("user"),
   }),
+  /**
+   * Contents commands work on settled and archived threads and change nothing else about the
+   * thread. One that names a retired entry applies to the entry its `mergedInto` points at.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.contents.regroup.request"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    /** The sweep sends "idle"; the owner "manual". */
+    kind: Schema.Literals(["idle", "manual"]),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.entry.rename"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    entryId: ThreadEntryId,
+    title: ThreadEntry.fields.title,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.entry.merge"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    sourceEntryId: ThreadEntryId,
+    targetEntryId: ThreadEntryId,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.entry.move-run"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+    target: Schema.Union([
+      Schema.Struct({ entryId: ThreadEntryId }),
+      Schema.Struct({ newTitle: ThreadEntry.fields.title }),
+    ]),
+  }),
+  /** Undo of a hand edit: puts these entries back if nothing changed since. */
+  Schema.Struct({
+    type: Schema.Literal("thread.entries.restore"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    entries: Schema.Array(ThreadEntry),
+    expectRevision: NonNegativeInt,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.open-items.resolve"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    kinds: Schema.optional(Schema.Array(ThreadCardOpenKind)),
+    /** `threadCardOpenItemKey` of one item. */
+    key: Schema.optional(Schema.String),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.open-items.restore"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    items: Schema.Array(ThreadEntryOpenItem),
+  }),
+  /** Asks this thread `question` again later, with no user present. */
+  Schema.Struct({
+    type: Schema.Literal("thread.follow-up.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    question: ThreadFollowUp.fields.question,
+    reason: ThreadFollowUp.fields.reason,
+    /** Exactly one of `dueAt` and `afterPublishMinutes`. */
+    dueAt: Schema.optional(IsoDateTime),
+    afterPublishMinutes: ThreadFollowUp.fields.afterPublishMinutes,
+    armedBy: ThreadFollowUp.fields.armedBy,
+    /** `laterRecheckLimit` as the sender read it; an agent's set is refused without it. */
+    limit: Schema.optional(NonNegativeInt),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.follow-up.clear"),
+    commandId: CommandId,
+    threadId: ThreadId,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.standing-check.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    enabled: Schema.Boolean,
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.auto-settle.set"),
     commandId: CommandId,
@@ -3354,6 +3490,8 @@ export const OrchestrationV2Command = Schema.Union([
     guestMessageId: Schema.optional(GuestMessageId),
     ...OrchestrationV2CreationFields,
     scheduledTaskId: Schema.optional(ScheduledTaskId),
+    /** Sent by the Later sweep; only a server-created agent message may carry it. */
+    followUp: Schema.optional(Schema.Literal(true)),
     senderThreadId: Schema.optional(ThreadId),
     linkedSender: Schema.optional(OrchestrationV2LinkedSender),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
@@ -3624,6 +3762,13 @@ const OrchestrationV2InternalCommand = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
   }),
+  /** A publish gives a follow-up that waits for one its time. */
+  Schema.Struct({
+    type: Schema.Literal("thread.follow-up.release"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    dueAt: IsoDateTime,
+  }),
   /** What a completed run left behind, written by the server after it reads the reply. */
   Schema.Struct({
     type: Schema.Literal("thread.card.record"),
@@ -3636,6 +3781,36 @@ const OrchestrationV2InternalCommand = Schema.Union([
     line: ThreadCardSummary.fields.line,
     topics: ThreadCardSummary.fields.topics,
     open: ThreadCardSummary.fields.open,
+    /** Absent: write the card only. */
+    run: Schema.optional(
+      Schema.Struct({
+        ordinal: PositiveInt,
+        userMessageId: MessageId,
+        startedAt: IsoDateTime,
+        startedBy: ThreadRunLine.fields.startedBy,
+        ownerText: ThreadRunLine.fields.ownerText,
+        /** A whole message of four words or fewer that only says "go on", with nothing sent mid-run. */
+        goAhead: Schema.Boolean,
+        /** The owner typed something during the run. */
+        ownerSpokeMidRun: Schema.Boolean,
+      }),
+    ),
+    filing: Schema.optional(Schema.Array(ThreadEntryFiling).check(Schema.isMaxLength(2))),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.contents.regroup.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    kind: Schema.Literals(["mark", "idle", "manual", "backfill"]),
+    topics: Schema.Array(ThreadContentsTopic),
+  }),
+  /** Older runs' lines, written without a card, open items, retitle or activity. */
+  Schema.Struct({
+    type: Schema.Literal("thread.contents.backfill.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runLines: Schema.Array(ThreadRunLine),
+    topics: Schema.optional(Schema.Array(ThreadContentsTopic)),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request-watch.sync"),
@@ -3838,6 +4013,17 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   getThreadLinkMetadata: "orchestration.getThreadLinkMetadata",
   getWorktreeThreadIds: "orchestration.getWorktreeThreadIds",
   getOlderSettledThreads: "orchestration.getOlderSettledThreads",
+  listThreadEntries: "orchestration.listThreadEntries",
+  listEntries: "orchestration.listEntries",
+  getOpenItemCounts: "orchestration.getOpenItemCounts",
+  markPublished: "orchestration.markPublished",
+  undoPublished: "orchestration.undoPublished",
+  refreshOpenItems: "orchestration.refreshOpenItems",
+  resolveOpenItem: "orchestration.resolveOpenItem",
+  estimateContentsBackfill: "orchestration.estimateContentsBackfill",
+  startContentsBackfill: "orchestration.startContentsBackfill",
+  getContentsBackfill: "orchestration.getContentsBackfill",
+  cancelContentsBackfill: "orchestration.cancelContentsBackfill",
   getThreadProjection: "orchestration.getThreadProjection",
   getWorkflowScript: "orchestration.getWorkflowScript",
   getNativeChildWork: "orchestration.getNativeChildWork",
@@ -4559,6 +4745,20 @@ export const OrchestrationV2RpcSchemas = {
     input: OrchestrationV2GetOlderSettledThreadsInput,
     output: OrchestrationV2OlderSettledThreadsPage,
   },
+  listThreadEntries: { input: ListThreadEntriesInput, output: ListThreadEntriesResult },
+  listEntries: { input: ListEntriesInput, output: ListEntriesResult },
+  getOpenItemCounts: { input: Schema.Struct({}), output: OpenItemCountsResult },
+  markPublished: { input: MarkPublishedInput, output: MarkPublishedResult },
+  undoPublished: { input: UndoPublishedInput, output: UndoPublishedResult },
+  refreshOpenItems: { input: RefreshOpenItemsInput, output: RefreshOpenItemsResult },
+  resolveOpenItem: { input: ResolveOpenItemInput, output: Schema.Void },
+  estimateContentsBackfill: {
+    input: ContentsBackfillEstimateInput,
+    output: ContentsBackfillEstimate,
+  },
+  startContentsBackfill: { input: ContentsBackfillStartInput, output: ContentsBackfillStartResult },
+  getContentsBackfill: { input: Schema.Struct({}), output: ContentsBackfillStatus },
+  cancelContentsBackfill: { input: Schema.Struct({}), output: Schema.Void },
   getThreadProjection: {
     input: OrchestrationV2GetThreadProjectionInput,
     output: OrchestrationV2ThreadProjection,

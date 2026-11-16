@@ -2402,6 +2402,8 @@ describe("EnvironmentThreads", () => {
       );
 
       expect(Option.isNone(recovered.error)).toBe(true);
+      // The second snapshot is a resync: topics read their list again (`threadEntriesAtom`).
+      expect(recovered.snapshots).toBe(2);
       expect(yield* SubscriptionRef.get(harness.subscriptionCount)).toBe(2);
     }),
   );

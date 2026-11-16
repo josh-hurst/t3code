@@ -9,6 +9,7 @@ import {
   CommandId,
   isOrchestrationV2WorkActive,
   threadCardHasOpenAsk,
+  threadFollowUpIsArmed,
   type ThreadId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
@@ -163,6 +164,8 @@ export function isAutoSettlementCandidate(
   if (threadHasQueuedTurnStart(thread, nowMs)) return false;
   // An unanswered question keeps the thread in Needs you; settling would bury it.
   if (threadCardHasOpenAsk(thread.card)) return false;
+  // A pending re-check or a standing check is still waiting on its clock.
+  if (threadFollowUpIsArmed(thread.followUp) || thread.standingCheck === true) return false;
   // Interrupted runs must keep the same snooze protection the sidebar shows.
   return !isSnoozed(thread, nowMs);
 }
@@ -177,6 +180,7 @@ export function isSnoozed(
     | "status"
     | "pendingRuntimeRequest"
     | "pendingGuestMessageCount"
+    | "card"
   >,
   nowMs: number,
 ): boolean {
@@ -190,6 +194,13 @@ export function isSnoozed(
     (thread.pendingRuntimeRequest.kind !== "user_input" ||
       snoozedAtMs === null ||
       DateTime.toEpochMillis(thread.pendingRuntimeRequest.createdAt) > snoozedAtMs)
+  ) {
+    return false;
+  }
+  // A question the agent wrote after the snooze began, such as at the end of a quiet re-check.
+  if (
+    threadCardHasOpenAsk(thread.card) &&
+    (snoozedAtMs === null || Date.parse(thread.card?.at ?? "") > snoozedAtMs)
   ) {
     return false;
   }

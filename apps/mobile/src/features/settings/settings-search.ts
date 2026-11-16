@@ -78,6 +78,8 @@ const SETTINGS_SEARCH_TERMS = {
     "snooze",
     "usage limits",
     "auto-resume",
+    "re-check",
+    "later",
     "thread behavior",
   ],
   SettingsFollowUp: ["follow-ups", "queue", "steer", "while the agent is running"],

@@ -5,9 +5,16 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as SqlClient from "effect/sql/SqlClient";
+import {
+  DATABASE_MIGRATIONS_FINISHED_MESSAGE,
+  DATABASE_MIGRATIONS_STARTED_MESSAGE,
+} from "@t3tools/shared/databaseMigrationLog";
 
-import { migrationManifest, runMigrations } from "./Migrations.ts";
+import { forkMigrationManifest } from "./ForkMigrations.ts";
+import { hasPendingMigrations, migrationManifest, runMigrations } from "./Migrations.ts";
 
 const v2Migrations = migrationManifest.filter(([id]) => id >= 55);
 const newerMigrationId = Math.max(...migrationManifest.map(([id]) => id)) + 1;
@@ -18,6 +25,22 @@ const history = Effect.gen(function* () {
     SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id
   `;
   return rows.map((row) => [row.migration_id, row.name] as const);
+});
+
+const forkHistory = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const rows = yield* sql<{ readonly migration_id: number; readonly name: string }>`
+    SELECT migration_id, name FROM t3_fork_migrations ORDER BY migration_id
+  `;
+  return rows.map((row) => [row.migration_id, row.name] as const);
+});
+
+const schemaObjects = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const rows = yield* sql<{ readonly name: string }>`
+    SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name
+  `;
+  return rows.map((row) => row.name);
 });
 
 const v2TableCount = Effect.gen(function* () {
@@ -68,6 +91,64 @@ describe("runMigrations", () => {
       assert.strictEqual(yield* v2TableCount, 0);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
+
+  it.effect("fills both ledgers on a fresh database, and fork ids stay out of upstream's", () =>
+    Effect.gen(function* () {
+      yield* runMigrations();
+      assert.deepStrictEqual(yield* history, migrationManifest);
+      assert.deepStrictEqual(yield* forkHistory, forkMigrationManifest);
+      assert.isFalse(yield* hasPendingMigrations());
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("runs only the fork migrations on a database at the upstream head", () => {
+    const messages: Array<unknown> = [];
+    const logger = Logger.make(({ message }) => {
+      messages.push(Array.isArray(message) ? message[0] : message);
+    });
+    return Effect.gen(function* () {
+      const head = Math.max(...migrationManifest.map(([id]) => id));
+      yield* runMigrations({ toMigrationInclusive: head });
+      const before = yield* schemaObjects;
+      assert.notInclude(before, "t3_fork_migrations");
+      assert.isTrue(yield* hasPendingMigrations());
+      messages.length = 0;
+
+      assert.deepStrictEqual(yield* runMigrations(), []);
+
+      assert.deepStrictEqual(messages, [
+        DATABASE_MIGRATIONS_STARTED_MESSAGE,
+        DATABASE_MIGRATIONS_FINISHED_MESSAGE,
+      ]);
+      assert.deepStrictEqual(yield* history, migrationManifest);
+      assert.deepStrictEqual(yield* forkHistory, forkMigrationManifest);
+      const after = yield* schemaObjects;
+      assert.deepStrictEqual(
+        after.filter((name) => !before.includes(name)),
+        [
+          "t3_fork_migrations",
+          "tide_publish_markers",
+          "tide_publish_markers_project_idx",
+          "tide_thread_contents",
+          "tide_thread_contents_due_idx",
+          "tide_thread_entries",
+          "tide_thread_entries_open_idx",
+          "tide_thread_entries_recent_idx",
+          "tide_thread_entries_thread_idx",
+          "tide_thread_runs",
+          "tide_thread_runs_thread_idx",
+        ],
+      );
+      assert.isFalse(yield* hasPendingMigrations());
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          NodeSqliteClient.layer({ filename: ":memory:" }),
+          Logger.layer([logger], { mergeWithExisting: false }),
+        ),
+      ),
+    );
+  });
 
   it.effect("upgrades a database at exactly 54", () =>
     Effect.gen(function* () {
@@ -191,6 +272,7 @@ describe("runMigrations", () => {
       `;
 
       assert.deepStrictEqual(yield* runMigrations(), []);
+      assert.deepStrictEqual(yield* forkHistory, forkMigrationManifest);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });
@@ -209,5 +291,13 @@ it.effect("registers every migration file", () =>
       files.toSorted(([a], [b]) => a - b),
       migrationManifest,
     );
+    const forkFiles = (yield* fs.readDirectory(path.join(import.meta.dirname, "ForkMigrations")))
+      .flatMap((name) => {
+        const match = /^(\d+)_(\w+)\.ts$/.exec(name);
+        return match ? [[Number(match[1]), match[2]] as const] : [];
+      })
+      .toSorted(([a], [b]) => a - b);
+    assert.deepStrictEqual(forkFiles, forkMigrationManifest);
+    for (const [, name] of forkMigrationManifest) assert.match(name, /^Tide/);
   }).pipe(Effect.provide(NodeServices.layer)),
 );

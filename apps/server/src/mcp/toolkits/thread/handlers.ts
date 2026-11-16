@@ -19,6 +19,7 @@ import {
   readThread,
   unavailable,
 } from "../../threadAccess.ts";
+import * as ThreadFollowUpService from "../../../orchestration-v2/ThreadFollowUpService.ts";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
 import { queuedRunsInDeliveryOrder } from "../../../orchestration-v2/QueuedRunOrder.ts";
@@ -350,6 +351,31 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
         return yield* threads
           .settleThread({ ...common, byOwnAgent: caller?.id === projection.thread.id })
           .pipe(Effect.mapError(dispatchFailure));
+      }
+      if (input.action === "check_later") {
+        const followUps = yield* ThreadFollowUpService.ThreadFollowUpService;
+        return yield* followUps
+          .arm({
+            ...common,
+            callerThreadId: caller?.id ?? null,
+            at: input.at,
+            inMinutes: input.inMinutes,
+            afterPublish: input.afterPublish,
+            question: input.question,
+            reason: input.reason,
+          })
+          .pipe(
+            Effect.catchTags({
+              ThreadFollowUpRequestError: (error) =>
+                Effect.fail(
+                  new OrchestratorMcpFailure({ code: "invalid_request", message: error.message }),
+                ),
+              ServerSettingsError: () => Effect.fail(unavailable()),
+            }),
+            Effect.mapError((error) =>
+              error._tag === "OrchestratorMcpFailure" ? error : dispatchFailure(error),
+            ),
+          );
       }
       let command: OrchestrationV2Command;
       switch (input.action) {

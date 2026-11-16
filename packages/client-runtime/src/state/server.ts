@@ -1297,6 +1297,12 @@ export function createServerEnvironmentAtoms<R, E>(
       Atom.withLabel(`environment-data:server:usage-model-filter:${environmentId}`),
     ),
   );
+  // Later rows read "Re-check 2 of 3" from this; null until the environment's settings load.
+  const laterRecheckLimitAtom = Atom.family((environmentId: EnvironmentId) =>
+    Atom.make((get) => get(settingsValueAtom(environmentId))?.laterRecheckLimit ?? null).pipe(
+      Atom.withLabel(`environment-data:server:later-recheck-limit:${environmentId}`),
+    ),
+  );
   const providersValueAtom = Atom.family((environmentId: EnvironmentId) =>
     Atom.make((get) => get(configValueAtom(environmentId))?.providers ?? null).pipe(
       Atom.withLabel(`environment-data:server:providers:${environmentId}`),
@@ -1386,6 +1392,7 @@ export function createServerEnvironmentAtoms<R, E>(
     settingsValueAtom,
     hiddenThreadTagsAtom,
     usageModelFilterAtom,
+    laterRecheckLimitAtom,
     providersValueAtom,
     providerAuthState: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:provider:auth-state",

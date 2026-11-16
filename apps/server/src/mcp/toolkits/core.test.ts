@@ -53,6 +53,7 @@ import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as RemoteDelegation from "../../peer/RemoteDelegation.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
+import * as ThreadFollowUpService from "../../orchestration-v2/ThreadFollowUpService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as McpHttpServer from "../McpHttpServer.ts";
 import * as McpInvocationContext from "../McpInvocationContext.ts";
@@ -85,7 +86,12 @@ const decodeThreadSearchResult = Schema.decodeUnknownEffect(
 
 const layerThreadToolkit = McpHttpServer.layerThreadToolkit.pipe(
   Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
-  Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+  Layer.provide(
+    Layer.merge(
+      Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+      Layer.mock(ThreadFollowUpService.ThreadFollowUpService)({}),
+    ),
+  ),
   Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
   Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
   Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
@@ -808,7 +814,12 @@ it.effect("search names the calling thread, so an agent can tell its own match a
               }),
           }),
         ),
-        Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+        Layer.provide(
+          Layer.merge(
+            Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+            Layer.mock(ThreadFollowUpService.ThreadFollowUpService)({}),
+          ),
+        ),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
         Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
         Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
@@ -843,6 +854,14 @@ it.effect("a read-only client reads threads and is refused every write before it
     });
     expect(declaredFailure(pinned)).toMatchObject({ code: "capability_denied" });
     expect(dispatched).toEqual([]);
+    const recheck = yield* call("t3_thread_organize", {
+      action: "check_later",
+      threadId: "other-project-thread",
+      inMinutes: 60,
+      question: "Done?",
+      reason: "Test",
+    });
+    expect(declaredFailure(recheck)).toMatchObject({ code: "capability_denied" });
 
     const configure = yield* call("t3_thread_configure", {
       threadId: "other-project-thread",
@@ -887,6 +906,103 @@ it.effect("a read-only client reads threads and is refused every write before it
 );
 const dispatched: Array<string> = [];
 
+it.effect(
+  "check_later reaches the Later service as the calling thread; there is no agent cancel",
+  () =>
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const call = (args: Record<string, unknown>) =>
+        server
+          .callTool({ name: "t3_thread_organize", arguments: args })
+          .pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+            Effect.provideService(McpSchema.McpServerClient, client),
+          );
+      const armed = yield* call({
+        action: "check_later",
+        inMinutes: 60,
+        question: "Did the nightly test pass?",
+        reason: "Nightly test",
+      });
+      expect(declaredFailure(armed)).toBeUndefined();
+      expect(armed.structuredContent).toEqual({
+        checkAt: "2026-11-17T09:00:00.000Z",
+        recheck: 0,
+        limit: 3,
+      });
+      const refused = yield* call({ action: "check_later", question: "Done?", reason: "Test" });
+      expect(declaredFailure(refused)).toMatchObject({
+        code: "invalid_request",
+        message: "check_later needs exactly one of at, inMinutes and afterPublish.",
+      });
+      // An agent cannot clear its follow-up, which would restart its quiet count.
+      const cancelled = yield* call({ action: "cancel_check" }).pipe(Effect.flip);
+      expect(cancelled.message).toContain("Invalid parameters for tool 't3_thread_organize'");
+      expect(followUpCalls).toEqual([
+        {
+          action: "arm",
+          threadId,
+          callerThreadId: threadId,
+          inMinutes: 60,
+          question: "Did the nightly test pass?",
+        },
+        {
+          action: "arm",
+          threadId,
+          callerThreadId: threadId,
+          inMinutes: undefined,
+          question: "Done?",
+        },
+      ]);
+    }).pipe(
+      Effect.provide(
+        McpHttpServer.layerThreadToolkit.pipe(
+          Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+          Layer.provide(NodeCrypto.layer),
+          Layer.provide(
+            Layer.mock(ThreadManagement.ThreadManagementService)({
+              getThreadShell: (id) => Effect.succeed(McpToolAccessTestkit.liveThreadShell(id)),
+              getProjectThreadRecords: () =>
+                Effect.succeed(
+                  McpToolAccessTestkit.idleThreadProjection(
+                    McpToolAccessTestkit.liveThreadShell(threadId),
+                  ),
+                ),
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(ThreadFollowUpService.ThreadFollowUpService)({
+              arm: (input) =>
+                Effect.suspend(() => {
+                  followUpCalls.push({
+                    action: "arm",
+                    threadId: input.threadId,
+                    callerThreadId: input.callerThreadId,
+                    inMinutes: input.inMinutes,
+                    question: input.question,
+                  });
+                  return input.inMinutes === undefined
+                    ? Effect.fail(
+                        new ThreadFollowUpService.ThreadFollowUpRequestError({
+                          threadId: input.threadId,
+                          problem: "needs-one-time",
+                        }),
+                      )
+                    : Effect.succeed({ checkAt: "2026-11-17T09:00:00.000Z", recheck: 0, limit: 3 });
+                }),
+            }),
+          ),
+          Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
+          Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+          Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
+          Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
+          Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
+        ),
+      ),
+    ),
+);
+const followUpCalls: Array<Record<string, unknown>> = [];
+
 it.effect("refuses act-as-caller tools to a client caller", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
@@ -912,7 +1028,12 @@ it.effect("refuses act-as-caller tools to a client caller", () =>
         Layer.provide(ServerSettings.layerTest()),
         Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
         Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
-        Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+        Layer.provide(
+          Layer.merge(
+            Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+            Layer.mock(ThreadFollowUpService.ThreadFollowUpService)({}),
+          ),
+        ),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
         Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
         Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
@@ -1036,7 +1157,12 @@ it.effect.each([
         Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
         Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
-        Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
+        Layer.provide(
+          Layer.merge(
+            Layer.mock(PeerLinks.PeerLinks)({}),
+            Layer.mock(ThreadFollowUpService.ThreadFollowUpService)({}),
+          ),
+        ),
         Layer.provide(
           Layer.mock(ScheduledTaskService.ScheduledTaskService)({
             list: () => Effect.succeed({ tasks }),
@@ -1124,7 +1250,12 @@ it.effect.each(["t3_thread_interrupt", "t3_workflow_stop"])(
           Layer.provide(ServerSettings.layerTest()),
           Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
           Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
-          Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+          Layer.provide(
+            Layer.merge(
+              Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+              Layer.mock(ThreadFollowUpService.ThreadFollowUpService)({}),
+            ),
+          ),
           Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
           Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
           Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
@@ -1221,7 +1352,12 @@ it.effect("discovers workflow stop targets and requires orchestration capability
         Layer.provide(ServerSettings.layerTest()),
         Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
         Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
-        Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+        Layer.provide(
+          Layer.merge(
+            Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+            Layer.mock(ThreadFollowUpService.ThreadFollowUpService)({}),
+          ),
+        ),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
         Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
         Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
@@ -1333,7 +1469,12 @@ it.effect(
           Layer.provide(ServerSettings.layerTest()),
           Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
           Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
-          Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+          Layer.provide(
+            Layer.merge(
+              Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+              Layer.mock(ThreadFollowUpService.ThreadFollowUpService)({}),
+            ),
+          ),
           Layer.provide(
             Layer.mock(ProjectService.ProjectService)({
               getById: (projectId) =>

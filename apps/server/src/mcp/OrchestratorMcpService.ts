@@ -42,6 +42,8 @@ import {
   type OrchestratorMcpThreadListInput,
   type OrchestratorMcpThreadListItem,
   type OrchestratorMcpThreadListResult,
+  isThreadSetAside,
+  threadFollowUpIsArmed,
   type OrchestratorMcpThreadReadInput,
   type OrchestratorMcpThreadReadResult,
   type OrchestratorMcpThreadRun,
@@ -798,15 +800,23 @@ function threadSettlement(
   };
 }
 
+/** A set-aside thread has no wake time, so its far-future snooze is never reported as a date. */
 function threadSnooze(
-  thread: Parameters<typeof isSnoozed>[0],
+  thread: Parameters<typeof isSnoozed>[0] & Pick<OrchestrationV2ThreadShell, "followUp">,
   nowMs: number,
-): Pick<OrchestratorMcpThreadListItem, "snoozed" | "snoozedUntil"> {
+): Pick<OrchestratorMcpThreadListItem, "snoozed" | "snoozedUntil" | "setAside" | "checkAt"> {
   const snoozed = isSnoozed(thread, nowMs);
+  const setAside = snoozed && isThreadSetAside(thread.snoozedUntil);
   return {
     snoozed,
     snoozedUntil:
-      snoozed && thread.snoozedUntil != null ? DateTime.formatIso(thread.snoozedUntil) : null,
+      snoozed && !setAside && thread.snoozedUntil != null
+        ? DateTime.formatIso(thread.snoozedUntil)
+        : null,
+    ...(setAside ? { setAside: true } : {}),
+    ...(thread.followUp != null && threadFollowUpIsArmed(thread.followUp)
+      ? { checkAt: thread.followUp.dueAt }
+      : {}),
   };
 }
 

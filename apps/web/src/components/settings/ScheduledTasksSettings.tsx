@@ -13,7 +13,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type {
   EnvironmentId,
   ModelSelection,
@@ -75,7 +75,13 @@ import { environmentAtomList, environmentIdsKey } from "../../state/environmentA
 import { useThreadSearch } from "../../state/queries";
 import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/query";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
-import { threadFamilies } from "../../state/threads";
+import { threadEnvironment, threadFamilies } from "../../state/threads";
+import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import {
+  setPendingStandingCheckDraft,
+  usePendingStandingCheckDraft,
+  type StandingCheckDraft,
+} from "./standingCheckDraft";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { WorktreeBaseBranchPicker } from "../WorktreeBaseBranchPicker";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
@@ -377,7 +383,19 @@ export function ScheduledTasksSettings(target: {
   const [editor, setEditor] = useState<{
     environmentId: EnvironmentId;
     task: ScheduledTask | null;
+    standingCheck?: StandingCheckDraft;
   } | null>(null);
+  // A thread's "Make this a standing check" opens the editor once with its draft. The draft
+  // stays pending until the editor closes, so a discarded render cannot lose it.
+  const standingCheck = usePendingStandingCheckDraft();
+  const [openedStandingCheck, setOpenedStandingCheck] = useState<StandingCheckDraft | null>(null);
+  if (standingCheck !== null && standingCheck !== openedStandingCheck && editor === null) {
+    setOpenedStandingCheck(standingCheck);
+    setEditor({ environmentId: standingCheck.environmentId, task: null, standingCheck });
+  }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops a pending standing-check draft when the page closes, so it never reopens later
+  useEffect(() => () => setPendingStandingCheckDraft(null), []);
+  const setThreadStandingCheck = useOrchestrationCommand(threadEnvironment.setStandingCheck);
   const openForEdit = (environmentId: EnvironmentId, task: ScheduledTask) => {
     setEditor({ environmentId, task });
   };
@@ -413,6 +431,7 @@ export function ScheduledTasksSettings(target: {
   }
   const navigate = useNavigate({ from: "/settings/scheduled-tasks" });
   const closeEditor = () => {
+    if (editor?.standingCheck !== undefined) setPendingStandingCheckDraft(null);
     setEditor(null);
     if (target.taskId === undefined) return;
     void navigate({
@@ -491,6 +510,16 @@ export function ScheduledTasksSettings(target: {
           key={`${editor.environmentId}:${editor.task?.id ?? "new"}`}
           initialEnvironmentId={editor.environmentId}
           task={editor.task}
+          standingCheck={editor.standingCheck}
+          onSaved={(input) => {
+            const thread = editor.standingCheck;
+            // The flag follows the saved task only while it stays bound to that thread.
+            if (thread === undefined || input.threadId !== thread.threadId) return;
+            void setThreadStandingCheck({
+              environmentId: thread.environmentId,
+              input: { threadId: thread.threadId, enabled: true },
+            });
+          }}
           onClose={closeEditor}
         />
       ) : null}
@@ -1147,10 +1176,14 @@ function WebhookDeliveryMode({ environmentId }: { readonly environmentId: Enviro
 function ScheduledTaskEditorDialog({
   initialEnvironmentId,
   task,
+  standingCheck,
+  onSaved,
   onClose,
 }: {
   readonly initialEnvironmentId: EnvironmentId;
   readonly task: ScheduledTask | null;
+  readonly standingCheck: StandingCheckDraft | undefined;
+  readonly onSaved: (input: ScheduledTaskUpsertInput) => void;
   readonly onClose: () => void;
 }) {
   const [saving, setSaving] = useState(false);
@@ -1166,6 +1199,8 @@ function ScheduledTaskEditorDialog({
         <ScheduledTaskEditorForm
           initialEnvironmentId={initialEnvironmentId}
           task={task}
+          standingCheck={standingCheck}
+          onSaved={onSaved}
           saving={saving}
           onSavingChange={setSaving}
           onClose={onClose}
@@ -1337,12 +1372,16 @@ function ScheduledTaskDestination({
 function ScheduledTaskEditorForm({
   initialEnvironmentId,
   task,
+  standingCheck,
+  onSaved,
   saving,
   onSavingChange: setSaving,
   onClose,
 }: {
   readonly initialEnvironmentId: EnvironmentId;
   readonly task: ScheduledTask | null;
+  readonly standingCheck: StandingCheckDraft | undefined;
+  readonly onSaved: (input: ScheduledTaskUpsertInput) => void;
   readonly saving: boolean;
   readonly onSavingChange: (saving: boolean) => void;
   readonly onClose: () => void;
@@ -1380,10 +1419,22 @@ function ScheduledTaskEditorForm({
   const [draft, setDraft] = useState<DraftState>(() =>
     task
       ? taskToDraft(task)
-      : {
-          ...EMPTY_DRAFT,
-          projectId: defaultScheduledTaskProjectId(scopedProjects, scope),
-        },
+      : standingCheck
+        ? {
+            ...EMPTY_DRAFT,
+            title: standingCheck.title,
+            prompt: standingCheck.prompt,
+            scheduleMode: "fixed",
+            timeOfDay: "09:00",
+            weekdays: new Set([0, 1, 2, 3, 4, 5, 6]),
+            projectId: standingCheck.projectId,
+            threadId: standingCheck.threadId,
+            threadMode: "continue",
+          }
+        : {
+            ...EMPTY_DRAFT,
+            projectId: defaultScheduledTaskProjectId(scopedProjects, scope),
+          },
   );
   // Pinned first. The chosen project stays listed after it is archived.
   const projects = scopedProjects
@@ -1542,17 +1593,24 @@ function ScheduledTaskEditorForm({
       }
       return;
     }
+    onSaved(input);
     onClose();
   };
 
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{draft.editingId ? "Edit task" : "New task"}</DialogTitle>
+        <DialogTitle>
+          {draft.editingId ? "Edit task" : standingCheck ? "New standing check" : "New task"}
+        </DialogTitle>
         <DialogDescription>
-          Run a prompt automatically on an interval, at a fixed time, once at a set date, or when a
-          webhook is called.
+          {standingCheck
+            ? "This thread runs on this schedule and waits in Later between runs. It comes back when a run needs you. Nothing runs until you save."
+            : "Run a prompt automatically on an interval, at a fixed time, once at a set date, or when a webhook is called."}
         </DialogDescription>
+        {standingCheck?.notice ? (
+          <p className="text-sm text-warning-foreground">{standingCheck.notice}</p>
+        ) : null}
       </DialogHeader>
 
       <DialogPanel>

@@ -48,6 +48,8 @@ export * from "./threadMetadataMcp.ts";
 export * from "./threadPullRequest.ts";
 export * from "./threadSearch.ts";
 export * from "./threadCard.ts";
+export * from "./threadEntries.ts";
+export * from "./threadLater.ts";
 export * from "./threadTags.ts";
 export * from "./threadTitle.ts";
 export * from "./t3ProjectFile.ts";

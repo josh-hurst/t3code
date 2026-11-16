@@ -575,6 +575,24 @@ export default function ChatView(props: ChatViewProps) {
   const clientSettingsHydrated = useClientSettingsHydrated();
   const timestampFormat = settings.timestampFormat;
   const navigate = useNavigate();
+  // `?m=`: open the thread at this message, as a History row or topic result asks.
+  const openAtMessageId = useLocation({
+    select: (location) => {
+      const m = (location.search as { readonly m?: unknown }).m;
+      return typeof m === "string" && m !== "" ? m : null;
+    },
+  });
+  const clearOpenAtMessage = () =>
+    void navigate({
+      to: ".",
+      search: (previous: Record<string, unknown>) => {
+        const { m: _m, ...rest } = previous;
+        return rest;
+      },
+      hash: true,
+      replace: true,
+      resetScroll: false,
+    });
   // Selects primitives: an object here is new on every router store update, which
   // re-renders ChatView on unrelated navigation state changes.
   const citationHref = useLocation({ select: (location) => location.href });
@@ -3506,6 +3524,17 @@ export default function ChatView(props: ChatViewProps) {
                   {...(threadHistoryControls === undefined
                     ? {}
                     : { historyControls: threadHistoryControls })}
+                  contentsThread={
+                    serverThread === null
+                      ? null
+                      : { environmentId: serverThread.environmentId, threadId: serverThread.id }
+                  }
+                  openAtMessage={
+                    // Rows and history paging are final only once the detail is live.
+                    openAtMessageId === null || threadStatus !== "live"
+                      ? null
+                      : { messageId: openAtMessageId, onDone: clearOpenAtMessage }
+                  }
                 />
               </WorkspaceMutationIdContext>
 

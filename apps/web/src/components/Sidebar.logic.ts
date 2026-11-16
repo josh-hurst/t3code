@@ -43,6 +43,7 @@ import type {
 import type { AsyncResult } from "effect/reactivity";
 import {
   effectiveSnoozed,
+  snoozeWakeAtMs,
   type ThreadSnoozeShell,
 } from "@t3tools/client-runtime/state/thread-settled";
 import {
@@ -158,7 +159,7 @@ export function useSnoozeWakeClock(
   const wakeTimes: number[] = [];
   let nextWakeAt: number | null = null;
   for (const thread of threads) {
-    const wakeAt = thread.snoozedUntil == null ? Number.NaN : Date.parse(thread.snoozedUntil);
+    const wakeAt = snoozeWakeAtMs(thread.snoozedUntil) ?? Number.NaN;
     if (!(wakeAt > clockMs)) continue;
     wakeTimes.push(wakeAt);
     if (nextWakeAt === null || wakeAt < nextWakeAt) nextWakeAt = wakeAt;
@@ -1160,17 +1161,6 @@ export type SidebarV2TopStatusKind =
   | "waiting"
   | "woke"
   | "working";
-
-export function firstValidTimestampMs(
-  ...candidates: ReadonlyArray<string | null | undefined>
-): number {
-  for (const candidate of candidates) {
-    if (candidate == null) continue;
-    const parsed = Date.parse(candidate);
-    if (!Number.isNaN(parsed)) return parsed;
-  }
-  return 0;
-}
 
 export { sortActiveThreadsByOrderKey as sortThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
 export {

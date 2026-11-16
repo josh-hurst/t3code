@@ -106,6 +106,7 @@ import {
 import { useSearchToolbarInset } from "../../components/ui/useBarInset";
 import type { AppBarSearch } from "../../components/ui/AppBar";
 import { ModelRow, ChoiceRow } from "./ThreadSettingsRows";
+import { ThreadContentsList, ThreadContentsRow, type ContentsThread } from "./ThreadContentsList";
 import {
   compatibleRuntimeModeForChoices,
   runtimeModeChoicesForSupportedModes,
@@ -861,9 +862,19 @@ function ThreadSettingsOptionsItem(props: {
         ?.providers.find((provider) => provider.instanceId === session.providerInstanceId) ?? null)
     : null;
 
+  const presentation = useThreadSettingsPickerPresentation();
+  const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
+  const contentsThread = presentation.contentsThread;
+
   return (
     <View style={{ paddingBottom: insets.bottom + props.bottomInset + 12 }}>
       <ChatGptSharingStatus provider={selectedProvider} />
+      {contentsThread === null ? null : (
+        <ThreadContentsRow
+          thread={contentsThread}
+          onPress={() => navigation.navigate("ThreadSettingsContents")}
+        />
+      )}
       <Text className="px-5 pb-2 pt-2 text-sm font-t3-medium text-foreground-muted">Options</Text>
       <Animated.View
         className="mx-4 overflow-hidden rounded-2xl bg-grouped-card"
@@ -1180,10 +1191,13 @@ function ThreadSettingsChoiceContent(props: {
 type ThreadSettingsPickerStackParams = {
   ThreadSettingsModels: undefined;
   ThreadSettingsChoice: ThreadSettingsSubmenuPage & { readonly title: string };
+  ThreadSettingsContents: undefined;
 };
 
 type ThreadSettingsPickerPresentation = {
   readonly onClose: () => void;
+  /** An existing thread, whose topics the sheet can list; null for a new task. */
+  readonly contentsThread: ContentsThread | null;
 };
 
 const ThreadSettingsPickerStack = createNativeStackNavigator<ThreadSettingsPickerStackParams>();
@@ -1312,10 +1326,27 @@ function ThreadSettingsChoiceScreen() {
   );
 }
 
+function ThreadSettingsContentsScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
+  const presentation = useThreadSettingsPickerPresentation();
+  const thread = presentation.contentsThread;
+  return (
+    <>
+      <AppBar title="Contents" onBack={() => navigation.goBack()} hideBottomBorder />
+      <ScreenContent>
+        {thread === null ? null : (
+          <ThreadContentsList thread={thread} onOpened={presentation.onClose} />
+        )}
+      </ScreenContent>
+    </>
+  );
+}
+
 function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) {
   const screenOptions = useSheetStackOptions();
   const presentation = {
     onClose: props.onClose,
+    contentsThread: props.contentsThread,
   };
 
   return (
@@ -1334,17 +1365,28 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
           component={ThreadSettingsChoiceScreen}
           options={({ route }) => ({ title: route.params.title })}
         />
+        <ThreadSettingsPickerStack.Screen
+          name="ThreadSettingsContents"
+          component={ThreadSettingsContentsScreen}
+          options={{ title: "Contents" }}
+        />
       </ThreadSettingsPickerStack.Navigator>
     </ThreadSettingsPickerPresentationContext.Provider>
   );
 }
 
 export function ThreadSettingsPickerScreen(
-  props: ThreadSettingsSessionProps & { readonly onClose: () => void },
+  props: ThreadSettingsSessionProps & {
+    readonly onClose: () => void;
+    readonly contentsThread?: ContentsThread;
+  },
 ) {
   return (
     <ThreadSettingsSessionProvider {...props}>
-      <ThreadSettingsPickerNavigator onClose={props.onClose} />
+      <ThreadSettingsPickerNavigator
+        onClose={props.onClose}
+        contentsThread={props.contentsThread ?? null}
+      />
     </ThreadSettingsSessionProvider>
   );
 }
@@ -1421,6 +1463,10 @@ export function ExistingThreadSettingsRouteScreen({
       }}
       runtimeMode={draftSettings.runtimeMode ?? selectedThread.runtimeMode}
       onUpdateRuntimeMode={(runtimeMode) => updateComposerDraftSettings(threadKey, { runtimeMode })}
+      contentsThread={{
+        environmentId: route.params.environmentId,
+        threadId: route.params.threadId,
+      }}
       onClose={() => navigation.goBack()}
     />
   );

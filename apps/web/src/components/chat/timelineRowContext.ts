@@ -57,6 +57,8 @@ export interface TimelineRowSharedState {
   timestampFormat: TimestampFormat;
   routeThreadKey: string;
   threadRef: ScopedThreadRef | null;
+  /** Where user messages offer the Topic menu: a server thread whose server keeps topics. */
+  contentsThread?: ScopedThreadRef | null;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   workspaceRoot: string | undefined;

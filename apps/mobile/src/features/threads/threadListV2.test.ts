@@ -28,6 +28,7 @@ import {
   ProviderInstanceId,
   RunId,
   RuntimeRequestId,
+  THREAD_SET_ASIDE_UNTIL,
   ThreadId,
 } from "@t3tools/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
@@ -42,11 +43,13 @@ import {
   buildThreadListV2ListItems,
   getThreadListV2OrderedSection,
   layoutThreadListV2RowMenuActions,
+  nextSnoozeWakeAfter,
   resolveThreadListV2SnoozeMenuSelection,
   resolveThreadListV2SwipeActions,
   resolveThreadListV2SnoozePresets,
   resolveThreadListV2Status,
   resolveThreadListV2WokeAt,
+  threadListV2LaterMenuActions,
   threadListV2ListItemsAreEqual,
   threadHasUnseenCompletion,
   type ThreadListV2Layout,
@@ -2035,11 +2038,29 @@ describe("self-filing list", () => {
       snoozedShelfHeaderIndex: 6,
       settledCount: 1,
       settledShelfHeaderIndex: 7,
+      historyAll: true,
     });
     expect(names(classic).filter((name) => name.startsWith("["))).toEqual([
       "[Snoozed]",
       "[Settled]",
     ]);
+    // History offers "All" (every topic) only on the self-filing list, where a server keeps topics.
+    const showsAll = (list: ReadonlyArray<ThreadListV2ListItem>) =>
+      list.find((item) => item.type === "v2-settled-shelf")?.showsAll;
+    expect(showsAll(classic)).toBe(false);
+    expect(showsAll(items)).toBe(false);
+    expect(
+      showsAll(
+        buildThreadListV2ListItems({
+          items: layout.items,
+          pendingTasks: [],
+          settledCount: layout.settledCount,
+          settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
+          tide: { ...layout, trailExpanded: false },
+          historyAll: true,
+        }),
+      ),
+    ).toBe(true);
     expect(
       classic.flatMap((item) => (item.type === "v2-thread" ? [item.item.cardLine] : [])),
     ).not.toContain("Publish · Fixed the login test");
@@ -2062,6 +2083,51 @@ describe("self-filing list", () => {
         (item) => item.thread.id === "snoozed",
       ),
     ).toMatchObject({ variant: "slim", projectLine: "block-warfare", cardLine: null });
+  });
+
+  it("files held threads in Later with what they wait for, never the set-aside date", () => {
+    const held = (id: string, overrides: Partial<EnvironmentThreadShell>) =>
+      makeThread({
+        id: ThreadId.make(id),
+        title: id,
+        createdAt: localIso(0, -7),
+        snoozedAt: localIso(1),
+        snoozedUntil: THREAD_SET_ASIDE_UNTIL,
+        ...overrides,
+      });
+    const threads = [
+      held("aside", {}),
+      held("recheck", {
+        followUp: {
+          reason: "A/B results",
+          dueAt: "2026-06-02T03:00:00.000Z",
+          armedBy: "agent",
+          quietCount: 2,
+        },
+      }),
+      held("standing", { standingCheck: true }),
+    ];
+    const { layout, items } = build(threads, {
+      laterRecheckLimits: new Map([[environmentId, 3]]),
+    });
+    expect(names(items)).toEqual(["[Later]", "recheck", "aside", "standing"]);
+    const row = (id: string) =>
+      items.find((item) => item.type === "v2-thread" && item.item.thread.id === id);
+    expect(row("recheck")).toMatchObject({
+      item: { cardLine: "Re-check 2 of 3 · A/B results" },
+      snoozeWakeLabelText: undefined,
+    });
+    expect(row("aside")).toMatchObject({ item: { cardLine: "Set aside" }, timeLabel: "" });
+    expect(row("standing")).toMatchObject({ item: { cardLine: "Standing check" } });
+    // Only a real wake time arms the list's clock.
+    expect(layout.nextSnoozeWakeAt).toBeNull();
+    expect(nextSnoozeWakeAfter(threads, Date.parse(NOW))).toBeNull();
+    expect(threadListV2LaterMenuActions(threads[1]!).map((action) => action.id)).toEqual([
+      "later:cancel-recheck",
+    ]);
+    expect(threadListV2LaterMenuActions(threads[2]!).map((action) => action.id)).toEqual([
+      "later:stop-standing-check",
+    ]);
   });
 
   it("shows eight Trail rows, folds the rest behind an expander, and clears all but the open one", () => {

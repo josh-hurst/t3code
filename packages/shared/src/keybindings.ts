@@ -133,7 +133,9 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+z", command: "thread.undo", when: "!terminalFocus && !editableFocus" },
   { key: "mod+shift+u", command: "thread.nextNeedsYou", when: "!terminalFocus" },
   { key: "mod+alt+s", command: "thread.clearTrail", when: "!terminalFocus" },
+  { key: "mod+alt+l", command: "thread.setAside", when: "!terminalFocus" },
   { key: "mod+alt+p", command: "sidebar.focusProject", when: "!terminalFocus" },
+  { key: "mod+shift+y", command: "history.open", when: "!terminalFocus" },
   ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `mod+${index + 1}`,
     command,

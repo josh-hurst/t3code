@@ -119,6 +119,8 @@ export function SidebarSectionHeader(props: {
   dragging?: boolean;
   isDropTarget?: boolean;
   toggle: { expanded: boolean; onToggle: () => void };
+  /** A control beside the label, outside the toggle, such as History's "All". */
+  action?: ReactNode;
 }) {
   const shelf =
     props.marker === "working-header"
@@ -126,22 +128,32 @@ export function SidebarSectionHeader(props: {
       : props.marker === "snoozed-header"
         ? "snoozed"
         : "settled";
+  const header = (
+    <CollapsibleSectionHeader
+      data-sidebar-row={`shelf:${shelf}`}
+      onClick={props.toggle.onToggle}
+      expanded={props.toggle.expanded}
+      tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}
+      data-testid={`sidebar-${shelf}-shelf-toggle`}
+      accessory={<span className="font-normal tabular-nums">{props.count}</span>}
+    >
+      {props.label}
+    </CollapsibleSectionHeader>
+  );
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
       className={cn("relative mx-0.5 h-8", props.className)}
     >
-      <CollapsibleSectionHeader
-        data-sidebar-row={`shelf:${shelf}`}
-        onClick={props.toggle.onToggle}
-        expanded={props.toggle.expanded}
-        tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}
-        data-testid={`sidebar-${shelf}-shelf-toggle`}
-        accessory={<span className="font-normal tabular-nums">{props.count}</span>}
-      >
-        {props.label}
-      </CollapsibleSectionHeader>
+      {props.action ? (
+        <div className="flex h-8 items-center">
+          <div className="min-w-0 flex-1">{header}</div>
+          {props.action}
+        </div>
+      ) : (
+        header
+      )}
     </SortableSidebarMarker>
   );
 }

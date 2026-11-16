@@ -53,6 +53,13 @@ warnings for compatibility with site-local migrations. There is no safe id range
 this ledger: any id at or below a future upstream id masks it forever, so fork schema changes belong
 in a separate migration table or outside the migrator entirely.
 
+This fork keeps its own schema in [`ForkMigrations.ts`](../../apps/server/src/persistence/ForkMigrations.ts),
+recorded in `t3_fork_migrations` with an id sequence of its own that starts at 1 and runs after
+upstream's on a full migration. A fork id never goes into `migrationEntries`, and a fork migration
+only creates or changes tables and indexes named `tide_*`. It never alters or indexes an upstream
+table, so an upstream migration never meets a table the fork changed; fork code may read and join
+upstream tables, and fork state on an upstream row is an optional, leniently decoded field of its JSON payload.
+
 ## Recovery
 
 There is no supported whole-thread export API. Recovery uses an untouched copy of the environment's

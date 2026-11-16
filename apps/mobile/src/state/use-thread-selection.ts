@@ -109,6 +109,10 @@ function threadDetailToShell(
     snoozedUntil: thread.snoozedUntil ?? null,
     snoozedAt: thread.snoozedAt ?? null,
     deletedAt: thread.deletedAt,
+    // Read by the snooze rules: a question in a reply wakes a held thread.
+    card: thread.card ?? null,
+    followUp: thread.followUp ?? null,
+    standingCheck: thread.standingCheck === true,
   });
 }
 

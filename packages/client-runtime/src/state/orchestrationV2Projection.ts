@@ -320,10 +320,11 @@ export function applyOrchestrationV2ProjectionEvent(
     case "thread.provider-switched":
     case "thread.guest-share-updated":
       return { ...base, thread: event.payload };
-    // Visited tracking and tags are not activity: skip the updatedAt bump.
+    // Visited tracking, tags and follow-ups are not activity: skip the updatedAt bump.
     case "thread.visited":
     case "thread.tags-updated":
     case "thread.marked-unread":
+    case "thread.follow-up-updated":
       return { ...projection, thread: event.payload };
     case "thread.visit-recorded":
       return {
@@ -335,6 +336,9 @@ export function applyOrchestrationV2ProjectionEvent(
         ...projection,
         thread: applyOrchestrationV2ThreadCard(projection.thread, event.payload),
       };
+    // Contents are held beside the thread, not on it.
+    case "thread.entries-updated":
+      return projection;
     case "run.created":
     case "run.updated": {
       const next = { ...base, runs: upsertEntity(base.runs, event.payload) };

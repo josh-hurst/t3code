@@ -1,4 +1,6 @@
 import { useActiveNewTask } from "../../state/active-new-task";
+import { useNavigation } from "@react-navigation/native";
+import { useAnyEnvironmentKeepsEntries } from "../../state/threadEntries";
 import { ThreadUndoNotice } from "../home/ThreadUndoNotice";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
@@ -62,6 +64,7 @@ import {
   ThreadListV2Row,
   ThreadListV2SectionHeader,
   ThreadListV2SettledShelfHeader,
+  historyAllAction,
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
   ThreadListV2TrailMoreRow,
@@ -263,6 +266,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
     snoozePresetsByEnvironmentId,
+    laterRecheckLimitByEnvironmentId,
     pinningEnvironmentIds,
     autoSettleOptOutEnvironmentIds,
     pinReorderEnvironmentIds,
@@ -271,6 +275,9 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder();
+  const historyAll = useAnyEnvironmentKeepsEntries();
+  const rootNavigation = useNavigation();
+  const openHistory = () => rootNavigation.navigate("History");
   const {
     layout: threadListV2Layout,
     items: threadListV2Items,
@@ -286,6 +293,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     searchMatches: threadSearchMatchByKey,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
+    laterRecheckLimits: laterRecheckLimitByEnvironmentId,
     pinReorderEnvironmentIds,
     activeReorderEnvironmentIds,
     queuedThreadKeys,
@@ -302,6 +310,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     selectedThreadKey: props.selectedThreadKey ?? null,
     tide,
     trailExpanded,
+    historyAll,
   });
   const listItems: readonly SidebarListItem[] =
     settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0
@@ -561,6 +570,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             disabled={item.disabled}
             expanded={item.expanded}
             onToggle={toggleSettledShelf}
+            {...(item.showsAll ? { action: historyAllAction(openHistory) } : {})}
             pane="sidebar"
           />
         );

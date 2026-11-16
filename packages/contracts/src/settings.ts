@@ -1557,6 +1557,10 @@ export const ServerSettings = Schema.Struct({
   threadReplySummariesEnabled: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  /** Unattended re-checks an agent may chain on one thread before it must report. 0 turns them off. */
+  laterRecheckLimit: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 10 })).pipe(
+    Schema.withDecodingDefault(Effect.succeed(3)),
+  ),
   /** Separate from the text generation model: cards run after every run, so they default to a cheap one. */
   threadReplySummaryModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
@@ -1956,6 +1960,9 @@ export const ServerSettingsPatch = Schema.Struct({
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
   threadReplySummariesEnabled: Schema.optionalKey(Schema.Boolean),
+  laterRecheckLimit: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 10 })),
+  ),
   threadReplySummaryModelSelection: Schema.optionalKey(ModelSelection),
   branchNamingMode: Schema.optionalKey(BranchNamingMode),
   branchNamePrefix: Schema.optionalKey(TrimmedString),

@@ -30,6 +30,7 @@ function selectEnvironment(config: ServerConfig, isConnected: boolean) {
     machineKind: resolveEnvironmentMachineKind(config),
     capabilities: config.environment.capabilities,
     snoozePresets: config.settings.snoozePresets,
+    laterRecheckLimit: config.settings.laterRecheckLimit,
   };
 }
 
@@ -63,12 +64,14 @@ function collectEnvironments(environments: ReadonlyMap<EnvironmentId, ListEnviro
   const autoSettleOptOutEnvironmentIds = new Set<EnvironmentId>();
   const reorderableEnvironmentIds = new Set<EnvironmentId>();
   const snoozePresetsByEnvironmentId = new Map<EnvironmentId, ListEnvironment["snoozePresets"]>();
+  const laterRecheckLimitByEnvironmentId = new Map<EnvironmentId, number>();
   for (const [
     id,
-    { providers, machineKind, capabilities, isConnected, snoozePresets },
+    { providers, machineKind, capabilities, isConnected, snoozePresets, laterRecheckLimit },
   ] of environments) {
     providersByEnvironmentId.set(id, providers);
     snoozePresetsByEnvironmentId.set(id, snoozePresets);
+    laterRecheckLimitByEnvironmentId.set(id, laterRecheckLimit);
     machineByEnvironmentId.set(id, machineKind);
     loadedEnvironmentIds.add(id);
     if (capabilities.threadAutoSettleOptOut === true) autoSettleOptOutEnvironmentIds.add(id);
@@ -85,6 +88,7 @@ function collectEnvironments(environments: ReadonlyMap<EnvironmentId, ListEnviro
     activeReorderEnvironmentIds: reorderableEnvironmentIds,
     titleRegenerationEnvironmentIds: loadedEnvironmentIds,
     snoozePresetsByEnvironmentId,
+    laterRecheckLimitByEnvironmentId,
   };
 }
 
@@ -114,6 +118,7 @@ export function createThreadListEnvironmentsAtom(
         prior.machineKind === selected.machineKind &&
         prior.isConnected === selected.isConnected &&
         prior.snoozePresets === selected.snoozePresets &&
+        prior.laterRecheckLimit === selected.laterRecheckLimit &&
         capabilityKeys.every(
           (key) => (prior.capabilities[key] === true) === (selected.capabilities[key] === true),
         );

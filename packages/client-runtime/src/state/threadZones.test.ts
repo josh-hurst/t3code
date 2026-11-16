@@ -2,6 +2,7 @@
 import {
   EnvironmentId,
   MessageId,
+  THREAD_SET_ASIDE_UNTIL,
   RunId,
   RuntimeRequestId,
   ThreadId,
@@ -14,6 +15,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { presentThreadShell, type EnvironmentThreadShell } from "./models.ts";
 import { v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
 import {
+  sortLaterThreads,
   sortNeedsYouThreads,
   sortTrailThreads,
   splitTrail,
@@ -21,6 +23,8 @@ import {
   threadCardOwedLabel,
   threadCardRowLine,
   threadLaterLabel,
+  threadLaterLead,
+  threadLaterStatusLabel,
   threadRowLineText,
   threadRowProjectName,
   threadStatusKind,
@@ -127,6 +131,31 @@ describe("threadNeedsYou", () => {
     expect(threadNeedsYou(thread, { includeCompleted: false })).toBe(withoutCompleted);
     expect(threadNeedsYou(thread, { includeCompleted: true })).toBe(withCompleted);
   });
+
+  // The self-filing list: a finished run needs you only when it leaves something to do.
+  const cardAt = (at: string, ...kinds: ThreadCardOpenKind[]) => ({ ...card(...kinds), at });
+  it.each<[string, Partial<EnvironmentThreadShell>, boolean]>([
+    ["no card yet", { latestRun: run("completed", T2) }, true],
+    ["only the previous run's card", { latestRun: run("completed", T2), card: cardAt(T0) }, true],
+    ["this run's card owes nothing", { latestRun: run("completed", T2), card: cardAt(T3) }, false],
+    [
+      "this run's card has only a followup",
+      { latestRun: run("completed", T2), card: cardAt(T3, "followup") },
+      false,
+    ],
+    ...(["verify", "commit", "ship", "ask"] as const).map(
+      (kind): [string, Partial<EnvironmentThreadShell>, boolean] => [
+        `this run's card has ${kind}`,
+        { latestRun: run("completed", T2), card: cardAt(T3, kind) },
+        true,
+      ],
+    ),
+    ["seen, owing nothing", { latestRun: run("completed", T0), card: cardAt(T3) }, false],
+    ["unseen failure", { latestRun: run("failed", T2), card: cardAt(T3) }, true],
+  ])("owed: %s", (_name, overrides, needsYou) => {
+    const thread = { ...shell("t"), ...seen, ...overrides };
+    expect(threadNeedsYou(thread, { includeCompleted: "owed" })).toBe(needsYou);
+  });
 });
 
 describe("threadCardRowLine", () => {
@@ -210,6 +239,94 @@ describe("threadLaterLabel", () => {
     expect(threadLaterLabel(snoozed(null), { now: T0 })).toBeNull();
     // An approval wakes it early, so it is in Needs you, not Later.
     expect(threadLaterLabel(snoozed(T3, { hasPendingApprovals: true }), { now: T0 })).toBeNull();
+    // A thread set aside has no time to name; one held for a re-check names the re-check's.
+    expect(threadLaterLabel(snoozed(THREAD_SET_ASIDE_UNTIL), { now: T0 })).toBe("Later");
+    const held = snoozed(THREAD_SET_ASIDE_UNTIL, {
+      followUp: { reason: "Results", dueAt: T2, armedBy: "agent", quietCount: 0 },
+    });
+    expect(threadLaterLabel(held, { now: T0 })).toBe("Later · in 2h");
+    expect(threadLaterLabel(held, { now: T3 })).toBe("Later · due");
+  });
+});
+
+describe("threadLaterLead", () => {
+  const followUp = (overrides: Partial<NonNullable<EnvironmentThreadShell["followUp"]>> = {}) => ({
+    reason: "A/B results",
+    dueAt: T2,
+    armedBy: "agent" as const,
+    quietCount: 0,
+    ...overrides,
+  });
+  const held = (overrides: Partial<EnvironmentThreadShell>) =>
+    shell("held", {}, { snoozedAt: T0, snoozedUntil: THREAD_SET_ASIDE_UNTIL, ...overrides });
+
+  it("names what a held thread waits for", () => {
+    const limit = { recheckLimit: 3 };
+    expect(threadLaterLead(held({ followUp: followUp() }), limit)).toEqual({
+      word: "Re-check",
+      text: "A/B results",
+    });
+    expect(threadLaterLead(held({ followUp: followUp({ quietCount: 2 }) }), limit)).toEqual({
+      word: "Re-check 2 of 3",
+      text: "A/B results",
+    });
+    expect(
+      threadLaterLead(held({ followUp: followUp({ quietCount: 1 }) }), { recheckLimit: null })
+        ?.word,
+    ).toBe("Re-check 1");
+    expect(
+      threadLaterLead(held({ followUp: followUp({ reason: " ", dueAt: null }) }), limit),
+    ).toEqual({ word: "Re-check", text: "After the next publish" });
+    expect(threadLaterLead(held({ standingCheck: true }), limit)).toEqual({
+      word: "Standing check",
+      text: null,
+    });
+    expect(threadLaterLead(held({}), limit)).toEqual({ word: "Set aside", text: null });
+    // A sent re-check is spent, and a plain snooze reads like any other row.
+    expect(threadLaterLead(held({ followUp: followUp({ sentAt: T1 }) }), limit)?.word).toBe(
+      "Set aside",
+    );
+    expect(threadLaterLead(held({ snoozedUntil: T3 }), limit)).toBeNull();
+  });
+
+  it("puts the lead and the time on a held thread's status line", () => {
+    const at = { now: T0, recheckLimit: 3 };
+    expect(threadLaterStatusLabel(held({ snoozedUntil: T3 }), at)).toBe("Snoozed, wakes in 3h");
+    expect(threadLaterStatusLabel(held({}), at)).toBe("Set aside");
+    expect(
+      threadLaterStatusLabel(held({ followUp: followUp({ quietCount: 1, dueAt: T0 }) }), {
+        ...at,
+        now: T1,
+      }),
+    ).toBe("Re-check 1 of 3, due");
+  });
+});
+
+describe("sortLaterThreads", () => {
+  it("orders by the time each thread comes back, untimed rows last by when they were held", () => {
+    const timed = shell("timed", {}, { snoozedAt: T0, snoozedUntil: T3 });
+    const recheck = shell(
+      "recheck",
+      {},
+      {
+        snoozedAt: T1,
+        snoozedUntil: THREAD_SET_ASIDE_UNTIL,
+        followUp: { reason: "", dueAt: T2, armedBy: "user", quietCount: 0 },
+      },
+    );
+    const asideLater = shell(
+      "aside-later",
+      {},
+      { snoozedAt: T2, snoozedUntil: THREAD_SET_ASIDE_UNTIL },
+    );
+    const asideEarlier = shell(
+      "aside-earlier",
+      {},
+      { snoozedAt: T1, snoozedUntil: THREAD_SET_ASIDE_UNTIL },
+    );
+    expect(
+      sortLaterThreads([asideLater, timed, asideEarlier, recheck]).map(({ id }) => id),
+    ).toEqual(["recheck", "timed", "aside-earlier", "aside-later"]);
   });
 });
 
@@ -245,8 +362,16 @@ describe("sortNeedsYouThreads", () => {
 describe("sortTrailThreads", () => {
   it("orders by your last touch, never by agent activity", () => {
     const visited = shell("visited", {}, { lastVisitedAt: T2 });
-    const busy = shell("busy", {}, { lastVisitedAt: T1, latestRun: run("completed", T3) });
+    const busy = shell("busy", {}, { lastVisitedAt: T1, latestRun: run("completed", T0) });
     expect(sortTrailThreads([busy, visited]).map(({ id }) => id)).toEqual(["visited", "busy"]);
+
+    // A finished run you have not opened leads the Trail until you open it.
+    const unread = shell("unread", {}, { lastVisitedAt: T0, latestRun: run("completed", T1) });
+    expect(sortTrailThreads([visited, busy, unread]).map(({ id }) => id)).toEqual([
+      "unread",
+      "visited",
+      "busy",
+    ]);
 
     const messaged = { ...busy, latestUserAuthoredMessageAt: T3 };
     expect(sortTrailThreads([visited, messaged]).map(({ id }) => id)).toEqual(["busy", "visited"]);

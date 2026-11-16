@@ -48,6 +48,7 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
     searchMatches: new Map(),
     settlementEnvironmentIds: environmentIds,
     snoozeEnvironmentIds: environmentIds,
+    laterRecheckLimits: new Map(),
     pinReorderEnvironmentIds: environmentIds,
     activeReorderEnvironmentIds: environmentIds,
     queuedThreadKeys: new Set(),
@@ -64,6 +65,7 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
     selectedThreadKey: null,
     tide: false,
     trailExpanded: false,
+    historyAll: false,
     projects: [],
   };
   const seen: Array<ReturnType<typeof useThreadListV2>> = [];

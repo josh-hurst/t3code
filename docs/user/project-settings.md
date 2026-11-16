@@ -102,6 +102,22 @@ Webhook tasks only run when their URL is called, so they can't be run
 immediately.
 Leaving an edited form asks before discarding unsaved changes.
 
+## Standing checks
+
+A standing check runs a thread on a schedule, such as a daily look at yesterday's numbers,
+and keeps it in Later between runs. A run comes back to you only when something needs you:
+a failure, an approval, or a question in the reply. On web or desktop, choose
+**Snooze → Make a standing check…** from the thread's menu, or **Make this a standing
+check** in the command palette. The scheduled task editor opens filled in for that thread,
+every day at 9:00, continuing the conversation so the agent can compare with earlier runs.
+Nothing runs until you save. A project has one standing check at a time.
+
+Spotting a question in a reply needs **Settings → Threads → Summarize latest reply** turned
+on; without it, only failures and approvals bring the thread back. To stop, turn off
+**Standing check** in the thread's details panel, or choose **Stop standing check** from its
+menu. The scheduled task stays, so delete or pause it in **Settings → Scheduled tasks** if you
+no longer want it to run.
+
 ## Webhook automations
 
 In **Settings → Scheduled tasks**, choose **On webhook**

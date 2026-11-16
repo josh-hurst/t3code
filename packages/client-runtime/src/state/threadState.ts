@@ -1,7 +1,10 @@
-import type { OrchestrationV2ThreadProjection } from "@t3tools/contracts";
+import type { OrchestrationV2ThreadProjection, ThreadEntriesUpdate } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 
 import { EMPTY_THREAD_HISTORY_META, type ThreadHistoryMeta } from "./threadHistoryMerge.ts";
+
+/** An entries update with the stream sequence of its event, which a command's result names. */
+export type SequencedEntriesUpdate = ThreadEntriesUpdate & { readonly sequence: number };
 
 export type EnvironmentThreadStatus = "empty" | "cached" | "synchronizing" | "live" | "deleted";
 
@@ -16,6 +19,10 @@ export interface EnvironmentThreadState {
   readonly history: ThreadHistoryMeta;
   /** The last server sequence `data` reflects, so readers can tell a write has landed without searching paged-out history. */
   readonly sequence: number;
+  /** Topic changes seen on the stream, to replay over a fetched list (`resolveThreadEntries`). */
+  readonly entryUpdates?: ReadonlyArray<SequencedEntriesUpdate>;
+  /** Snapshots installed into this state. Any after the first is a resync that may have skipped events. */
+  readonly snapshots?: number;
 }
 
 export const EMPTY_ENVIRONMENT_THREAD_STATE: EnvironmentThreadState = {

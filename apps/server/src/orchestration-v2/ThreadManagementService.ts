@@ -148,6 +148,8 @@ export interface ThreadManagementSendInput {
   readonly threadId: ThreadId;
   readonly messageId: MessageId;
   readonly scheduledTaskId?: ScheduledTaskId;
+  /** The question a Later follow-up sends. */
+  readonly followUp?: true;
   readonly senderThreadId?: ThreadId;
   readonly linkedSender?: OrchestrationV2LinkedSender;
   readonly text: string;
@@ -935,6 +937,7 @@ const make = Effect.gen(function* () {
       threadId: input.threadId,
       messageId: input.messageId,
       ...(input.scheduledTaskId === undefined ? {} : { scheduledTaskId: input.scheduledTaskId }),
+      ...(input.followUp === undefined ? {} : { followUp: input.followUp }),
       ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
       ...(input.linkedSender === undefined ? {} : { linkedSender: input.linkedSender }),
       text: input.text,

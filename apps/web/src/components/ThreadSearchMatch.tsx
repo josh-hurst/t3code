@@ -31,16 +31,24 @@ export function SearchMatchHintLine(props: { hint: SearchMatchHint }) {
 
 export function ThreadSearchMatchExcerpt(props: {
   match: {
-    readonly source: "user" | "assistant";
+    readonly source: "user" | "assistant" | "topic";
     readonly snippet: string;
     readonly query: string;
   };
 }) {
-  const isUser = props.match.source === "user";
+  const { source } = props.match;
   return (
     <span className="truncate text-xs text-muted-foreground/85">
-      <span className={isUser ? "text-info-foreground" : "text-success-foreground"}>
-        {isUser ? "You:" : "Agent:"}
+      <span
+        className={
+          source === "user"
+            ? "text-info-foreground"
+            : source === "assistant"
+              ? "text-success-foreground"
+              : "text-foreground/85"
+        }
+      >
+        {source === "user" ? "You:" : source === "assistant" ? "Agent:" : "Topic:"}
       </span>{" "}
       <HighlightedSearchText
         text={props.match.snippet}

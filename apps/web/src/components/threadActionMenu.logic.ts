@@ -18,6 +18,11 @@ export type ThreadActionMenuId =
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
+  | "later:set-aside"
+  | "later:recheck"
+  | "later:cancel-recheck"
+  | "later:standing-check"
+  | "later:stop-standing-check"
   | "rename"
   | "regenerate-title"
   | "mark-unread"
@@ -81,6 +86,9 @@ export interface ThreadActionMenuState {
   readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
+  /** A re-check that will still send its question. */
+  readonly hasArmedRecheck?: boolean;
+  readonly isStandingCheck?: boolean;
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects attached providers, so disable it while running. */
   readonly isRunning: boolean;
@@ -165,8 +173,30 @@ export function buildThreadActionMenuItems(
                     label: "Custom…",
                     separatorBefore: state.snoozePresets.length > 0,
                   },
+                  { id: "later:set-aside" as const, label: "Set aside", separatorBefore: true },
+                  ...(state.hasArmedRecheck
+                    ? []
+                    : [{ id: "later:recheck" as const, label: "Re-check with a question…" }]),
+                  ...(state.isStandingCheck
+                    ? []
+                    : [{ id: "later:standing-check" as const, label: "Make a standing check…" }]),
                 ],
               },
+          ...(state.hasArmedRecheck
+            ? [
+                { id: "later:recheck" as const, label: "Edit re-check…", icon: "clock" },
+                { id: "later:cancel-recheck" as const, label: "Cancel re-check", icon: "clock" },
+              ]
+            : []),
+          ...(state.isStandingCheck
+            ? [
+                {
+                  id: "later:stop-standing-check" as const,
+                  label: "Stop standing check",
+                  icon: "clock",
+                },
+              ]
+            : []),
         ]
       : []),
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },

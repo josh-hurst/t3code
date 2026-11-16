@@ -65,6 +65,34 @@ describe("buildThreadActionMenuItems", () => {
     },
   );
 
+  it("offers each way into Later and the way back out", () => {
+    const snoozeChildren = (state: Partial<ThreadActionMenuState>) =>
+      buildThreadActionMenuItems({ ...baseState, ...state })
+        .find((item) => item.id === "snooze")
+        ?.children?.map((child) => child.id);
+    expect(snoozeChildren({})).toEqual([
+      "snooze:hour",
+      "snooze:custom",
+      "later:set-aside",
+      "later:recheck",
+      "later:standing-check",
+    ]);
+    const held = buildThreadActionMenuItems({
+      ...baseState,
+      isSnoozed: true,
+      hasArmedRecheck: true,
+      isStandingCheck: true,
+    }).map((item) => item.id);
+    expect(held).toEqual(
+      expect.arrayContaining([
+        "unsnooze",
+        "later:recheck",
+        "later:cancel-recheck",
+        "later:stop-standing-check",
+      ]),
+    );
+  });
+
   it("disables archive and turning into a project while the thread is running", () => {
     const items = buildThreadActionMenuItems({
       ...baseState,

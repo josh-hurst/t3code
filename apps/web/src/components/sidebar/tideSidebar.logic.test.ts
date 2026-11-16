@@ -10,6 +10,7 @@ import {
   ProviderInstanceId,
   RunId,
   RuntimeRequestId,
+  THREAD_SET_ASIDE_UNTIL,
   ThreadId,
   type OrchestrationV2ThreadShell,
   type ThreadCardOpenKind,
@@ -371,5 +372,43 @@ describe("resolveTideRowLead", () => {
     ["a quiet Trail row", thread("t", 2), false, false, null, null],
   ] as const)("leads %s", (_name, shell, showsStatus, isWoke, lead, text) => {
     expect(resolveTideRowLead(shell, { showsStatus, isWoke })).toMatchObject({ lead, text });
+  });
+
+  const held = (raw: Partial<OrchestrationV2ThreadShell>) =>
+    thread("t", 2, {
+      card: card("verify"),
+      snoozedAt: at(hoursAgo(1)),
+      snoozedUntil: at(THREAD_SET_ASIDE_UNTIL),
+      ...raw,
+    });
+  it.each([
+    [
+      "a re-check that has re-armed, with its reason",
+      held({
+        followUp: { reason: "A/B results", dueAt: hoursAgo(-20), armedBy: "agent", quietCount: 2 },
+      }),
+      { kind: "owed", word: "Re-check 2 of 3" },
+      "A/B results",
+    ],
+    [
+      "a thread set aside, with its outcome",
+      held({}),
+      { kind: "owed", word: "Set aside" },
+      "Outcome",
+    ],
+    [
+      "a plain snooze, by what it owes",
+      held({ snoozedUntil: at(hoursAgo(-2)) }),
+      { kind: "owed", word: "Check" },
+      "Outcome",
+    ],
+  ] as const)("leads a Later row: %s", (_name, shell, lead, text) => {
+    expect(
+      resolveTideRowLead(shell, {
+        showsStatus: false,
+        isWoke: false,
+        later: { recheckLimit: 3 },
+      }),
+    ).toMatchObject({ lead, text });
   });
 });

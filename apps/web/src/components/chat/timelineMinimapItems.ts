@@ -1,5 +1,6 @@
 import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import { isAttachmentOnlyBootstrapPrompt } from "@t3tools/shared/composerContextReferences";
+import type { RunId, ThreadEntry } from "@t3tools/contracts";
 import type { Nodes } from "mdast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
@@ -12,24 +13,39 @@ export interface TimelineMinimapItem {
   readonly rowIndex: number;
   readonly userText: string | null;
   readonly assistantText: string | null;
+  /** The topic this turn is filed under, when the thread shows its contents. */
+  readonly entryTitle?: string;
+  /** The first tick of a topic, or of a return to it after another topic. */
+  readonly startsEntry?: boolean;
 }
 
 export function deriveTimelineMinimapItems(
   rows: ReadonlyArray<MessagesTimelineRow>,
+  entryByRunId?: ReadonlyMap<RunId, Pick<ThreadEntry, "id" | "title">>,
 ): TimelineMinimapItem[] {
   const items: TimelineMinimapItem[] = [];
+  let previousEntryId: string | null = null;
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
     if (row?.kind !== "message" || row.message.role !== "user") {
       continue;
     }
 
+    const entry =
+      entryByRunId === undefined || row.message.runId === null
+        ? undefined
+        : entryByRunId.get(row.message.runId);
     items.push({
       id: row.id,
       rowIndex: index,
       userText: isAttachmentOnlyBootstrapPrompt(row.message.text) ? "" : row.message.text,
       assistantText: resolveFinalAssistantTextForTurn(rows, index),
+      ...(entry === undefined
+        ? {}
+        : { entryTitle: entry.title, startsEntry: entry.id !== previousEntryId }),
     });
+    // An unfiled turn (still running, or not summarized) does not break its topic.
+    if (entry !== undefined) previousEntryId = entry.id;
   }
   return items;
 }

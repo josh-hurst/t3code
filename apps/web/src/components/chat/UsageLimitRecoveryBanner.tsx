@@ -1,4 +1,5 @@
 import {
+  isThreadSetAside,
   type OrchestrationV2LimitRecovery,
   type OrchestrationV2LimitRecoveryUpdate,
   type RunId,
@@ -57,7 +58,11 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
     <RecoveryActions key={`${runId}:${resetAt}`} {...props} />
   ) : null;
   const displayAt =
-    resumes && resetAt && snoozedUntil && Date.parse(snoozedUntil) > Date.parse(resetAt)
+    resumes &&
+    resetAt &&
+    snoozedUntil &&
+    !isThreadSetAside(snoozedUntil) &&
+    Date.parse(snoozedUntil) > Date.parse(resetAt)
       ? snoozedUntil
       : resetAt;
   const resetDescription = displayAt

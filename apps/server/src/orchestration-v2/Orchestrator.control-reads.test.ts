@@ -15,8 +15,11 @@ import {
   RunAttemptId,
   RunId,
   RuntimeRequestId,
+  ScheduledTaskId,
   ThreadId,
   TurnItemId,
+  isThreadSetAside,
+  threadFollowUpIsArmed,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -2609,4 +2612,266 @@ it.effect("a running provider-turn update reads only the thread's queued and run
       ),
     );
   }),
+);
+
+const laterThread = Effect.fn(function* (name: string) {
+  const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const threadId = ThreadId.make(`thread:later-${name}`);
+  yield* orchestrator.dispatch({
+    type: "thread.create",
+    commandId: CommandId.make(`create-later-${name}`),
+    threadId,
+    projectId: ProjectId.make("project:later"),
+    title: "Later",
+    modelSelection,
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    createdBy: "user",
+    creationSource: "web",
+  });
+  return threadId;
+});
+
+const laterMessage = (threadId: ThreadId, id: string, from: "owner" | "follow-up" | "scheduled") =>
+  Effect.flatMap(Orchestrator.OrchestratorV2, (orchestrator) =>
+    orchestrator.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make(id),
+      threadId,
+      messageId: MessageId.make(id),
+      text: "Is the nightly test done?",
+      attachments: [],
+      dispatchMode: { type: "queue_after_active" },
+      ...(from === "follow-up"
+        ? {
+            followUp: true as const,
+            createdBy: "agent" as const,
+            creationSource: "server" as const,
+          }
+        : { createdBy: "user" as const, creationSource: "web" as const }),
+      ...(from === "scheduled" ? { scheduledTaskId: ScheduledTaskId.make("task:standing") } : {}),
+    }),
+  );
+
+const completeRuns = Effect.fn(function* (threadId: ThreadId) {
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const eventSink = yield* EventSink.EventSinkV2;
+  const now = yield* DateTime.now;
+  const { runs } = yield* projections.getThreadRecords(threadId, ["runs"]);
+  yield* eventSink.write({
+    events: runs
+      .filter((run) => run.status !== "completed")
+      .map((run) => ({
+        id: EventId.make(`complete:${run.id}`),
+        type: "run.updated" as const,
+        threadId,
+        runId: run.id,
+        occurredAt: now,
+        payload: { ...run, status: "completed" as const, completedAt: now },
+      })),
+  });
+});
+
+const armAsAgent = (threadId: ThreadId, id: string, limit: number) =>
+  Effect.flatMap(Effect.all([Orchestrator.OrchestratorV2, DateTime.now]), ([orchestrator, now]) =>
+    orchestrator.dispatch({
+      type: "thread.follow-up.set",
+      commandId: CommandId.make(id),
+      threadId,
+      question: "Is the nightly test done?",
+      reason: "Nightly test",
+      dueAt: DateTime.formatIso(DateTime.add(now, { minutes: 15 })),
+      armedBy: "agent",
+      limit,
+    }),
+  );
+
+it.effect(
+  "a follow-up files on reading, sends into its own run, re-arms quietly and stops at the cap",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = yield* laterThread("life");
+      yield* laterMessage(threadId, "later-life-owner", "owner");
+      // The agent arms during the owner's run: stored, but the owner has not read the reply yet.
+      yield* armAsAgent(threadId, "later-life-arm-0", 1);
+      let thread = yield* projections.getThread(threadId);
+      assert.equal(thread.followUp?.quietCount, 0);
+      assert.isNull(thread.snoozedUntil ?? null);
+      yield* orchestrator.dispatch({
+        type: "thread.visit",
+        commandId: CommandId.make("later-life-visit-running"),
+        threadId,
+        visitedAt: DateTime.formatIso(yield* DateTime.now),
+      });
+      assert.isUndefined((yield* projections.getThread(threadId)).followUp?.filedAt);
+
+      yield* completeRuns(threadId);
+      yield* TestClock.adjust("1 second");
+      yield* orchestrator.dispatch({
+        type: "thread.visit",
+        commandId: CommandId.make("later-life-visit-read"),
+        threadId,
+        visitedAt: DateTime.formatIso(yield* DateTime.now),
+      });
+      thread = yield* projections.getThread(threadId);
+      assert.isTrue(isThreadSetAside(thread.snoozedUntil));
+      assert.isDefined(thread.followUp?.filedAt);
+      assert.isNotNull(thread.lastVisitedAt);
+
+      // Only the server may send a re-check.
+      const forged = yield* orchestrator
+        .dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("later-life-forged"),
+          threadId,
+          messageId: MessageId.make("later-life-forged"),
+          text: "Is the nightly test done?",
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          followUp: true,
+          createdBy: "user",
+          creationSource: "web",
+        })
+        .pipe(Effect.flip);
+      assert.equal(forged._tag, "OrchestratorDispatchError");
+
+      yield* TestClock.adjust("15 minutes");
+      yield* laterMessage(threadId, "later-life-send-1", "follow-up");
+      let records = yield* projections.getThreadRecords(threadId, ["runs", "messages"]);
+      thread = records.thread;
+      const firstRecheck = records.messages.find((message) => message.id === "later-life-send-1");
+      assert.equal(firstRecheck?.followUp, true);
+      assert.equal(thread.followUp?.runId, firstRecheck?.runId);
+      assert.isNull(thread.snoozedUntil ?? null);
+
+      // Re-arming inside its own run files it at once, so the completion stays quiet.
+      yield* armAsAgent(threadId, "later-life-arm-1", 1);
+      thread = yield* projections.getThread(threadId);
+      assert.equal(thread.followUp?.quietCount, 1);
+      assert.isTrue(isThreadSetAside(thread.snoozedUntil));
+
+      // The next re-check queues behind a run that is still going.
+      yield* TestClock.adjust("15 minutes");
+      yield* laterMessage(threadId, "later-life-send-2", "follow-up");
+      records = yield* projections.getThreadRecords(threadId, ["runs", "messages"]);
+      const secondRecheck = records.messages.find((message) => message.id === "later-life-send-2");
+      assert.equal(records.runs.find((run) => run.id === secondRecheck?.runId)?.status, "queued");
+      assert.equal(records.thread.followUp?.runId, secondRecheck?.runId);
+
+      const capped = yield* armAsAgent(threadId, "later-life-arm-2", 1).pipe(Effect.flip);
+      assert.equal(capped._tag, "OrchestratorDispatchError");
+      if (capped._tag === "OrchestratorDispatchError") {
+        assert.equal(
+          capped.cause,
+          "This thread has re-checked 2 times without news. Tell the user what you found instead.",
+        );
+      }
+
+      // Archiving and unarchiving must not reset the count.
+      yield* completeRuns(threadId);
+      yield* orchestrator.dispatch({
+        type: "thread.archive",
+        commandId: CommandId.make("later-life-archive"),
+        threadId,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.unarchive",
+        commandId: CommandId.make("later-life-unarchive"),
+        threadId,
+      });
+      const afterArchive = yield* armAsAgent(threadId, "later-life-arm-archived", 1).pipe(
+        Effect.flip,
+      );
+      assert.equal(afterArchive._tag, "OrchestratorDispatchError");
+
+      // Only the owner writing resets it; settling ends the follow-up but keeps its count.
+      yield* laterMessage(threadId, "later-life-owner-2", "owner");
+      assert.isNull((yield* projections.getThread(threadId)).followUp ?? null);
+      yield* armAsAgent(threadId, "later-life-arm-3", 1);
+      yield* completeRuns(threadId);
+      yield* orchestrator.dispatch({
+        type: "thread.settle",
+        commandId: CommandId.make("later-life-settle"),
+        threadId,
+      });
+      const settled = (yield* projections.getThread(threadId)).followUp;
+      assert.isFalse(threadFollowUpIsArmed(settled));
+      assert.equal(settled?.quietCount, 0);
+    }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "the owner's follow-up holds the thread until the owner writes, and cancel lets it go",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = yield* laterThread("owner");
+      const now = yield* DateTime.now;
+      const refused = yield* armAsAgent(threadId, "later-owner-off", 0).pipe(Effect.flip);
+      assert.equal(refused._tag, "OrchestratorDispatchError");
+      yield* orchestrator.dispatch({
+        type: "thread.follow-up.set",
+        commandId: CommandId.make("later-owner-set"),
+        threadId,
+        question: "Did the rollout finish?",
+        reason: "Rollout",
+        dueAt: DateTime.formatIso(DateTime.add(now, { minutes: 1 })),
+        armedBy: "user",
+      });
+      let thread = yield* projections.getThread(threadId);
+      assert.isTrue(isThreadSetAside(thread.snoozedUntil));
+      assert.deepInclude(thread.followUp, { armedBy: "user", quietCount: 0 });
+
+      // "Thanks" after "I'll check tomorrow" keeps the check, and reading files it again later.
+      yield* laterMessage(threadId, "later-owner-thanks", "owner");
+      thread = yield* projections.getThread(threadId);
+      assert.isNull(thread.snoozedUntil ?? null);
+      assert.isDefined(thread.followUp);
+      assert.isUndefined(thread.followUp?.filedAt);
+
+      yield* orchestrator.dispatch({
+        type: "thread.follow-up.clear",
+        commandId: CommandId.make("later-owner-clear"),
+        threadId,
+      });
+      assert.isNull((yield* projections.getThread(threadId)).followUp ?? null);
+    }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("a standing check's scheduled run parks the thread again instead of waking it", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = yield* laterThread("standing");
+    yield* orchestrator.dispatch({
+      type: "thread.standing-check.set",
+      commandId: CommandId.make("later-standing-on"),
+      threadId,
+      enabled: true,
+    });
+    let thread = yield* projections.getThread(threadId);
+    assert.isTrue(thread.standingCheck === true && isThreadSetAside(thread.snoozedUntil));
+    yield* TestClock.adjust("1 hour");
+    yield* laterMessage(threadId, "later-standing-run", "scheduled");
+    thread = yield* projections.getThread(threadId);
+    assert.isTrue(isThreadSetAside(thread.snoozedUntil));
+    assert.equal(DateTime.formatIso(thread.snoozedAt!), DateTime.formatIso(yield* DateTime.now));
+    const shell = yield* projections.getThreadShell(threadId);
+    // A scheduled run is not the owner writing.
+    assert.isNull(shell?.latestUserAuthoredMessageAt ?? null);
+    yield* orchestrator.dispatch({
+      type: "thread.standing-check.set",
+      commandId: CommandId.make("later-standing-off"),
+      threadId,
+      enabled: false,
+    });
+    thread = yield* projections.getThread(threadId);
+    assert.isFalse(thread.standingCheck);
+    assert.isNull(thread.snoozedUntil ?? null);
+  }).pipe(Effect.provide(layerTest)),
 );

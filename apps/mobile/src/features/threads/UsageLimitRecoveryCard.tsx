@@ -2,7 +2,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { AsyncResult } from "effect/reactivity";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { limitRecoveryOwnsSnooze } from "@t3tools/client-runtime/state/thread-execution";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { isThreadSetAside, type EnvironmentId } from "@t3tools/contracts";
 import {
   CHATGPT_USAGE_LIMIT_CODE,
   CHATGPT_USAGE_URL,
@@ -43,6 +43,7 @@ export function UsageLimitRecoveryCard({
     scheduled &&
     resetAt &&
     thread.snoozedUntil &&
+    !isThreadSetAside(thread.snoozedUntil) &&
     Date.parse(thread.snoozedUntil) > Date.parse(resetAt)
       ? thread.snoozedUntil
       : resetAt;

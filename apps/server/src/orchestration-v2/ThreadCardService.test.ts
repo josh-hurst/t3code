@@ -12,6 +12,8 @@ import {
   ProviderThreadId,
   RunId,
   TextGenerationError,
+  threadCardOpenItemKey,
+  ThreadEntryId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -30,6 +32,7 @@ import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ThreadCardService from "./ThreadCardService.ts";
+import * as ThreadEntryStore from "./ThreadEntryStore.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -70,13 +73,28 @@ function makeHarness(options: { readonly enabled?: boolean } = {}) {
     Layer.provide(layerServerSettings),
     Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase))),
   );
+  const dispatched: Array<OrchestrationV2ServerCommand> = [];
+  const layerRecordingDispatch = Layer.effect(
+    ThreadManagement.ThreadManagementService,
+    Effect.gen(function* () {
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      return ThreadManagement.ThreadManagementService.of({
+        ...threads,
+        dispatch: (command) => {
+          dispatched.push(command);
+          return threads.dispatch(command);
+        },
+      });
+    }),
+  ).pipe(Layer.provide(layerThreadManagement));
   const generate = vi.fn<
     TextGeneration.TextGeneration["Service"]["generateTranscriptionPostProcessing"]
   >(() => Effect.succeed({ transcription: CARD }));
   const layerCards = ThreadCardService.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        layerThreadManagement,
+        layerRecordingDispatch,
+        ThreadEntryStore.layer.pipe(Layer.provide(layerDatabase)),
         Layer.mock(TextGeneration.TextGeneration)({
           generateTranscriptionPostProcessing: generate,
         }),
@@ -94,9 +112,11 @@ function makeHarness(options: { readonly enabled?: boolean } = {}) {
       layerThreadManagement,
       layerCards,
       EffectOutbox.layer.pipe(Layer.provide(layerDatabase)),
+      ThreadEntryStore.layer.pipe(Layer.provide(layerDatabase)),
       layerDatabase,
     ),
     generate,
+    dispatched,
   };
 }
 
@@ -146,6 +166,9 @@ const recordRun = Effect.fn("test.recordRun")(function* (input: {
   readonly assistant?: string;
   readonly streaming?: boolean;
   readonly status?: "completed" | "interrupted";
+  readonly userText?: string;
+  readonly report?: boolean;
+  readonly midRun?: string;
 }) {
   const eventSink = yield* EventSink.EventSinkV2;
   const now = yield* DateTime.now;
@@ -173,6 +196,15 @@ const recordRun = Effect.fn("test.recordRun")(function* (input: {
       streaming,
       createdBy: role === "user" ? ("user" as const) : ("agent" as const),
       creationSource: "web" as const,
+      ...(role === "user" && name === "user" && input.report
+        ? {
+            notification: {
+              source: { kind: "background_task" as const },
+              outcome: "completed" as const,
+              summary: "Task finished",
+            },
+          }
+        : {}),
       createdAt: now,
       updatedAt: now,
     },
@@ -226,7 +258,8 @@ const recordRun = Effect.fn("test.recordRun")(function* (input: {
           updatedAt: now,
         },
       },
-      message("user", "Fix the flaky login test"),
+      message("user", input.userText ?? "Fix the flaky login test"),
+      ...(input.midRun === undefined ? [] : [message("user", input.midRun, false, "mid")]),
       // Sorts before the final reply, as an earlier message of a multi-message turn does.
       message("assistant", "Looking at the test first.", false, "a-first"),
       message("assistant", input.assistant ?? "Fixed it. Merge PR 412 now?", input.streaming),
@@ -272,6 +305,20 @@ const readThread = (threadId: ThreadId) =>
 const execute = (threadId: ThreadId, runId: RunId) =>
   ThreadCardService.ThreadCardService.use((cards) => cards.execute({ threadId, runId }));
 
+const readContents = (threadId: ThreadId) =>
+  ThreadEntryStore.ThreadEntryStore.use((store) => store.getThreadContents(threadId));
+
+/** The active entries hold exactly the card's open items. */
+const assertEntriesMatchCard = Effect.fn("test.assertEntriesMatchCard")(function* (
+  threadId: ThreadId,
+) {
+  const thread = yield* readThread(threadId);
+  const held = (yield* readContents(threadId)).entries
+    .filter((entry) => entry.status === "active")
+    .flatMap((entry) => entry.open.map(({ runId: _runId, ...item }) => item));
+  assert.sameDeepMembers(held, [...(thread.card?.open ?? [])]);
+});
+
 const openKinds = (thread: {
   readonly card?: { readonly open: ReadonlyArray<{ readonly kind: string }> } | null | undefined;
 }) => thread.card?.open.map((item) => item.kind);
@@ -313,17 +360,50 @@ describe("ThreadCardService", () => {
           messageId: MessageId.make("run:card:record:assistant"),
           at: "1970-01-01T01:00:00.000Z",
           runId,
-          chapters: [
-            {
-              line: "Fixed flaky login test; 2 retries removed",
-              messageId: MessageId.make("run:card:record:assistant"),
-            },
-          ],
         });
         assert.deepEqual(after.updatedAt, before.updatedAt);
         assert.deepEqual(yield* updatedAtColumn, columnBefore);
-        const { chapters: _chapters, runId: _runId, ...summary } = after.card!;
+        const { runId: _runId, ...summary } = after.card!;
         assert.deepEqual((yield* threads.getThreadShell(threadId))?.card, summary);
+
+        // The same commit filed the run: a first run with no entry line is titled by its card.
+        const contents = yield* readContents(threadId);
+        assert.deepEqual(
+          contents.entries.map((entry) => [entry.title, entry.outcome, entry.runs, entry.status]),
+          [
+            [
+              "Fixed flaky login test; 2 retries removed",
+              "Fixed flaky login test; 2 retries removed",
+              [{ runId, source: "online" }],
+              "active",
+            ],
+          ],
+        );
+        assert.deepEqual(contents.state, {
+          revision: 1,
+          nextEntrySeq: 2,
+          ownerRuns: 1,
+          lastRunOrdinal: 1,
+          lastReplyAt: "1970-01-01T00:00:00.000Z",
+          runsSinceRegroup: 1,
+          regroupRequestedThrough: 0,
+          regroupedThrough: 0,
+          regroupedAt: null,
+        });
+        assert.deepEqual(
+          (yield* ThreadEntryStore.ThreadEntryStore.use((store) => store.runLines(threadId))).map(
+            (line) => [line.runId, line.line, line.ownerText, line.startedBy],
+          ),
+          [
+            [
+              runId,
+              "Fixed flaky login test; 2 retries removed",
+              "Fix the flaky login test",
+              "owner",
+            ],
+          ],
+        );
+        yield* assertEntriesMatchCard(threadId);
       }).pipe(Effect.provide(harness.layer));
     }),
   );
@@ -409,6 +489,7 @@ describe("ThreadCardService", () => {
 
         yield* sendMessage({ threadId, name: "asks:wake", wake: true });
         assert.deepEqual(openKinds(yield* readThread(threadId)), ["ask", "verify"]);
+        yield* assertEntriesMatchCard(threadId);
 
         // A card written after a wake started a newer run still carries its question.
         const second = yield* recordRun({ threadId, run: "run:card:asks:2", ordinal: 5 });
@@ -419,6 +500,7 @@ describe("ThreadCardService", () => {
 
         yield* sendMessage({ threadId, name: "asks:answer" });
         assert.deepEqual(openKinds(yield* readThread(threadId)), ["verify"]);
+        yield* assertEntriesMatchCard(threadId);
 
         // The user answered before the model finished: the late card must not ask again.
         const third = yield* recordRun({ threadId, run: "run:card:asks:3", ordinal: 9 });
@@ -428,6 +510,7 @@ describe("ThreadCardService", () => {
         const thread = yield* readThread(threadId);
         assert.equal(thread.card?.runId, third);
         assert.deepEqual(openKinds(thread), ["verify"]);
+        yield* assertEntriesMatchCard(threadId);
       }).pipe(Effect.provide(harness.layer));
     }),
   );
@@ -503,6 +586,389 @@ describe("ThreadCardService", () => {
           assert.deepEqual(retitled.updatedAt, before.updatedAt);
         }).pipe(Effect.provide(harness.layer));
       }
+    }),
+  );
+
+  it.effect("files the run against the thread's contents and says who started it", () =>
+    Effect.gen(function* () {
+      const cases: ReadonlyArray<{
+        readonly name: string;
+        readonly run: Partial<Parameters<typeof recordRun>[0]>;
+        readonly userBlock: string;
+        readonly expected: Record<string, unknown>;
+      }> = [
+        {
+          name: "owner-mid-run",
+          run: { midRun: "also look at the reset email" },
+          userBlock:
+            "Fix the flaky login test\n[The user added while the agent was working:] also look at the reset email",
+          expected: {
+            startedBy: "owner",
+            ownerText: "Fix the flaky login test / also: also look at the reset email",
+            goAhead: false,
+            ownerSpokeMidRun: true,
+          },
+        },
+        {
+          name: "go-ahead",
+          run: { userText: "yes do that" },
+          userBlock: "yes do that",
+          expected: {
+            startedBy: "owner",
+            ownerText: "yes do that",
+            goAhead: true,
+            ownerSpokeMidRun: false,
+          },
+        },
+        {
+          name: "report",
+          run: { report: true },
+          userBlock:
+            "[No new message from the user started this run. A background task or subagent reported back.]",
+          expected: {
+            startedBy: "report",
+            ownerText: null,
+            goAhead: false,
+            ownerSpokeMidRun: false,
+          },
+        },
+      ];
+      for (const testCase of cases) {
+        const harness = makeHarness();
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const threadId = yield* createThread(`contents:${testCase.name}`);
+          const insertEntry = (seq: number, title: string, run: string, startedAt: string) =>
+            sql`
+              INSERT INTO tide_thread_entries (
+                entry_id, thread_id, title, title_source, outcome, open_json, open_count,
+                runs_json, start_message_id, end_message_id, started_at, ended_at, status
+              ) VALUES (
+                ${`${threadId}:e${seq}`}, ${threadId}, ${title}, 'model', ${`${title} so far`},
+                ${seq === 5 ? JSON.stringify([{ kind: "commit", text: "Not committed", runId: run }]) : "[]"},
+                ${seq === 5 ? 1 : 0},
+                ${JSON.stringify([{ runId: run, source: "online" }])}, 'message:a', 'message:b',
+                ${startedAt}, ${startedAt}, 'active'
+              )`;
+          // Stored ids are not what the model sees: e5 is shown as e2.
+          yield* insertEntry(1, "Login test", "run:seed:1", "2030-01-01T00:00:00.000Z");
+          yield* insertEntry(5, "Reset email", "run:seed:2", "2030-01-02T00:00:00.000Z");
+          yield* sql`
+            INSERT INTO tide_thread_runs (
+              run_id, thread_id, ordinal, user_message_id, reply_message_id, started_by,
+              started_at, replied_at
+            ) VALUES (
+              'run:seed:2', ${threadId}, 2, 'message:a', 'message:b', 'owner',
+              '2030-01-02T00:00:00.000Z', '2030-01-02T00:00:00.000Z'
+            )`;
+          const runId = yield* recordRun({
+            threadId,
+            run: `run:card:contents:${testCase.name}`,
+            ordinal: 3,
+            ...testCase.run,
+          });
+          harness.generate.mockReturnValueOnce(
+            Effect.succeed({
+              transcription: `${CARD}\nentry: e2 | Queued; not committed | open\nentry: new | Dark mode | Added | done\nentry: e9 | Unknown`,
+            }),
+          );
+          yield* execute(threadId, runId);
+
+          const prompt = harness.generate.mock.calls[0]?.[0].prompt ?? "";
+          assert.equal(
+            prompt.slice(prompt.indexOf("<contents>"), prompt.indexOf("</contents>") + 11),
+            "<contents>\ne1 | Login test | Login test so far | done\ne2 | Reset email | Reset email so far | open\nThe previous run was filed under: e2\n</contents>",
+          );
+          assert.include(prompt, `<user_message>\n${testCase.userBlock}\n</user_message>`);
+          const command = harness.dispatched.find(
+            (candidate) => candidate.type === "thread.card.record",
+          );
+          assert(command?.type === "thread.card.record", testCase.name);
+          assert.deepEqual(command.run, {
+            ordinal: 3,
+            userMessageId: MessageId.make(`${runId}:user`),
+            startedAt: "1970-01-01T00:00:00.000Z",
+            ...testCase.expected,
+          } as typeof command.run);
+          assert.deepEqual(command.filing, [
+            { ref: `${threadId}:e5`, outcome: "Queued; not committed" },
+            { ref: "new", title: "Dark mode", outcome: "Added" },
+          ] as typeof command.filing);
+          assert.equal((yield* readThread(threadId)).card?.runId, runId, testCase.name);
+          const filed = (yield* readContents(threadId)).entries.filter((entry) =>
+            entry.runs.some((link) => link.runId === runId),
+          );
+          assert.sameDeepMembers(
+            filed.map((entry) => [entry.title, entry.outcome, entry.runs.at(-1)]),
+            testCase.name !== "owner-mid-run"
+              ? // A go-ahead keeps only the previous run's entry; a report never starts one.
+                [["Reset email", "Queued; not committed", { runId, source: "online" }]]
+              : [
+                  ["Reset email", "Queued; not committed", { runId, source: "online" }],
+                  ["Dark mode", "Added", { runId, source: "online", second: true }],
+                ],
+            testCase.name,
+          );
+          yield* assertEntriesMatchCard(threadId);
+        }).pipe(Effect.provide(harness.layer));
+      }
+    }),
+  );
+
+  it.effect("resolves and restores open items on the card and its entries alike", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const threadId = yield* createThread("resolve");
+        const runId = yield* recordRun({ threadId, run: "run:card:resolve" });
+        yield* execute(threadId, runId);
+        yield* threads.dispatch({
+          type: "thread.settle",
+          commandId: CommandId.make("command:card:resolve:settle"),
+          threadId,
+        });
+        const before = yield* readThread(threadId);
+        yield* TestClock.adjust("1 hour");
+        const resolve = (name: string, fields: { kinds?: ["verify"]; key?: string }) =>
+          threads.dispatch({
+            type: "thread.open-items.resolve",
+            commandId: CommandId.make(`command:card:resolve:${name}`),
+            threadId,
+            ...fields,
+          });
+
+        yield* resolve("verify", { kinds: ["verify"] });
+        assert.deepEqual(openKinds(yield* readThread(threadId)), ["ask"]);
+        yield* assertEntriesMatchCard(threadId);
+        // Resolving what is already gone is not an error.
+        yield* resolve("again", { kinds: ["verify"] });
+        yield* resolve("ask", {
+          key: threadCardOpenItemKey({ kind: "ask", text: "merge PR 412 now" }),
+        });
+        assert.deepEqual(openKinds(yield* readThread(threadId)), []);
+        yield* assertEntriesMatchCard(threadId);
+
+        yield* threads.dispatch({
+          type: "thread.open-items.restore",
+          commandId: CommandId.make("command:card:resolve:restore"),
+          threadId,
+          items: [{ kind: "verify", text: "Check the redirect on a phone", runId }],
+        });
+        const restored = yield* readThread(threadId);
+        assert.deepEqual(openKinds(restored), ["verify"]);
+        yield* assertEntriesMatchCard(threadId);
+        assert.deepEqual(restored.updatedAt, before.updatedAt);
+        assert.isNotNull(restored.settledAt);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("a rolled-back run leaves the contents and a deleted thread takes them along", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const sql = yield* SqlClient.SqlClient;
+        const threadId = yield* createThread("rollback");
+        const rollBack = Effect.fn("test.rollBack")(function* (runId: RunId) {
+          const [run] = (yield* threads.getThreadRecords(threadId, ["runs"], { runIds: [runId] }))
+            .runs;
+          return {
+            id: EventId.make(`${runId}:rolled-back`),
+            type: "run.updated" as const,
+            threadId,
+            runId,
+            occurredAt: yield* DateTime.now,
+            payload: { ...run!, status: "rolled_back" as const },
+          };
+        });
+
+        const first = yield* recordRun({ threadId, run: "run:card:rollback:1" });
+        yield* execute(threadId, first);
+        const second = yield* recordRun({ threadId, run: "run:card:rollback:2", ordinal: 2 });
+        harness.generate.mockReturnValueOnce(
+          Effect.succeed({
+            transcription: `${CARD}\nentry: e1 | Still flaky | open\nentry: new | Billing export | Started | open`,
+          }),
+        );
+        yield* execute(threadId, second);
+        yield* eventSink.write({ events: [yield* rollBack(second)] });
+        const afterRollback = yield* readContents(threadId);
+        assert.deepEqual(
+          afterRollback.entries.map((entry) => [entry.title, entry.runs.length, entry.status]),
+          [
+            ["Fixed flaky login test; 2 retries removed", 1, "active"],
+            ["Billing export", 0, "retired"],
+          ],
+        );
+        assert.equal(afterRollback.entries[0]!.endMessageId, MessageId.make(`${first}:assistant`));
+        assert.deepEqual(
+          afterRollback.previousRunEntryIds,
+          afterRollback.entries.slice(0, 1).map((entry) => entry.id),
+        );
+        assert.equal(afterRollback.state?.ownerRuns, 1);
+        assert.equal(afterRollback.state?.lastRunOrdinal, 1);
+        yield* assertEntriesMatchCard(threadId);
+
+        // Filed and rolled back in one commit: the cleanup reads the filing in the same transaction.
+        const third = yield* recordRun({ threadId, run: "run:card:rollback:3", ordinal: 3 });
+        const at = DateTime.formatIso(yield* DateTime.now);
+        const entryId = ThreadEntryId.make(`${threadId}:e9`);
+        yield* eventSink.write({
+          events: [
+            {
+              id: EventId.make(`${third}:filed`),
+              type: "thread.entries-updated",
+              threadId,
+              occurredAt: yield* DateTime.now,
+              payload: {
+                entries: [
+                  {
+                    id: entryId,
+                    threadId,
+                    title: "Same commit",
+                    titleSource: "model",
+                    outcome: "Filed",
+                    open: [],
+                    runs: [{ runId: third, source: "online" }],
+                    startMessageId: MessageId.make(`${third}:user`),
+                    endMessageId: MessageId.make(`${third}:assistant`),
+                    startedAt: at,
+                    endedAt: at,
+                    status: "active",
+                  },
+                ],
+                runLines: [
+                  {
+                    runId: third,
+                    threadId,
+                    ordinal: 3,
+                    userMessageId: MessageId.make(`${third}:user`),
+                    replyMessageId: MessageId.make(`${third}:assistant`),
+                    line: "Filed",
+                    ownerText: null,
+                    startedBy: "owner",
+                    startedAt: at,
+                    repliedAt: at,
+                  },
+                ],
+                state: { ...afterRollback.state!, revision: 9, nextEntrySeq: 10 },
+              },
+            },
+            yield* rollBack(third),
+          ],
+        });
+        const sameCommit = yield* readContents(threadId);
+        assert.equal(sameCommit.entries.find((entry) => entry.id === entryId)?.status, "retired");
+        assert.deepEqual(
+          (yield* ThreadEntryStore.ThreadEntryStore.use((store) => store.runLines(threadId))).map(
+            (line) => line.runId,
+          ),
+          [first],
+        );
+
+        // A card that lands after its run was rolled back is still a card, but files nothing.
+        yield* threads.dispatch({
+          type: "thread.card.record",
+          commandId: CommandId.make("command:card:rollback:late"),
+          threadId,
+          runId: second,
+          messageId: MessageId.make(`${second}:assistant`),
+          repliedAt: at,
+          line: "Late card",
+          topics: [],
+          open: [],
+          run: {
+            ordinal: 2,
+            userMessageId: MessageId.make(`${second}:user`),
+            startedAt: at,
+            startedBy: "owner",
+            ownerText: null,
+            goAhead: false,
+            ownerSpokeMidRun: false,
+          },
+          filing: [],
+        });
+        assert.equal((yield* readThread(threadId)).card?.line, "Late card");
+        assert.isFalse(
+          (yield* readContents(threadId)).entries.some((entry) =>
+            entry.runs.some((link) => link.runId === second),
+          ),
+        );
+
+        yield* threads.dispatch({
+          type: "thread.delete",
+          commandId: CommandId.make("command:card:rollback:delete"),
+          threadId,
+        });
+        for (const table of ["tide_thread_entries", "tide_thread_runs", "tide_thread_contents"]) {
+          const [row] = yield* sql<{ readonly count: number }>`
+            SELECT COUNT(*) AS count FROM ${sql(table)} WHERE thread_id = ${threadId}`;
+          assert.equal(row?.count, 0, table);
+        }
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("a contents row that cannot be read costs the filing, not the card or a rollback", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const sql = yield* SqlClient.SqlClient;
+        const threadId = yield* createThread("broken");
+        yield* sql`
+          INSERT INTO tide_thread_entries (
+            entry_id, thread_id, title, title_source, outcome, open_json, open_count, runs_json,
+            start_message_id, end_message_id, started_at, ended_at, status
+          ) VALUES (
+            ${`${threadId}:e1`}, ${threadId}, 'Broken', 'model', '', '[]', 0, 'not json',
+            'message:a', 'message:b', '2030-01-01T00:00:00.000Z', '2030-01-01T00:00:00.000Z', 'active'
+          )`;
+        const runId = yield* recordRun({ threadId, run: "run:card:broken" });
+        yield* execute(threadId, runId);
+
+        assert.equal((yield* readThread(threadId)).card?.runId, runId);
+        const command = harness.dispatched.find(
+          (candidate) => candidate.type === "thread.card.record",
+        );
+        assert(command?.type === "thread.card.record");
+        assert.isUndefined(command.run);
+        assert.isUndefined(command.filing);
+
+        // A line for the run makes the rollback's cleanup read the broken row.
+        yield* sql`
+          INSERT INTO tide_thread_runs (
+            run_id, thread_id, ordinal, user_message_id, reply_message_id, started_by,
+            started_at, replied_at
+          ) VALUES (
+            ${runId}, ${threadId}, 1, 'message:a', 'message:b', 'owner',
+            '2030-01-01T00:00:00.000Z', '2030-01-01T00:00:00.000Z'
+          )`;
+        const [run] = (yield* threads.getThreadRecords(threadId, ["runs"], { runIds: [runId] }))
+          .runs;
+        yield* eventSink.write({
+          events: [
+            {
+              id: EventId.make(`${runId}:rolled-back`),
+              type: "run.updated",
+              threadId,
+              runId,
+              occurredAt: yield* DateTime.now,
+              payload: { ...run!, status: "rolled_back" },
+            },
+          ],
+        });
+        const [stored] = (yield* threads.getThreadRecords(threadId, ["runs"], { runIds: [runId] }))
+          .runs;
+        assert.equal(stored?.status, "rolled_back");
+        const [left] = yield* sql<{ readonly count: number }>`
+          SELECT COUNT(*) AS count FROM tide_thread_runs WHERE run_id = ${runId}`;
+        assert.equal(left?.count, 0);
+      }).pipe(Effect.provide(harness.layer));
     }),
   );
 });

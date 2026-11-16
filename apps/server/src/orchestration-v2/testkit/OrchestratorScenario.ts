@@ -149,6 +149,9 @@ function commandThreadIds(command: OrchestrationV2Command): ReadonlyArray<Thread
     case "thread.unsettle":
     case "thread.snooze":
     case "thread.unsnooze":
+    case "thread.follow-up.set":
+    case "thread.follow-up.clear":
+    case "thread.standing-check.set":
     case "thread.auto-settle.set":
     case "thread.pin":
     case "thread.unpin":
@@ -156,6 +159,13 @@ function commandThreadIds(command: OrchestrationV2Command): ReadonlyArray<Thread
     case "thread.active.reorder":
     case "thread.tag.set":
     case "thread.visit":
+    case "thread.contents.regroup.request":
+    case "thread.entry.rename":
+    case "thread.entry.merge":
+    case "thread.entry.move-run":
+    case "thread.entries.restore":
+    case "thread.open-items.resolve":
+    case "thread.open-items.restore":
     case "thread.mark-unread":
     case "thread.metadata.update":
     case "thread.pull-request.link":

@@ -11,6 +11,7 @@ import {
   threadCardOwedLabel,
   threadCardRowLine,
   threadLastTouchAt,
+  threadLaterLead,
   threadNeedsYou,
   threadStatusKind,
   threadStatusWord,
@@ -217,7 +218,7 @@ export function needsYouElsewhere(input: {
       return (
         (section === "active" || section === "pinned") &&
         !isThreadWorking(thread) &&
-        threadNeedsYou(thread, { includeCompleted: true })
+        threadNeedsYou(thread, { includeCompleted: "owed" })
       );
     }),
   );
@@ -252,11 +253,15 @@ export function resolveTideRowTime(input: {
   readonly variantAction: "settle" | "unsettle" | "unsnooze";
   readonly needsYou: boolean;
   readonly tideTimeAt: number | null;
-  readonly snoozedUntil: string | null;
+  /** From `threadLaterAt`: never a set-aside thread's placeholder date. */
+  readonly laterAt: string | null;
+  readonly recheck: boolean;
   readonly settledAt: string | null;
 }): { readonly label: string; readonly at: string } | null {
   if (input.variantAction === "unsnooze") {
-    return input.snoozedUntil === null ? null : { label: "Wakes", at: input.snoozedUntil };
+    return input.laterAt === null
+      ? null
+      : { label: input.recheck ? "Re-checks" : "Wakes", at: input.laterAt };
   }
   if (input.variantAction === "unsettle") {
     return input.settledAt === null ? null : { label: "Settled", at: input.settledAt };
@@ -286,7 +291,12 @@ const WOKE_OUTRANKS: ReadonlySet<ThreadStatusKind> = new Set(["plan", "completed
  */
 export function resolveTideRowLead(
   thread: Thread,
-  options: { readonly showsStatus: boolean; readonly isWoke: boolean },
+  options: {
+    readonly showsStatus: boolean;
+    readonly isWoke: boolean;
+    /** Set on Later rows, which lead with what they wait for. */
+    readonly later?: { readonly recheckLimit: number | null } | undefined;
+  },
 ): { readonly lead: TideRowLead | null; readonly text: string | null; readonly running: boolean } {
   const kind = threadStatusKind(thread);
   const running = kind !== null && RUNNING_KINDS.has(kind);
@@ -297,6 +307,10 @@ export function resolveTideRowLead(
     });
   if (options.isWoke && (kind === null || WOKE_OUTRANKS.has(kind))) {
     return { lead: { kind: "status", tone: "woke", word: "Woke" }, text: line(false), running };
+  }
+  const later = options.later === undefined ? null : threadLaterLead(thread, options.later);
+  if (later !== null) {
+    return { lead: { kind: "owed", word: later.word }, text: later.text ?? line(false), running };
   }
   if (kind !== null && options.showsStatus) {
     const limited = kind === "failed" && thread.runtime?.lastErrorClass === "usage_limit";

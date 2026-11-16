@@ -3977,6 +3977,16 @@ describe("OrchestratorMcpService thread list", () => {
     shell("thread:a-awake", "project:a", false),
     shell("thread:b-snoozed", "project:b", true, true),
     {
+      ...shell("thread:c-set-aside", "project:c", true),
+      snoozedUntil: DateTime.makeUnsafe("9999-12-31T00:00:00.000Z"),
+      followUp: {
+        reason: "Nightly test",
+        dueAt: "2026-10-19T09:00:00.000Z",
+        armedBy: "agent" as const,
+        quietCount: 1,
+      },
+    },
+    {
       ...shell("thread:a-awaiting-command", "project:a", false),
       activityRunStatus: null,
       pendingBackgroundTasks: [
@@ -4038,14 +4048,26 @@ describe("OrchestratorMcpService thread list", () => {
         [
           ["thread:a-snoozed", "project:a"],
           ["thread:b-snoozed", "project:b"],
+          ["thread:c-set-aside", "project:c"],
+        ],
+      );
+      // An agent never reads the set-aside date as a wake time.
+      assert.deepStrictEqual(
+        listed.threads.map((thread) => [thread.snoozedUntil, thread.setAside, thread.checkAt]),
+        [
+          ["2099-01-01T00:00:00.000Z", undefined, undefined],
+          ["2099-01-01T00:00:00.000Z", undefined, undefined],
+          [null, true, "2026-10-19T09:00:00.000Z"],
         ],
       );
       assert.deepStrictEqual(
         listed.threads.map((thread) => thread.summary),
-        [undefined, "Review found two bugs"],
+        [undefined, "Review found two bugs", undefined],
       );
       assert.deepStrictEqual(
-        listed.threads.map((thread) => [thread.blockedOnThreadWait, thread.pendingBackgroundTasks]),
+        listed.threads
+          .slice(0, 2)
+          .map((thread) => [thread.blockedOnThreadWait, thread.pendingBackgroundTasks]),
         [
           [false, []],
           [

@@ -362,6 +362,16 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_project_update: tool(["Update", "Updating", "Updated", "a project"], "project-update"),
   t3_project_delete: tool(["Delete", "Deleting", "Deleted", "a project"], "project-delete"),
   t3_project_clone: tool(["Clone", "Cloning", "Cloned", "a repository"], "project-clone"),
+  t3_open_items: tool(["Check", "Checking", "Checked", "what is still open"], "project-read"),
+  t3_open_items_list: tool(["List", "Listing", "Listed", "what is still open"], "project-read"),
+  t3_open_items_mark_published: tool(
+    ["Mark", "Marking", "Marked", "the project published"],
+    "project-update",
+  ),
+  t3_open_items_resolve: tool(
+    ["Resolve", "Resolving", "Resolved", "an open item"],
+    "thread-update",
+  ),
   t3_attachment_prepare_upload: tool(
     ["Prepare", "Preparing", "Prepared", "an attachment upload"],
     "attachment-prepare",
@@ -445,6 +455,7 @@ const asSummaryInput = (input: unknown): SummaryInput | undefined =>
 const ACTION_TOOLS: Readonly<Record<string, (action: string) => string | undefined>> = {
   preview_act: (action) => `preview_${action}`,
   t3_queue: (action) => `t3_queue_${action}`,
+  t3_open_items: (action) => `t3_open_items_${action}`,
   t3_pending_request: (action) => `t3_pending_request_${action}`,
   t3_thread_transfer: (action) =>
     ({ fork: "t3_thread_fork", merge_back: "t3_thread_merge_back", status: "t3_thread_transfers" })[

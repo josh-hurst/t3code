@@ -40,6 +40,7 @@ import {
 } from "../rpc/client.ts";
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { applyOrchestrationV2ProjectionEvent } from "./orchestrationV2Projection.ts";
+import { appendEntriesUpdate } from "./threadEntries.ts";
 import { THREAD_SNAPSHOT_IDLE_TTL_MS } from "./threadRetention.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
 import * as ThreadHistoryController from "./threadHistoryController.ts";
@@ -441,6 +442,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     options?: {
       readonly resetHistory?: boolean;
       readonly history?: ThreadHistoryMeta;
+      readonly snapshot?: boolean;
     },
   ) {
     const waiting = yield* Ref.get(awaitingCompletion);
@@ -466,6 +468,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         error: previous.error,
         history,
         sequence,
+        ...(options?.snapshot === true ? { snapshots: (previous.snapshots ?? 0) + 1 } : {}),
       };
     });
     // Active projections can update many times per second and retain large tool
@@ -551,6 +554,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     type EventApplyResult =
       | { readonly _tag: "noop" }
       | { readonly _tag: "delete" }
+      | { readonly _tag: "entries" }
       | {
           readonly _tag: "applied";
           readonly projection: OrchestrationV2ThreadProjection;
@@ -563,6 +567,20 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     ): readonly [EventApplyResult, EnvironmentThreadState] => {
       if (current.status === "deleted") {
         return [{ _tag: "noop" }, current];
+      }
+      // Topics live beside the projection, so they apply before a snapshot has loaded too.
+      if (item.event.type === "thread.entries-updated") {
+        return [
+          { _tag: "entries" },
+          {
+            ...current,
+            entryUpdates: appendEntriesUpdate(
+              current.entryUpdates,
+              item.event.payload,
+              item.sequence,
+            ),
+          },
+        ];
       }
       if (Option.isNone(current.data)) {
         return [
@@ -614,7 +632,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         for (const item of fresh) {
           const [applied, next] = applyEvent(current, item);
           current = next;
-          if (applied._tag !== "noop") result = applied;
+          // A topic change must not hide an earlier projection change from persistence.
+          if (applied._tag !== "noop" && (applied._tag !== "entries" || result._tag === "noop")) {
+            result = applied;
+          }
           if (applied._tag === "delete") break;
         }
         // A batch that changed nothing keeps its state object, so readers do not re-render.
@@ -662,6 +683,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         boundedSnapshotProjection(item),
         hasProgressiveHistory
           ? {
+              snapshot: true,
               history: {
                 historyCursor: item.historyCursor ?? null,
                 hasMoreHistory: item.hasMoreHistory ?? false,
@@ -671,7 +693,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                 latestLocalTurnOrdinal: item.latestLocalTurnOrdinal ?? null,
               },
             }
-          : { resetHistory: true },
+          : { snapshot: true, resetHistory: true },
       );
       return;
     }
@@ -1064,7 +1086,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                           latestLocalTurnOrdinal: httpResult.history.latestLocalTurnOrdinal ?? null,
                         }
                       : EMPTY_THREAD_HISTORY_META;
-                  yield* setThread(httpResult.snapshot.projection, { history });
+                  yield* setThread(httpResult.snapshot.projection, { history, snapshot: true });
                   yield* remember;
                 }),
               );

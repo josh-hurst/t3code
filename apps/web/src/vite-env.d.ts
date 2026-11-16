@@ -30,6 +30,10 @@ declare global {
     t3dev?: {
       readonly replayScenarios: () => ReadonlyArray<string>;
       readonly replay: (scenario?: string) => Promise<ThreadId>;
+      readonly followUp: (
+        threadId: string,
+        options?: { inSeconds?: number; question?: string; as?: "user" | "agent" },
+      ) => Promise<void>;
     };
   }
 }

@@ -48,6 +48,7 @@ import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
+import { useThreadLaterActions } from "./useThreadLaterActions";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -89,6 +90,7 @@ export function useThreadActionMenu(input: {
     markThreadUnread,
     turnThreadIntoProject,
   } = useThreadActions();
+  const later = useThreadLaterActions();
   const regenerateThreadTitle = useOrchestrationCommand(threadEnvironment.regenerateTitle, {
     reportFailure: false,
   });
@@ -147,6 +149,8 @@ export function useThreadActionMenu(input: {
         autoSettleEnabled: thread.autoSettleDisabledAt == null,
         isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
+        hasArmedRecheck: thread.followUp != null && thread.followUp.sentAt === undefined,
+        isStandingCheck: thread.standingCheck === true,
         isRegeneratingTitle,
         isRunning: !threadRuntimeCanArchive(thread.runtime),
         supports,
@@ -234,6 +238,21 @@ export function useThreadActionMenu(input: {
           return;
         case "unsnooze":
           await reportFailure("Failed to wake thread", () => unsnoozeThread(threadRef));
+          return;
+        case "later:set-aside":
+          await later.setAside(threadRef);
+          return;
+        case "later:recheck":
+          await later.recheckLater(threadRef);
+          return;
+        case "later:cancel-recheck":
+          await later.cancelRecheck(threadRef);
+          return;
+        case "later:standing-check":
+          later.makeStandingCheck(threadRef);
+          return;
+        case "later:stop-standing-check":
+          await later.stopStandingCheck(threadRef);
           return;
         case "pin":
           await reportFailure("Failed to pin thread", () => pinThread(threadRef));

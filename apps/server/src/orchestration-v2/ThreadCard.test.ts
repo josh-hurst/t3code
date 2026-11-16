@@ -17,13 +17,17 @@ const input = (run: number, overrides: Partial<Parameters<typeof nextThreadCard>
 });
 
 describe("nextThreadCard", () => {
-  it("appends a chapter per run and keeps the newest twenty", () => {
+  it("describes the newest run only", () => {
     let card: ThreadCard | null = null;
-    for (let run = 1; run <= 22; run++) card = nextThreadCard(input(run, { previous: card }));
-    expect(card?.chapters).toHaveLength(20);
-    expect(card?.chapters[0]).toEqual({ line: "Line 3", messageId: "message:3" });
-    expect(card?.chapters.at(-1)).toEqual({ line: "Line 22", messageId: "message:22" });
-    expect(card).toMatchObject({ line: "Line 22", runId: "run:22", messageId: "message:22" });
+    for (let run = 1; run <= 3; run++) card = nextThreadCard(input(run, { previous: card }));
+    expect(card).toEqual({
+      line: "Line 3",
+      topics: [],
+      open: [],
+      messageId: "message:3",
+      at: "2026-06-20T00:00:00.000Z",
+      runId: "run:3",
+    });
   });
 
   it("puts the new topics first, drops repeats in any case, and keeps five", () => {

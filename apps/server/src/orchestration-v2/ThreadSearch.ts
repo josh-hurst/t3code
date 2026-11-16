@@ -39,6 +39,7 @@ import {
   nonPlaceholderMessageCondition,
 } from "./messageSearchIndex.ts";
 import { loadOlderSettledThreadsPage } from "./ShellStream.ts";
+import * as ThreadEntryStore from "./ThreadEntryStore.ts";
 
 // When the user last wrote in the thread aliased `threads`, as the clients
 // rank recency; agent notices in the user role do not count.
@@ -273,7 +274,8 @@ export interface ThreadSearchHit {
   readonly threadId: ThreadId;
   readonly projectId: ProjectId;
   readonly title: string;
-  readonly source: "title" | OrchestrationThreadSearchSource;
+  /** "topic": a topic of the thread whose title or outcome holds every word. */
+  readonly source: "title" | "topic" | OrchestrationThreadSearchSource;
   readonly snippet?: string;
   readonly messageCreatedAt?: string | null;
 }
@@ -308,6 +310,8 @@ export class ThreadSearch extends Context.Service<
   }
 >()("t3/orchestration-v2/ThreadSearch") {}
 
+// Topic matches an agent's search reads before it fills its topic slots.
+const TOPIC_ROWS = 20;
 // Rows a client gets per search: enough for the shown results without sending every match.
 const OLDER_SETTLED_TITLE_ROWS = 15;
 const OLDER_SETTLED_MESSAGE_ROWS = 5;
@@ -332,6 +336,7 @@ const OlderSettledTitleRow = Schema.Struct({
 /** @public */
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const entries = yield* ThreadEntryStore.ThreadEntryStore;
 
   const searchRows = SqlSchema.findAll({
     Request: SearchRequest,
@@ -550,6 +555,42 @@ export const make = Effect.gen(function* () {
   const search: ThreadSearch["Service"]["search"] = (input) =>
     searchMessages({ ...input, projectId: null });
 
+  /**
+   * Topics whose title and outcome hold every word, newest first, of listed threads. A thread's
+   * only topic is dropped when the thread already matched by title: it would be the same row twice.
+   */
+  const searchTopics = Effect.fn("ThreadSearch.searchTopics")(
+    function* (input: {
+      readonly query: string;
+      readonly projectId: ProjectId | undefined;
+      readonly listed: (threadId: ThreadId) => string | null;
+      readonly titled: ReadonlySet<ThreadId>;
+    }) {
+      const { entries: rows } = yield* entries.list({
+        query: input.query.slice(0, 100),
+        limit: TOPIC_ROWS,
+        ...(input.projectId === undefined ? {} : { projectIds: [input.projectId] }),
+      });
+      const listedRows = rows.filter((row) => input.listed(row.threadId) !== null);
+      const soleTopic = new Set<ThreadId>();
+      for (const threadId of new Set(listedRows.map((row) => row.threadId))) {
+        if (!input.titled.has(threadId)) continue;
+        if ((yield* entries.listForThread(threadId)).entries.length <= 1) soleTopic.add(threadId);
+      }
+      return listedRows
+        .filter((row) => !soleTopic.has(row.threadId))
+        .map((row): ThreadSearchHit => ({
+          threadId: row.threadId,
+          projectId: row.projectId,
+          title: input.listed(row.threadId) ?? row.threadTitle,
+          source: "topic",
+          snippet: (row.outcome === "" ? row.title : `${row.title}: ${row.outcome}`).slice(0, 240),
+          messageCreatedAt: row.endedAt,
+        }));
+    },
+    Effect.mapError((cause) => new ThreadSearchError({ operation: "query", cause })),
+  );
+
   const searchThreads: ThreadSearch["Service"]["searchThreads"] = Effect.fn(
     "ThreadSearch.searchThreads",
   )(function* (input) {
@@ -593,6 +634,12 @@ export const make = Effect.gen(function* () {
         source: "title",
       }));
     const shown = new Set(titleHits.map((hit) => hit.threadId));
+    const topicHits = yield* searchTopics({
+      query: input.query,
+      projectId: input.projectId,
+      listed: (threadId) => subjectById.get(threadId)?.title ?? null,
+      titled: shown,
+    });
     const { matches } = yield* searchMessages({
       query: input.query,
       limit: 50,
@@ -606,11 +653,16 @@ export const make = Effect.gen(function* () {
         ...match,
         title: subjectById.get(match.threadId)!.title,
       }));
-    // Titles come first, but a fifth of the slots stay for message matches,
+    // Titles come first, but a fifth of the slots each stay for topic and message matches,
     // as the palette keeps its "In messages" section.
+    const topicSlots = Math.min(topicHits.length, Math.floor(limit / 5));
     const messageSlots = Math.min(messageHits.length, Math.floor(limit / 5));
     return {
-      matches: [...titleHits.slice(0, limit - messageSlots), ...messageHits].slice(0, limit),
+      matches: [
+        ...titleHits.slice(0, limit - topicSlots - messageSlots),
+        ...topicHits.slice(0, topicSlots),
+        ...messageHits,
+      ].slice(0, limit),
     };
   });
 
@@ -668,7 +720,7 @@ export const make = Effect.gen(function* () {
   return ThreadSearch.of({ search, searchThreads, searchOlderSettled });
 });
 
-export const layer = Layer.effect(ThreadSearch, make);
+export const layer = Layer.effect(ThreadSearch, make).pipe(Layer.provide(ThreadEntryStore.layer));
 
 /**
  * The client search: message hits, and with `olderSettledBefore`, the rows of the best older

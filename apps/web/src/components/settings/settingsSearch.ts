@@ -937,6 +937,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "later-recheck-limit",
+    title: "Unattended re-checks",
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: [
+      "later re-check recheck follow up check again agent schedule limit cap quiet unattended",
+    ],
+  },
+  {
     id: "reply-summary-model",
     title: "Reply summary model",
     to: "/settings/threads",

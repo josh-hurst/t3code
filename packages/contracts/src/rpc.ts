@@ -6,6 +6,7 @@ import {
   OrchestrationV2SearchThreadsResult,
 } from "./orchestrationV2.ts";
 import { OrchestrationDispatchCommandError } from "./orchestrationDispatch.ts";
+import { ThreadContentsError } from "./threadEntries.ts";
 import {
   McpAppCallToolInput,
   McpAppCallToolResult,
@@ -1891,6 +1892,93 @@ const WsOrchestrationV2GetOlderSettledThreadsRpc = Rpc.make(
   },
 );
 
+const WsOrchestrationV2ListThreadEntriesRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.listThreadEntries,
+  {
+    payload: OrchestrationV2RpcSchemas.listThreadEntries.input,
+    success: OrchestrationV2RpcSchemas.listThreadEntries.output,
+    error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+  },
+);
+
+const WsOrchestrationV2ListEntriesRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.listEntries, {
+  payload: OrchestrationV2RpcSchemas.listEntries.input,
+  success: OrchestrationV2RpcSchemas.listEntries.output,
+  error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+});
+
+const WsOrchestrationV2GetOpenItemCountsRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.getOpenItemCounts,
+  {
+    payload: OrchestrationV2RpcSchemas.getOpenItemCounts.input,
+    success: OrchestrationV2RpcSchemas.getOpenItemCounts.output,
+    error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+  },
+);
+
+const WsOrchestrationV2MarkPublishedRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.markPublished, {
+  payload: OrchestrationV2RpcSchemas.markPublished.input,
+  success: OrchestrationV2RpcSchemas.markPublished.output,
+  error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+});
+
+const WsOrchestrationV2UndoPublishedRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.undoPublished, {
+  payload: OrchestrationV2RpcSchemas.undoPublished.input,
+  success: OrchestrationV2RpcSchemas.undoPublished.output,
+  error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+});
+
+const WsOrchestrationV2RefreshOpenItemsRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.refreshOpenItems,
+  {
+    payload: OrchestrationV2RpcSchemas.refreshOpenItems.input,
+    success: OrchestrationV2RpcSchemas.refreshOpenItems.output,
+    error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+  },
+);
+
+const WsOrchestrationV2ResolveOpenItemRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.resolveOpenItem, {
+  payload: OrchestrationV2RpcSchemas.resolveOpenItem.input,
+  success: OrchestrationV2RpcSchemas.resolveOpenItem.output,
+  error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+});
+
+const WsOrchestrationV2EstimateContentsBackfillRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.estimateContentsBackfill,
+  {
+    payload: OrchestrationV2RpcSchemas.estimateContentsBackfill.input,
+    success: OrchestrationV2RpcSchemas.estimateContentsBackfill.output,
+    error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+  },
+);
+
+const WsOrchestrationV2StartContentsBackfillRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.startContentsBackfill,
+  {
+    payload: OrchestrationV2RpcSchemas.startContentsBackfill.input,
+    success: OrchestrationV2RpcSchemas.startContentsBackfill.output,
+    error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+  },
+);
+
+const WsOrchestrationV2GetContentsBackfillRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.getContentsBackfill,
+  {
+    payload: OrchestrationV2RpcSchemas.getContentsBackfill.input,
+    success: OrchestrationV2RpcSchemas.getContentsBackfill.output,
+    error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+  },
+);
+
+const WsOrchestrationV2CancelContentsBackfillRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.cancelContentsBackfill,
+  {
+    payload: OrchestrationV2RpcSchemas.cancelContentsBackfill.input,
+    success: OrchestrationV2RpcSchemas.cancelContentsBackfill.output,
+    error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+  },
+);
+
 const WsOrchestrationV2GetThreadProjectionRpc = Rpc.make(
   ORCHESTRATION_V2_WS_METHODS.getThreadProjection,
   {
@@ -2324,6 +2412,17 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2GetThreadLinkMetadataRpc,
   WsOrchestrationV2GetWorktreeThreadIdsRpc,
   WsOrchestrationV2GetOlderSettledThreadsRpc,
+  WsOrchestrationV2ListThreadEntriesRpc,
+  WsOrchestrationV2ListEntriesRpc,
+  WsOrchestrationV2GetOpenItemCountsRpc,
+  WsOrchestrationV2MarkPublishedRpc,
+  WsOrchestrationV2UndoPublishedRpc,
+  WsOrchestrationV2RefreshOpenItemsRpc,
+  WsOrchestrationV2ResolveOpenItemRpc,
+  WsOrchestrationV2EstimateContentsBackfillRpc,
+  WsOrchestrationV2StartContentsBackfillRpc,
+  WsOrchestrationV2GetContentsBackfillRpc,
+  WsOrchestrationV2CancelContentsBackfillRpc,
   WsOrchestrationV2GetThreadProjectionRpc,
   WsOrchestrationV2LaunchThreadRpc,
   WsOrchestrationV2SubscribeShellRpc,

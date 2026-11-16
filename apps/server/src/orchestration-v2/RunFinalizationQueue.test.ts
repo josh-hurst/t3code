@@ -23,6 +23,7 @@ import * as RunFinalization from "./RunFinalizationService.ts";
 import * as RuntimeRequests from "./RuntimeRequestService.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as ThreadCards from "./ThreadCardService.ts";
+import * as ThreadRegroups from "./ThreadRegroupService.ts";
 import * as ThreadTitles from "./ThreadTitleRegenerationService.ts";
 
 it.effect.each([
@@ -96,6 +97,7 @@ it.effect.each([
         Layer.mock(RuntimeRequests.RuntimeRequestServiceV2)({}),
         Layer.mock(ThreadTitles.ThreadTitleRegenerationService)({}),
         Layer.mock(ThreadCards.ThreadCardService)({}),
+        Layer.mock(ThreadRegroups.ThreadRegroupService)({}),
         Layer.mock(ThreadManagement.ThreadManagementService)({
           recoverDelegatedTask: () => Effect.void,
         }),

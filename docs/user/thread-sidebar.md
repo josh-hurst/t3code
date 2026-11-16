@@ -162,16 +162,19 @@ own choice.
 ### Threads that need you
 
 **Needs you** gathers threads waiting on an approval, an answer, or a
-guest, with a plan ready, with a question you have not answered, or with a finished or
-failed run you haven't opened. The thread that has waited longest comes first. Pinned
-threads stay pinned and working threads stay in Working.
+guest, with a plan ready, with a question you have not answered, or with a failed run you
+haven't opened. A finished run you haven't opened lands here only when it leaves something to
+do (a question, a check, a commit or a publish) or before its summary has arrived; one that
+owes nothing goes to the top of the Trail, marked **Done**, until you open it. The thread that
+has waited longest comes first. Pinned threads stay pinned and working threads stay in Working.
 
 A thread leaves Needs you when you open it, answer it, or settle it. The thread you have
 open stays where it was until you leave it, and moves once you send it a message.
 
 **Next** on the Needs you header, or `thread.nextNeedsYou` (`mod+shift+u`), opens the next
 thread that needs you, starting again from the top after the last one. Pinned threads that
-need you come after the section's own. It is also in the command palette.
+need you come after the section's own, then **Done** threads in the Trail. It is also in the
+command palette.
 
 In the classic sidebar, **Settings → General → Needs you section** chooses where the
 section goes: **Above all projects**, **In each project** folder, or off. **Finished
@@ -181,11 +184,13 @@ Needs you rows hold their place.
 
 ### Later and the Trail
 
-**Later** holds [snoozed threads](#snooze-until-later) with their wake times, soonest
-first.
+**Later** holds threads you [put off](#snooze-until-later) and says what each waits for: a
+wake time, a re-check and its reason, **Set aside**, or **Standing check**. Threads with a
+time come first, soonest first.
 
-The **Trail** holds every other unsettled thread, ordered by when you last opened it or
-sent it a message, most recent first. An agent working in a thread never reorders it, and
+The **Trail** holds every other unsettled thread. Finished runs you haven't opened come
+first, marked **Done**; the rest are ordered by when you last opened it or sent it a message,
+most recent first. An agent working in a thread never reorders it, and
 the thread you have open keeps its place until you leave it or send it a message.
 Reopening a thread within ten minutes counts as the same visit. It shows the eight most recent
 threads. Click the row below them, such as **5 more today, 3 earlier**, to see the rest:
@@ -207,6 +212,9 @@ all projects. While the sidebar is limited this way, a row under the search fiel
 project, with an **×** to show all projects again and, when threads in other projects need
 you, a count such as **3 elsewhere**. Going to the next thread that needs you leaves
 the project when nothing in it is waiting.
+When the project still owes something, such as a publish, a commit or a check, the row also
+shows a count such as **6 open**; its tooltip says what is owed, and clicking it opens
+[History](#history-every-topic) on that project's open items.
 
 ### Hide projects
 
@@ -318,6 +326,37 @@ rules to connected environments that support shared settings. Offline environmen
 and older servers keep their previous values. Changing a rule does not reopen
 already settled threads.
 
+### History: every topic
+
+When [thread summaries](#choose-what-shows-under-a-threads-title) are on, each finished
+reply is filed under a topic of its thread. **All** beside the sidebar's History label, or
+`history.open` (`mod+shift+y`), opens the History page: every topic from every thread,
+newest first by when it was last worked on, under day labels. Search matches topic titles
+and outcomes; the chips limit it to one project. Click a topic to open its thread where the
+topic started; **Latest result** opens it at the topic's last reply. Threads from before
+topics were kept are only in the sidebar's History list until you add them: **Add older
+threads…** at the foot of the page picks a project and a range, shows how many model calls
+it will make, and runs only when you press **Start**, one call at a time, on the summary
+model. It leaves those threads' summaries, open items and order alone, and you can cancel
+it; starting it again picks up where it stopped. Long threads only is the cheaper choice.
+
+**Still open** shows only topics that still owe something, each with its items: a question,
+a check, a commit, a publish or a follow-up. Its count is the one the
+[Focus](#focus-on-one-project) row shows. An item clears when a later reply says it is done,
+when you answer a question, when you press **Done** on it, or, for a commit, when the
+thread's checkout has no uncommitted changes after a turn or when you open Still open.
+After you publish, choose a project and press **Mark published**, or run
+**Mark this project published** from the command palette, to clear what waits on a publish
+and start the re-checks that wait for one. **Undo** puts the items back, except on threads
+whose summary changed since; re-checks it started stay started. An agent you tell "I've
+published" marks it for you. History and Mark published need a server that keeps topics.
+
+On mobile, **All** beside the thread list's History label opens the same History screen, with
+a project filter, Still open, search, **Mark published** (it asks first) and **Done**. Tap a
+topic to open its thread where the topic started. In a thread with two or more topics,
+**Contents** in the thread settings sheet lists them; tap one to scroll to where it started.
+Mobile shows topics but does not rename or merge them.
+
 ## Link a pull request
 
 The server finds the PR for each unsettled thread's saved branch, even when your
@@ -337,11 +376,24 @@ what a thread did when [thread summaries](#choose-what-shows-under-a-threads-tit
 Threads you open often or recently rank higher, and for three weeks the thread
 you last picked for a query ranks higher when you type that query again.
 Threads whose messages contain all your words appear below, under **In
-messages**, and open at the matching message. Message search needs at least
+messages**, and open at the matching message. Topics whose title and outcome contain your
+words are listed there too, marked **Topic:**, and open where the topic started. Message search needs at least
 one word of three or more letters, or two for Chinese, Japanese, and Korean.
 On mobile, the thread list search also lists message matches and opens them at
 the matching message; on an iPad with a keyboard, `Cmd+K` opens the same
 palette.
+
+A thread with two or more [topics](#history-every-topic) lists them under **Contents** in its
+thread details, in the order they started, each with what it still owes and its outcome. Click
+a topic to jump to where it started, or **Latest result** to jump to its last reply. The jump
+rail beside the conversation draws a longer tick where each topic begins, and its preview
+names the topic. To fix the grouping by hand, use a topic's **⋯** menu to **Rename** it or
+**Merge into** another topic, or a message's **Topic** button to move that message and its
+reply to another topic or to a **New topic…**; the **Topic** button also appears in a thread
+that is still one topic. Each change offers **Undo** until the thread's topics change again.
+**Split this thread into topics** in the command palette regroups the whole thread with three
+short model calls. Topics you renamed, merged or moved keep your changes when the thread is
+regrouped.
 
 Use **Settings → Keybindings** to find or customize shortcuts for searching files
 and copying a thread reference. A copied reference uses the thread's pull request
@@ -451,6 +503,37 @@ A snoozed thread keeps working and stays hidden until its wake time, even while
 its agent wakes itself for background work. It comes back early for an approval,
 a new question, a failed run, or a message or answer you send. You can snooze an existing
 question and answer when the thread wakes; the question stays unanswered.
+
+### Set aside
+
+**Snooze → Set aside** keeps a thread in Later with no wake time, until you bring it back
+or it needs you. `thread.setAside` (`mod+alt+l`) sets the open thread aside, or brings it
+back if it already is; it is also in the command palette. **Undo** puts it back where it was.
+
+### Re-check with a question
+
+When an answer isn't ready yet, such as test results that need a day, choose
+**Snooze → Re-check with a question…**, pick a time, and write the question. **After the next
+publish** waits until you [mark the project published](#history-every-topic), then asks an
+hour later. The thread
+waits in Later showing the time and the question's first line. At that time the question
+is sent to the thread's agent, which works on it without you, and the thread comes back
+when the run finishes. If you open the thread before then, the re-check still runs.
+
+An agent can schedule its own re-check when you ask for something it can't answer yet,
+and tells you when. The thread moves to Later once you've read the reply. If the re-check
+finds nothing new, the agent can schedule another, and the row reads **Re-check 2 of 3**.
+After the last one it must report what it found. Set how many it may chain in
+**Settings → Threads → Unattended re-checks**; **Off** stops agents scheduling them, and
+your own re-checks still work. Writing to the thread starts the count again.
+
+The thread's details panel shows the full question with **Edit** and **Cancel**. You can
+also cancel from the thread's menu or the command palette. When you cancel the thread you
+have open, **Undo** restores the re-check.
+
+On mobile, Later rows show the same labels. Mobile can set a thread aside and cancel a
+re-check or a standing check from a row's menu; scheduling a re-check or making a standing
+check needs web or desktop.
 
 ## Use the classic sidebar
 

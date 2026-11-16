@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { BellDotIcon, FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
@@ -19,6 +20,12 @@ export interface SidebarThreadHeaderProps {
   needsYouElsewhere: number;
   // The new layout names the projects the list is scoped to on a row of its own; null otherwise.
   focusedProjects: string | null;
+  /** What the focused project still owes; null hides the count. */
+  focusedOpen: {
+    readonly total: number;
+    readonly summary: string;
+    readonly projectKey: string;
+  } | null;
   onShowAllProjects: () => void;
   onNewProject: () => void;
   onNewThread: (event: ReactMouseEvent) => void;
@@ -43,6 +50,7 @@ export function SidebarThreadHeader({
   projectScope,
   needsYouElsewhere,
   focusedProjects,
+  focusedOpen,
   onShowAllProjects,
   onNewProject,
   onNewThread,
@@ -153,6 +161,7 @@ export function SidebarThreadHeader({
       {focusedProjects !== null ? (
         <SidebarFocusStrip
           projects={focusedProjects}
+          open={focusedOpen}
           needsYouElsewhere={needsYouElsewhere}
           onShowAllProjects={onShowAllProjects}
         />
@@ -163,9 +172,12 @@ export function SidebarThreadHeader({
 
 function SidebarFocusStrip(props: {
   projects: string;
+  open: SidebarThreadHeaderProps["focusedOpen"];
   needsYouElsewhere: number;
   onShowAllProjects: () => void;
 }) {
+  const navigate = useNavigate();
+  const open = props.open;
   const elsewhereLabel = `${props.needsYouElsewhere} ${props.needsYouElsewhere === 1 ? "thread needs" : "threads need"} you in other projects. Show all projects`;
   return (
     <div className="flex h-7 min-w-0 items-center gap-0.5 ps-2 pe-1 text-xs text-sidebar-muted-foreground">
@@ -189,6 +201,30 @@ function SidebarFocusStrip(props: {
         </TooltipTrigger>
         <TooltipPopup side="top">Show all projects</TooltipPopup>
       </Tooltip>
+      {open !== null && open.total > 0 ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                size="micro"
+                variant="ghost-muted"
+                className="shrink-0"
+                aria-label={`${open.total} still open: ${open.summary}. Show them in History`}
+                onClick={() =>
+                  void navigate({
+                    to: "/history",
+                    search: { project: open.projectKey, open: "1" },
+                  })
+                }
+              />
+            }
+          >
+            {open.total} open
+          </TooltipTrigger>
+          <TooltipPopup side="top">{open.summary}</TooltipPopup>
+        </Tooltip>
+      ) : null}
       <span className="flex-1" />
       {props.needsYouElsewhere > 0 ? (
         <Tooltip>

@@ -12,6 +12,7 @@ import {
   AuthSourceControlWriteScope,
   EnvironmentAuthorizationError,
   EnvironmentId,
+  isThreadSetAside,
   type ScopedThreadRef,
   ThreadId,
   sessionGrantsScope,
@@ -942,7 +943,7 @@ export function useThreadActions() {
       return result;
     }
     showThreadUndoNotice({
-      action: "Snoozed",
+      action: isThreadSetAside(snoozedUntil) ? "Set aside" : "Snoozed",
       claim: action,
       undo: () => runUndoPlan(target, ThreadUndo.planThreadUndo("snooze")),
       failureTitle: "Failed to wake thread",

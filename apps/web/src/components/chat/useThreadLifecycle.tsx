@@ -25,15 +25,17 @@ import {
 } from "@t3tools/contracts";
 import {
   effectiveSnoozed,
-  snoozeWakeLabel,
+  snoozeWakeAtMs,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
+import { threadLaterStatusLabel } from "@t3tools/client-runtime/state/thread-zones";
 import {
   BACKGROUND_WORK_STOP_RETRY_AFTER_MS,
   type BackgroundWorkStopRequest,
   isBackgroundWorkStopPending,
 } from "@t3tools/client-runtime/state/thread-execution";
 import { useAcknowledgeThreadWoke, useThreadActions } from "../../hooks/useThreadActions";
+import { useThreadLaterActions } from "../../hooks/useThreadLaterActions";
 import { settleAndAdvance } from "../../settleAndAdvance";
 import type { ChatShortcutCommands } from "./useChatShortcuts";
 import { resolveThreadLastVisitedAt } from "../Sidebar.logic";
@@ -182,6 +184,8 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   const navigate = useNavigate();
   const router = useRouter();
   const { settleThread, pinThread, confirmAndUnpinThread } = useThreadActions();
+  const laterActions = useThreadLaterActions();
+  const recheckLimit = useAtomValue(serverEnvironment.laterRecheckLimitAtom(environmentId));
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const switchGitRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
@@ -202,7 +206,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   // A clock read in render would stay frozen in the compiler's cache, so the
   // snooze checks read a snapshot that moves when the wake time changes or passes.
   const snoozeClock = new Date(
-    useNowAfter(Date.parse(activeThreadShell?.snoozedUntil ?? "") || null),
+    useNowAfter(snoozeWakeAtMs(activeThreadShell?.snoozedUntil)),
   ).toISOString();
   const activeThreadSnoozed =
     activeThreadShell !== null &&
@@ -613,17 +617,20 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       })
     : null;
   // The relative times read the clock; nowMinute re-renders them on the minute.
-  const snoozedUntil = activeThreadShell?.snoozedUntil ?? null;
   const settledAt = activeThreadShell?.settledAt ?? null;
-  // Same rounding as the sidebar's snoozed shelf, so both read the same hour.
-  const snoozeWake = snoozedUntil
-    ? snoozeWakeLabel(snoozedUntil, { now: `${nowMinute}:00.000Z` })
-    : null;
   const threadStatusLine = activeThreadSnoozed ? (
     limitRecoveryHoldsSnooze ? null : (
       <ThreadStatusLine
         icon={<AlarmClockIcon />}
-        label={snoozeWake && snoozeWake !== "now" ? `Snoozed, ${snoozeWake} left` : "Snoozed"}
+        // Same rounding as the sidebar's Later rows, so both read the same hour.
+        label={
+          activeThreadShell
+            ? threadLaterStatusLabel(activeThreadShell, {
+                now: `${nowMinute}:00.000Z`,
+                recheckLimit,
+              })
+            : "Snoozed"
+        }
         clockMinute={nowMinute}
         actionLabel={isUnsnoozing ? "Waking..." : "Wake now"}
         actionDisabled={!canOperateThread || isUnsnoozing}
@@ -687,6 +694,11 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
           activeThreadPinned ? "Failed to unpin thread" : "Failed to pin thread",
         ),
       );
+    },
+    "thread.setAside": () => {
+      if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return false;
+      if (!activeThreadShell || !activeThreadRef || !serverConfigLoaded) return;
+      laterActions.toggleSetAside(activeThreadRef);
     },
     "thread.regenerateTitle": () => {
       if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return false;

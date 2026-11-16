@@ -289,6 +289,23 @@ Passes per case, main's runtime text (3 samples) → this branch's "Link every o
 
 After the change, the first reference to a file is an absolute link. The remaining failures come from two other kinds of span. Some repeat the file later as relative inline code (Sonnet's other-checkout failures). Others quote values rather than cite files, such as `main` set to `src/index.ts` or the import `./ws`. Chat still turns those spans into pills.
 
+## Later cases
+
+`cases/later.ndjson` checks when an agent schedules its own re-check with `t3_thread_organize` `check_later`, the Later feature from the 2026-11 workflow design: an answer that exists only later (an A/B result, a rollout) is re-asked in the same thread at a time, with no user present. Its last two cases check the publish marker, `t3_open_items` `mark_published`. The A/B metrics CLI and its output are authored Acme data. The re-check prompts copy `followUpPrompt` in `apps/server/src/orchestration-v2/ThreadFollowUp.ts`; keep them in step.
+
+| Case                          | Kind    | What it checks                                                                            |
+| ----------------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| later-result-not-ready        | bad     | A result that needs another day: `check_later` with a question, and the answer says when. |
+| later-recheck-still-not-ready | guard   | In its own re-check, with the data still short, the agent calls `check_later` again.      |
+| later-recheck-ready           | guard   | In its own re-check, with the result ready, the agent answers and does not re-arm.        |
+| later-answer-available        | control | The result is readable now: answered, no `check_later`.                                   |
+| later-daily-reminder          | control | "Every morning at 9" is `schedule_task`, not `check_later`.                               |
+| after-publish-watch           | guard   | "After I publish, watch the crash rate": `check_later` with `afterPublish`.               |
+| published-clears-open         | bad     | "Published 2.4.0": `t3_open_items` `mark_published`.                                      |
+| can-i-publish                 | control | "Can I publish?" must not call `mark_published`.                                          |
+
+No paid run has been recorded yet; `--dry-run` builds all eight.
+
 ## Where T3's text lives
 
 - `packages/provider-core/src/server/runtimeInstructions.ts`

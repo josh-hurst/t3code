@@ -60,6 +60,7 @@ describe("parseThreadCard", () => {
           dueAt: "2030-03-04T08:00:00.000Z",
         },
       ],
+      entries: [],
     });
   });
 
@@ -78,9 +79,52 @@ describe("parseThreadCard", () => {
       line: "Merge PR 412 now?",
       topics: [],
       open: [],
+      entries: [],
     });
     expect(parseThreadCard("topics: login\nask: Merge it?", NOW_MS)).toBeNull();
     expect(parseThreadCard("  ...  ", NOW_MS)).toBeNull();
+  });
+
+  it.each([
+    [
+      "an existing id",
+      ["entry: e2 | Fixed; not deployed | open"],
+      [["e2", null, "Fixed; not deployed"]],
+    ],
+    [
+      "new with a title, open/done dropped",
+      ["entry: new | **Export timeout** | Raised to 30 seconds | done"],
+      [["new", "Export timeout", "Raised to 30 seconds"]],
+    ],
+    [
+      "two lines; a third dropped",
+      ["entry: E1 | First", "- entry: new | Dark mode | Added", "entry: e3 | Third"],
+      [
+        ["e1", null, "First"],
+        ["new", "Dark mode", "Added"],
+      ],
+    ],
+    [
+      "a bad id and a repeated id dropped",
+      ["entry: entry-2 | Nope", "entry: e1 | Once", "entry: e1 | Twice"],
+      [["e1", null, "Once"]],
+    ],
+    ["an id with only open/done", ["entry: e4 | done"], [["e4", null, ""]]],
+    ["new without a title", ["entry: new"], [["new", null, ""]]],
+    ["no entry line", [], []],
+  ])("reads entry lines: %s", (_name, lines, expected) => {
+    const card = parseThreadCard(["line: Done", "topics: work", ...lines].join("\n"), NOW_MS);
+    expect(card?.entries.map((entry) => [entry.ref, entry.title, entry.outcome])).toEqual(expected);
+    expect(card?.open).toEqual([]);
+  });
+
+  it("caps entry titles and outcomes at what an entry stores", () => {
+    const [entry] = parseThreadCard(
+      `line: Done\nentry: new | ${"title ".repeat(30)} | ${"outcome ".repeat(30)}`,
+      NOW_MS,
+    )!.entries;
+    expect(entry!.title!.length).toBeLessThanOrEqual(80);
+    expect(entry!.outcome.length).toBeLessThanOrEqual(120);
   });
 
   it("caps topics, open items and their lengths at what the card stores", () => {
@@ -102,17 +146,28 @@ describe("parseThreadCard", () => {
 });
 
 describe("buildThreadCardPrompt", () => {
+  const base = {
+    reply: "Done.",
+    userMessage: "Fix the login test",
+    previous: null,
+    contents: { entries: [], previousRefs: [] },
+    midRun: [],
+    startedBy: "owner",
+    now: "2030-03-03T13:00:00.000+01:00",
+  } as const;
+  const block = (prompt: string, tag: string) =>
+    prompt.slice(prompt.indexOf(`<${tag}>`), prompt.indexOf(`</${tag}>`) + tag.length + 3);
+
   it("carries the previous card and keeps the end of a long reply", () => {
     const reply = `${"start ".repeat(1_000)}${"middle ".repeat(2_000)}Should I merge it?`;
     const prompt = buildThreadCardPrompt({
+      ...base,
       reply,
-      userMessage: "Fix the login test",
       previous: {
         line: "Login test still flaky",
         topics: ["login test"],
         open: [{ kind: "followup", text: "Re-check CI", dueAt: "2030-03-04T08:00:00.000Z" }],
       },
-      now: "2030-03-03T13:00:00.000+01:00",
     });
     expect(prompt).toContain("Should I merge it?");
     expect(prompt).toContain("[…]");
@@ -120,4 +175,54 @@ describe("buildThreadCardPrompt", () => {
     expect(prompt).toContain("topics: login test\nfollowup 2030-03-04T08:00:00.000Z: Re-check CI");
     expect(prompt).toContain("<user_message>\nFix the login test\n</user_message>");
   });
+
+  it("lists the contents with the previous run's entries, or says it is the first run", () => {
+    expect(block(buildThreadCardPrompt(base), "contents")).toBe(
+      "<contents>\nnone yet: this is the first run of the thread\n</contents>",
+    );
+    const prompt = buildThreadCardPrompt({
+      ...base,
+      contents: {
+        entries: [
+          { ref: "e1", title: "Login test", outcome: "Fixed", open: false },
+          { ref: "e2", title: "Reset email", outcome: "Queued; not committed", open: true },
+        ],
+        previousRefs: ["e2"],
+      },
+    });
+    expect(block(prompt, "contents")).toBe(
+      [
+        "<contents>",
+        "e1 | Login test | Fixed | done",
+        "e2 | Reset email | Queued; not committed | open",
+        "The previous run was filed under: e2",
+        "</contents>",
+      ].join("\n"),
+    );
+    expect(prompt.indexOf("</contents>")).toBeLessThan(prompt.indexOf("Current time:"));
+  });
+
+  it.each([
+    ["owner", "Fix the login test", [], "<user_message>\nFix the login test\n</user_message>"],
+    [
+      "owner",
+      "Fix the login test",
+      ["also the reset email"],
+      "<user_message>\nFix the login test\n[The user added while the agent was working:] also the reset email\n</user_message>",
+    ],
+    [
+      "report",
+      "Task finished",
+      ["how is it going?"],
+      "<user_message>\n[No new message from the user started this run. A background task or subagent reported back.]\n[The user added while the agent was working:] how is it going?\n</user_message>",
+    ],
+    ["other", null, [], "<user_message>\n\n</user_message>"],
+  ] as const)(
+    "writes the user block for a run started by %s",
+    (startedBy, userMessage, midRun, expected) => {
+      expect(
+        block(buildThreadCardPrompt({ ...base, startedBy, userMessage, midRun }), "user_message"),
+      ).toBe(expected);
+    },
+  );
 });

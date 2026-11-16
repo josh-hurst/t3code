@@ -61,6 +61,8 @@ import * as PreviewAgentActivity from "../../preview/PreviewAgentActivity.ts";
 import * as RunExecutionService from "../RunExecutionService.ts";
 import * as RunFinalizationService from "../RunFinalizationService.ts";
 import * as ThreadCardService from "../ThreadCardService.ts";
+import * as ThreadRegroupService from "../ThreadRegroupService.ts";
+import * as ThreadEntryStore from "../ThreadEntryStore.ts";
 import * as ThreadTitleRegenerationService from "../ThreadTitleRegenerationService.ts";
 import * as RuntimePolicy from "../RuntimePolicy.ts";
 import * as TurnItemPositionStore from "../TurnItemPositionStore.ts";
@@ -348,6 +350,7 @@ export function layerWithRegistry<Error>(
     CommandReceiptStore.layer,
     layerEffectOutboxProvided,
     TurnItemPositionStore.layer,
+    ThreadEntryStore.layer,
   ).pipe(Layer.provide(layerDatabase));
   const layerEventSinkProvided = EventSink.layerFromStores.pipe(
     Layer.provide(Layer.mergeAll(layerStores, layerDatabase)),
@@ -501,6 +504,13 @@ export function layerWithRegistry<Error>(
     ThreadCardService.ThreadCardService,
     ThreadCardService.ThreadCardService.of({ execute: () => Effect.void }),
   );
+  const layerThreadRegroupTest = Layer.succeed(
+    ThreadRegroupService.ThreadRegroupService,
+    ThreadRegroupService.ThreadRegroupService.of({
+      execute: () => Effect.void,
+      topics: () => Effect.succeed(null),
+    }),
+  );
   const layerOrchestratorProvided = Orchestrator.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -556,6 +566,7 @@ export function layerWithRegistry<Error>(
         layerRuntimeRequestServiceProvided,
         layerThreadTitleRegenerationTest,
         layerThreadCardTest,
+        layerThreadRegroupTest,
         layerServerSettings,
         layerThreadManagementProvided,
       ),

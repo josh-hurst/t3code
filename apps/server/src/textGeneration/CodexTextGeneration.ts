@@ -42,6 +42,19 @@ const CODEX_TIMEOUT_MS = 180_000;
 // Codex login, without Codex's agent prompt and startup: ~1.5 s instead of ~4 s per call.
 const T3CODE_CODEX_LITE_PATH_ENV = "T3CODE_CODEX_LITE_PATH";
 const CODEX_LITE_DEFAULT_PATH = ".local/bin/codex-lite";
+// codex-lite needs a direct ChatGPT login, which a proxied instance home may not have.
+const T3CODE_CODEX_LITE_HOME_ENV = "T3CODE_CODEX_LITE_HOME";
+// A permanent codex-lite failure would otherwise warn on every call.
+const loggedCodexLiteReasons = new Set<string>();
+const MAX_LOGGED_CODEX_LITE_REASONS = 100;
+const logCodexLiteOnce = (reason: string, message: string, fields: Record<string, unknown>) =>
+  Effect.suspend(() => {
+    if (loggedCodexLiteReasons.has(reason)) return Effect.void;
+    if (loggedCodexLiteReasons.size >= MAX_LOGGED_CODEX_LITE_REASONS)
+      loggedCodexLiteReasons.clear();
+    loggedCodexLiteReasons.add(reason);
+    return Effect.logWarning(message, fields);
+  });
 const CODEX_MCP_LIST_TIMEOUT_MS = 10_000;
 // Plugins/apps add MCP servers; use trailing config overrides because --disable loses to user -c flags.
 const CODEX_NO_PLUGIN_ARGS = [
@@ -293,11 +306,32 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
   ) {
     const explicit = env[T3CODE_CODEX_LITE_PATH_ENV]?.trim();
     if (explicit === "" || explicit === "off") return null;
+    if (env[T3CODE_CODEX_LITE_HOME_ENV]?.trim() === "off") return null;
     if (explicit === undefined && binaryPath !== "" && binaryPath !== "codex") return null;
     const candidate =
       explicit ?? path.join(yield* HostProcess.HomeDirectory, CODEX_LITE_DEFAULT_PATH);
     const info = yield* fileSystem.stat(candidate).pipe(Effect.orElseSucceed(() => null));
     return info?.type === "File" ? candidate : null;
+  });
+
+  // Only checks that auth.json exists; codex-lite reads the login itself.
+  const resolveCodexLiteHome = Effect.fn("resolveCodexLiteHome")(function* (
+    env: NodeJS.ProcessEnv,
+  ) {
+    const homeDirectory = yield* HostProcess.HomeDirectory;
+    const override = env[T3CODE_CODEX_LITE_HOME_ENV]?.trim();
+    const candidates = [
+      override ? expandHomePath(override, homeDirectory) : undefined,
+      env.CODEX_HOME,
+      path.join(homeDirectory, ".codex"),
+    ].filter((candidate): candidate is string => candidate !== undefined && candidate !== "");
+    for (const candidate of candidates) {
+      const info = yield* fileSystem
+        .stat(path.join(candidate, "auth.json"))
+        .pipe(Effect.orElseSucceed(() => null));
+      if (info?.type === "File") return { home: candidate, candidates };
+    }
+    return { home: null, candidates };
   });
 
   const runCodexJson = Effect.fn("runCodexJson")(function* <S extends Schema.Top>({
@@ -373,12 +407,20 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
             }
           : {}),
       };
-      // codex-lite has no launch args or managed runtime of its own, so those keep codex exec.
+      // codex-lite has no tools, launch args or managed runtime, so those keep codex exec.
       const codexLite =
-        resolved || launchArgs !== ""
+        resolved || launchArgs !== "" || investigate
           ? null
           : yield* resolveCodexLite(effectiveConfig.binaryPath, env);
-      if (codexLite) {
+      const liteLogin = codexLite ? yield* resolveCodexLiteHome(env) : null;
+      if (liteLogin && liteLogin.home === null) {
+        yield* logCodexLiteOnce("no-login", "codex-lite has no Codex login; using codex exec", {
+          checked: liteLogin.candidates,
+        });
+      }
+      if (codexLite && liteLogin?.home) {
+        const liteEnv = { ...env, CODEX_HOME: liteLogin.home };
+        yield* Effect.annotateCurrentSpan("text_generation.route", "codex-lite");
         const lite = yield* runCli({
           operation,
           spawnCommand: yield* resolveSpawnCommand(
@@ -398,18 +440,24 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
               ...imagePaths.flatMap((imagePath) => ["--image", imagePath]),
               "-",
             ],
-            { env },
+            { env: liteEnv },
           ),
-          env,
+          env: liteEnv,
           cwd,
           prompt,
         }).pipe(Effect.result);
         if (Result.isSuccess(lite)) return;
-        yield* Effect.logWarning("codex-lite failed; falling back to codex exec", {
-          operation,
-          detail: lite.failure.detail,
-        });
+        yield* logCodexLiteOnce(
+          lite.failure.detail,
+          "codex-lite failed; falling back to codex exec",
+          {
+            operation,
+            codexHome: liteLogin.home,
+            detail: lite.failure.detail,
+          },
+        );
       }
+      yield* Effect.annotateCurrentSpan("text_generation.route", "codex-exec");
 
       const enabledMcpServers = yield* listEnabledMcpServers({
         binary,

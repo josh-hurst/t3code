@@ -47,6 +47,7 @@ const THREAD_KEYBINDING_COMMANDS = [
   "thread.undo",
   "thread.nextNeedsYou",
   "thread.clearTrail",
+  "thread.setAside",
   ...THREAD_JUMP_KEYBINDING_COMMANDS,
 ] as const;
 
@@ -88,6 +89,8 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "filePicker.toggle",
   "projectSearch.toggle",
   "usage.open",
+  "history.open",
+  "project.markPublished",
   "theme.select",
   "appearance.cycle",
   "themeEditor.toggle",

@@ -398,6 +398,10 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   settledAt: Schema.NullOr(IsoDateTime),
   snoozed: Schema.Boolean,
   snoozedUntil: Schema.NullOr(IsoDateTime),
+  /** Snoozed with no wake time. */
+  setAside: Schema.optional(Schema.Boolean),
+  /** A pending re-check's time, or null while it waits for the next publish. */
+  checkAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   /** Absent from linked environments that predate it. */
   blockedOnThreadWait: Schema.optional(Schema.Boolean),
   /** Absent from linked environments that predate it. */
@@ -483,6 +487,10 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   settledAt: Schema.NullOr(IsoDateTime),
   snoozed: Schema.Boolean,
   snoozedUntil: Schema.NullOr(IsoDateTime),
+  /** Snoozed with no wake time. */
+  setAside: Schema.optional(Schema.Boolean),
+  /** A pending re-check's time, or null while it waits for the next publish. */
+  checkAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   /** Absent from linked environments that predate it. */
   blockedOnThreadWait: Schema.optional(Schema.Boolean),
   /** Absent from linked environments that predate it. */

@@ -3,7 +3,6 @@ import {
   type MessageId,
   type OrchestrationV2AppThread,
   type RunId,
-  THREAD_CARD_CHAPTERS_MAX,
   THREAD_CARD_TOPICS_MAX,
   type ThreadCard,
   type ThreadCardSummary,
@@ -86,10 +85,6 @@ export function nextThreadCard(input: {
     messageId: input.messageId,
     at: input.at,
     runId: input.runId,
-    chapters: [
-      ...(input.previous?.chapters ?? []),
-      { line: input.line, messageId: input.messageId },
-    ].slice(-THREAD_CARD_CHAPTERS_MAX),
   };
   return input.answered ? threadCardWithoutAsks(card) : card;
 }

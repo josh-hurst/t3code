@@ -134,61 +134,84 @@ const planFork = (
     });
   }).pipe(Effect.provide(ThreadForkService.layer));
 
-it.effect("resets a fork's pin, snooze, settle and delegation state but keeps its origin", () =>
-  Effect.gen(function* () {
-    const linkOrigin = { sessionId: "mcp-session:fork-source", label: "Linked laptop" };
-    const sourceThread: OrchestrationV2AppThread = {
-      ...makeSourceThread(),
-      lastSnoozeWakeAt: snoozedAt,
-      pinnedAt: snoozedAt,
-      pinOrderKey: "a0",
-      activeOrderKey: "a1",
-      autoSettleDisabledAt: snoozedAt,
-      delegatedFrom: {
-        environmentId: EnvironmentId.make("linked-environment"),
-        threadId: ThreadId.make("linked-parent"),
-        title: "Linked parent",
-      },
-      historyOrigin: "v1_import",
-      linkOrigin,
-      tags: ["private"],
-    };
-    const sourceRun = makeSourceRun("completed");
-    const result = yield* planFork(sourceRun, {
-      ...makeSourceProjection(sourceRun),
-      thread: sourceThread,
-    });
+it.effect(
+  "resets a fork's pin, snooze, settle, Later and delegation state but keeps its origin",
+  () =>
+    Effect.gen(function* () {
+      const linkOrigin = { sessionId: "mcp-session:fork-source", label: "Linked laptop" };
+      const sourceThread: OrchestrationV2AppThread = {
+        ...makeSourceThread(),
+        lastSnoozeWakeAt: snoozedAt,
+        pinnedAt: snoozedAt,
+        pinOrderKey: "a0",
+        activeOrderKey: "a1",
+        autoSettleDisabledAt: snoozedAt,
+        delegatedFrom: {
+          environmentId: EnvironmentId.make("linked-environment"),
+          threadId: ThreadId.make("linked-parent"),
+          title: "Linked parent",
+        },
+        historyOrigin: "v1_import",
+        linkOrigin,
+        tags: ["private"],
+        card: {
+          line: "Waiting on the nightly test",
+          topics: [],
+          open: [{ kind: "ask", text: "Ship it?" }],
+          messageId: MessageId.make("message:card"),
+          at: "2026-11-16T00:00:00.000Z",
+          runId: sourceRunId,
+        },
+        followUp: {
+          question: "Did the nightly test pass?",
+          reason: "Nightly test",
+          dueAt: "2026-11-17T09:00:00.000Z",
+          armedAt: "2026-11-16T00:00:00.000Z",
+          armedBy: "agent",
+          quietCount: 0,
+        },
+        standingCheck: true,
+      };
+      const sourceRun = makeSourceRun("completed");
+      const result = yield* planFork(sourceRun, {
+        ...makeSourceProjection(sourceRun),
+        thread: sourceThread,
+      });
 
-    assert.isNull(result.targetThread.snoozedUntil);
-    assert.isNull(result.targetThread.snoozedAt);
-    assert.isNull(result.targetThread.lastSnoozeWakeAt);
-    assert.isNull(result.targetThread.pinnedAt);
-    assert.isNull(result.targetThread.pinOrderKey);
-    assert.isNull(result.targetThread.activeOrderKey);
-    assert.isNull(result.targetThread.autoSettleDisabledAt);
-    assert.isUndefined(result.targetThread.delegatedFrom);
-    assert.equal(result.targetThread.historyOrigin, "v1_import");
-    assert.deepEqual(result.targetThread.linkOrigin, linkOrigin);
-    assert.deepEqual(result.targetThread.tags, ["private"]);
-    assert.equal(result.targetThread.projectId, sourceThread.projectId);
-    assert.equal(result.targetThread.providerInstanceId, sourceThread.providerInstanceId);
-    assert.deepEqual(result.targetThread.modelSelection, sourceThread.modelSelection);
-    assert.equal(result.targetThread.runtimeMode, sourceThread.runtimeMode);
-    assert.equal(result.targetThread.interactionMode, sourceThread.interactionMode);
-    assert.equal(result.targetThread.branch, sourceThread.branch);
-    assert.equal(result.targetThread.worktreePath, sourceThread.worktreePath);
-    assert.isNull(result.targetThread.activeProviderThreadId);
-    assert.deepEqual(result.targetThread.lineage, {
-      parentThreadId: sourceThreadId,
-      relationshipToParent: "fork",
-      rootThreadId: sourceThreadId,
-    });
-    assert.deepEqual(result.targetThread.forkedFrom, {
-      type: "run",
-      threadId: sourceThreadId,
-      runId: sourceRunId,
-    });
-  }),
+      assert.isNull(result.targetThread.snoozedUntil);
+      assert.isNull(result.targetThread.snoozedAt);
+      assert.isNull(result.targetThread.lastSnoozeWakeAt);
+      assert.isNull(result.targetThread.pinnedAt);
+      assert.isNull(result.targetThread.pinOrderKey);
+      assert.isNull(result.targetThread.activeOrderKey);
+      assert.isNull(result.targetThread.autoSettleDisabledAt);
+      assert.isUndefined(result.targetThread.delegatedFrom);
+      // Open questions and re-checks stay with the source, or the fork would double them.
+      assert.isNull(result.targetThread.card);
+      assert.isNull(result.targetThread.followUp);
+      assert.isFalse(result.targetThread.standingCheck);
+      assert.equal(result.targetThread.historyOrigin, "v1_import");
+      assert.deepEqual(result.targetThread.linkOrigin, linkOrigin);
+      assert.deepEqual(result.targetThread.tags, ["private"]);
+      assert.equal(result.targetThread.projectId, sourceThread.projectId);
+      assert.equal(result.targetThread.providerInstanceId, sourceThread.providerInstanceId);
+      assert.deepEqual(result.targetThread.modelSelection, sourceThread.modelSelection);
+      assert.equal(result.targetThread.runtimeMode, sourceThread.runtimeMode);
+      assert.equal(result.targetThread.interactionMode, sourceThread.interactionMode);
+      assert.equal(result.targetThread.branch, sourceThread.branch);
+      assert.equal(result.targetThread.worktreePath, sourceThread.worktreePath);
+      assert.isNull(result.targetThread.activeProviderThreadId);
+      assert.deepEqual(result.targetThread.lineage, {
+        parentThreadId: sourceThreadId,
+        relationshipToParent: "fork",
+        rootThreadId: sourceThreadId,
+      });
+      assert.deepEqual(result.targetThread.forkedFrom, {
+        type: "run",
+        threadId: sourceThreadId,
+        runId: sourceRunId,
+      });
+    }),
 );
 
 it.effect("starts a fork without the source thread's pending title regeneration", () =>

@@ -43,6 +43,7 @@ import {
   type RenderFailureProps,
 } from "./components/RenderErrorBoundary";
 import { ArchivedThreadsRouteScreen } from "./features/archive/ArchivedThreadsRouteScreen";
+import { HistoryScreen } from "./features/history/HistoryScreen";
 import { ConnectOnboardingRouteScreen } from "./features/cloud/ConnectOnboardingRouteScreen";
 import { AttachmentFileScreen } from "./features/files/AttachmentFileScreen";
 import { ThreadFilesTreeScreen, ThreadFileScreen } from "./features/files/ThreadFilesRouteScreen";
@@ -551,6 +552,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
     PullRequestEdit: createNativeStackScreen({
       screen: PullRequestEditScreen,
       options: sheetRoute({ detent: 0.75, androidFit: true }),
+    }),
+    History: createNativeStackScreen({
+      screen: HistoryScreen,
+      linking: "history",
+      options: pageRoute({ duoMinimize: "never" }),
     }),
     Thread: createNativeStackScreen({
       screen: ThreadRouteScreen,

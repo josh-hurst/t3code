@@ -1,4 +1,5 @@
 import { createChildThreadApprovalsAtom } from "@t3tools/client-runtime/state/thread-requests";
+import { createThreadContentsAtoms } from "@t3tools/client-runtime/state/thread-entries";
 import { useAtomValue } from "@effect/atom-react";
 import { enabledEnvironmentIds } from "@t3tools/client-runtime/state/connections";
 import { arrayElementsEqual } from "@t3tools/client-runtime/state/entities";
@@ -34,6 +35,11 @@ export const threadEnvironment = createThreadEnvironmentAtoms(
   threadFamilies.snapshotAtom,
 );
 const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
+/** A thread's topics; read through `useThreadEntries`, which checks the server keeps them. */
+export const threadContents = createThreadContentsAtoms(
+  connectionAtomRuntime,
+  environmentThreads.stateAtom,
+);
 export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
   environmentThreads.stateAtom,
 );

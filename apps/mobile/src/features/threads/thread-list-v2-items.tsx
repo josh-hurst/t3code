@@ -27,6 +27,7 @@ import {
 } from "@t3tools/client-runtime/state/models";
 import {
   AuthOrchestrationOperateScope,
+  THREAD_SET_ASIDE_UNTIL,
   threadCardHasOpenAsk,
   type EnvironmentMachineKind,
 } from "@t3tools/contracts";
@@ -78,6 +79,7 @@ import {
   resolveThreadListV2SnoozeMenuSelection,
   resolveThreadListV2SnoozePresets,
   threadHasUnseenCompletion,
+  threadListV2LaterMenuActions,
   resolveThreadListV2Status,
   resolveThreadListV2ProviderDrivers,
   resolveThreadListV2SwipeActions,
@@ -262,11 +264,29 @@ function ThreadListV2Section(props: {
     </>
   );
 
+  const disclosure = props.disclosure;
+  const toggle = (className: string) =>
+    disclosure ? (
+      <Pressable
+        accessibilityHint={disclosure.accessibilityHint}
+        accessibilityLabel={disclosure.accessibilityLabel}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: disclosure.disabled, expanded: disclosure.expanded }}
+        className={className}
+        disabled={disclosure.disabled}
+        onPress={disclosure.onToggle}
+        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+      >
+        {content}
+      </Pressable>
+    ) : null;
+
   if (props.action) {
     const action = props.action;
     return (
       <View className={className}>
-        {content}
+        {/* The label still folds the section; the action sits beside it. */}
+        {toggle("min-w-0 flex-1 flex-row items-center gap-2.5") ?? content}
         <Pressable
           accessibilityLabel={action.accessibilityLabel}
           accessibilityRole="button"
@@ -289,25 +309,7 @@ function ThreadListV2Section(props: {
     );
   }
 
-  return props.disclosure ? (
-    <Pressable
-      accessibilityHint={props.disclosure.accessibilityHint}
-      accessibilityLabel={props.disclosure.accessibilityLabel}
-      accessibilityRole="button"
-      accessibilityState={{
-        disabled: props.disclosure.disabled,
-        expanded: props.disclosure.expanded,
-      }}
-      className={className}
-      disabled={props.disclosure.disabled}
-      onPress={props.disclosure.onToggle}
-      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-    >
-      {content}
-    </Pressable>
-  ) : (
-    <View className={className}>{content}</View>
-  );
+  return toggle(className) ?? <View className={className}>{content}</View>;
 }
 
 const ThreadListV2SectionDivider = memo(function ThreadListV2SectionDivider(props: {
@@ -320,6 +322,12 @@ const ThreadListV2SectionDivider = memo(function ThreadListV2SectionDivider(prop
 type ThreadListV2ShelfHeaderProps = {
   /** Replaces the shelf's own name, such as "Later" for the snoozed shelf. */
   readonly label?: string;
+  /** A trailing action beside the fold, such as History's "All". */
+  readonly action?: {
+    readonly label: string;
+    readonly accessibilityLabel: string;
+    readonly onPress: () => void;
+  };
   readonly count: number;
   readonly disabled?: boolean;
   readonly expanded: boolean;
@@ -345,6 +353,9 @@ function ThreadListV2ShelfHeader(
         accessibilityLabel: `${props.count} ${props.kind} ${props.count === 1 ? "thread" : "threads"}`,
         accessibilityHint: `${props.expanded ? "Collapses" : "Expands"} the ${props.kind} threads.`,
       }}
+      {...(props.action === undefined
+        ? {}
+        : { action: { ...props.action, disabled: props.disabled } })}
     />
   );
 }
@@ -359,6 +370,13 @@ export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedS
   props: ThreadListV2ShelfHeaderProps,
 ) {
   return <ThreadListV2ShelfHeader {...props} kind="snoozed" />;
+});
+
+/** History's "All": every topic across threads, on its own screen. */
+export const historyAllAction = (onPress: () => void) => ({
+  label: "All",
+  accessibilityLabel: "Open History, every topic across threads",
+  onPress,
 });
 
 export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledShelfHeader(
@@ -928,6 +946,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const timeLabel = props.timeLabel;
 
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
+  const clearFollowUp = useAtomCommand(threadEnvironment.clearFollowUp, {
+    label: "cancel re-check",
+  });
+  const setStandingCheck = useAtomCommand(threadEnvironment.setStandingCheck, {
+    label: "stop standing check",
+  });
   const handleAcknowledgeWoke = useCallback(() => {
     if (props.wokeAt === null) return;
     void visitThread({
@@ -1007,6 +1031,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         subtitle: preset.whenLabel,
       })),
       { id: "snooze:custom", title: "Custom…" },
+      { id: "later:set-aside", title: "Set aside" },
     ],
     [snoozePresets],
   );
@@ -1106,7 +1131,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     if (snoozedRow) {
       return layoutThreadListV2RowMenuActions({
         nested,
-        direct: [...direct, SNOOZED_MENU_ACTIONS[0]!],
+        direct: [...direct, SNOOZED_MENU_ACTIONS[0]!, ...threadListV2LaterMenuActions(thread)],
         reorder: [],
         pin: [],
         secondary: [
@@ -1150,6 +1175,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ...(swipeActions.secondary === "snooze"
           ? [{ id: "snooze", title: "Snooze", image: "clock", subactions: snoozePresetActions }]
           : []),
+        // An agent can arm a re-check before the thread files into Later.
+        ...threadListV2LaterMenuActions(thread),
       ],
       reorder: reorderMenuItems,
       pin: pinMenuItems,
@@ -1169,7 +1196,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     snoozePresetActions,
     snoozedRow,
     swipeActions.secondary,
-    thread.branch,
+    thread,
     titleMenuItems,
   ]);
   const handleMenuAction = useCallback(
@@ -1178,6 +1205,16 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "settle") handleSettle();
       if (nativeEvent.event === "unsettle") handleUnsettle();
       if (nativeEvent.event === "unsnooze") handleUnsnooze();
+      if (nativeEvent.event === "later:set-aside") handleSnooze(THREAD_SET_ASIDE_UNTIL);
+      if (nativeEvent.event === "later:cancel-recheck") {
+        void clearFollowUp({ environmentId: thread.environmentId, input: { threadId: thread.id } });
+      }
+      if (nativeEvent.event === "later:stop-standing-check") {
+        void setStandingCheck({
+          environmentId: thread.environmentId,
+          input: { threadId: thread.id, enabled: false },
+        });
+      }
       if (nativeEvent.event === "pin") handlePin();
       if (nativeEvent.event === "unpin") handleUnpin();
       if (nativeEvent.event === "auto-settle:enabled") handleSetAutoSettle(true);
@@ -1237,6 +1274,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       handleUnpin,
       handleUnsettle,
       handleUnsnooze,
+      clearFollowUp,
+      setStandingCheck,
       setCustomSnoozeOpen,
       snoozePresets,
       props.snoozePresets,

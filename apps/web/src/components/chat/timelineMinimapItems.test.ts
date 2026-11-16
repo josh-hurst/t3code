@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { MessageId } from "@t3tools/contracts";
+import { MessageId, RunId, ThreadEntryId } from "@t3tools/contracts";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 
 import { deriveTimelineMinimapItems, resolveTimelineMinimapPreview } from "./timelineMinimapItems";
@@ -32,6 +32,55 @@ describe("deriveTimelineMinimapItems", () => {
       expect(resolveTimelineMinimapPreview(items[0]!)?.userText).toBeNull();
     },
   );
+});
+
+describe("deriveTimelineMinimapItems topic marks", () => {
+  const at = "2026-10-01T00:00:00Z";
+  const userRow = (id: string, runId: string | null) => ({
+    kind: "message" as const,
+    id,
+    createdAt: at,
+    showAssistantMeta: false,
+    showAssistantCopyButton: false,
+    assistantCopyStreaming: false,
+    message: {
+      id: MessageId.make(id),
+      role: "user" as const,
+      text: id,
+      runId: runId === null ? null : RunId.make(runId),
+      streaming: false,
+      createdAt: at,
+      updatedAt: at,
+    },
+  });
+
+  it("marks where each topic starts, and a return to one after another", () => {
+    const lobby = { id: ThreadEntryId.make("e1"), title: "Lobby test" };
+    const locker = { id: ThreadEntryId.make("e2"), title: "Locker" };
+    const byRun = new Map([
+      [RunId.make("a"), lobby],
+      [RunId.make("b"), locker],
+      [RunId.make("c"), lobby],
+      [RunId.make("d"), lobby],
+    ]);
+    const items = deriveTimelineMinimapItems(
+      [
+        userRow("a", "a"),
+        userRow("b", "b"),
+        userRow("c", "c"),
+        userRow("running", "e"),
+        userRow("d", "d"),
+      ],
+      byRun,
+    );
+    expect(items.map((item) => [item.entryTitle, item.startsEntry])).toEqual([
+      ["Lobby test", true],
+      ["Locker", true],
+      ["Lobby test", true],
+      [undefined, undefined],
+      ["Lobby test", false],
+    ]);
+  });
 });
 
 describe("resolveTimelineMinimapPreview", () => {

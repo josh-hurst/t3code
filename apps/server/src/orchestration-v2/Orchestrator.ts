@@ -28,7 +28,14 @@ import {
   isCompactionCommandMessage,
   isOrchestrationV2WorkActive,
   threadCardHasOpenAsk,
+  threadCardOpenItemKey,
+  type ThreadCardOpenItem,
+  type ThreadEntriesUpdate,
+  threadFollowUpIsArmed,
+  isListedThreadLineage,
   isProviderNativeSubagentThread,
+  type ThreadFollowUp,
+  THREAD_SET_ASIDE_UNTIL,
   MessageId,
   type NodeId,
   type ModelSelection,
@@ -152,6 +159,28 @@ import * as EffectOutbox from "./EffectOutbox.ts";
 import { withCommandMetrics } from "../observability/Metrics.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import { cardCallsForRetitle, nextThreadCard, threadCardWithoutAsks } from "./ThreadCard.ts";
+import {
+  assignEntries,
+  cardRunLine,
+  type HandEditResult,
+  itemsToRestore,
+  mergeEntries,
+  moveRun,
+  removeOpenItems,
+  renameEntry,
+  restoreEntries,
+  restoreOpenItems,
+} from "./ThreadEntries.ts";
+import * as ThreadEntryStore from "./ThreadEntryStore.ts";
+import { applyBackfill, applyRegroup, threadRegroupEffect } from "./ThreadRegroup.ts";
+import {
+  followUpAfterOwnerMessage,
+  followUpFilesOnVisit,
+  holdForFollowUp,
+  nextFollowUp,
+  releaseSetAside,
+  spendFollowUp,
+} from "./ThreadFollowUp.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import {
@@ -546,6 +575,8 @@ export class OrchestratorV2 extends Context.Service<OrchestratorV2, Orchestrator
 ) {}
 
 /** Run ordinals can skip values: a queued run moves past newer runs when it starts. */
+const setAsideUntil = DateTime.makeUnsafe(THREAD_SET_ASIDE_UNTIL);
+
 function nextRunOrdinal(projection: Pick<OrchestrationV2ThreadProjection, "runs">): number {
   return projection.runs.reduce((max, run) => Math.max(max, run.ordinal), 0) + 1;
 }
@@ -628,6 +659,10 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.unsettle":
     case "thread.snooze":
     case "thread.unsnooze":
+    case "thread.follow-up.set":
+    case "thread.follow-up.clear":
+    case "thread.follow-up.release":
+    case "thread.standing-check.set":
     case "thread.auto-settle.set":
     case "thread.pin":
     case "thread.unpin":
@@ -636,6 +671,15 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.tag.set":
     case "thread.visit":
     case "thread.card.record":
+    case "thread.contents.regroup.request":
+    case "thread.contents.regroup.record":
+    case "thread.contents.backfill.record":
+    case "thread.entry.rename":
+    case "thread.entry.merge":
+    case "thread.entry.move-run":
+    case "thread.entries.restore":
+    case "thread.open-items.resolve":
+    case "thread.open-items.restore":
     case "thread.mark-unread":
     case "thread.metadata.update":
     case "thread.pull-request.link":
@@ -1500,6 +1544,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const projectionStore = yield* ProjectionStoreV2;
+  const threadEntryStore = yield* ThreadEntryStore.ThreadEntryStore;
   const effectOutbox = yield* EffectOutbox.EffectOutboxV2;
   const nextTurnItemOrdinal = (
     projection: Pick<OrchestrationV2ThreadProjection, "thread"> &
@@ -3784,6 +3829,39 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.searchQuery,
         )
       : null;
+    // Reading a finished reply with a pending re-check files the thread into Later, once.
+    // Emitted before the visit, whose projection step rereads the thread.
+    if (
+      thread.followUp != null &&
+      followUpFilesOnVisit(thread, DateTime.toEpochMillis(occurredAt))
+    ) {
+      const shell = yield* projectionStore
+        .getThreadShell(command.threadId)
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+          ),
+        );
+      const completedAt = shell?.latestRunCompletedAt ?? null;
+      if (
+        shell !== null &&
+        shell.activeRunId == null &&
+        (completedAt === null ||
+          DateTime.toEpochMillis(visitedAt.value) >= DateTime.toEpochMillis(completedAt)) &&
+        (yield* snoozeRefusal(command.threadId)) === null
+      ) {
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "thread.follow-up-updated",
+          threadId: command.threadId,
+          providerInstanceId: thread.providerInstanceId,
+          occurredAt,
+          payload: holdForFollowUp(thread, thread.followUp, occurredAt),
+        });
+      }
+    }
     if (!movesForward && opens === null) return;
     // Viewing a thread changes read state only. Loading its transcript, bumping
     // updatedAt, or copying the thread into the event makes a read receipt scale with it.
@@ -3800,6 +3878,237 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(opens ? { opens } : {}),
       },
     });
+  });
+
+  /** Null when the contents cannot be read: the card is still written, without its filing. */
+  const readThreadContents = (threadId: ThreadId) =>
+    threadEntryStore.getThreadContents(threadId).pipe(
+      Effect.catchTags({
+        ThreadEntryStoreError: (cause) =>
+          Effect.logWarning("Thread contents could not be read", { threadId, cause }).pipe(
+            Effect.as(null),
+          ),
+      }),
+    );
+
+  const dispatchThreadContents = Effect.fn("orchestrationV2.dispatch.threadContents")(function* (
+    command: Extract<
+      OrchestrationV2ServerCommand,
+      {
+        readonly type:
+          | "thread.open-items.resolve"
+          | "thread.open-items.restore"
+          | "thread.contents.regroup.request"
+          | "thread.contents.regroup.record"
+          | "thread.contents.backfill.record"
+          | "thread.entry.rename"
+          | "thread.entry.merge"
+          | "thread.entry.move-run"
+          | "thread.entries.restore";
+      }
+    >,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const thread = yield* projectionStore
+      .getThread(command.threadId)
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    // A regroup or backfill of a thread deleted while the model ran has nowhere to go.
+    if (
+      thread.deletedAt !== null &&
+      (command.type === "thread.contents.regroup.record" ||
+        command.type === "thread.contents.backfill.record")
+    ) {
+      return;
+    }
+    if (thread.deletedAt !== null) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Thread ${command.threadId} is deleted.`,
+      });
+    }
+    const event = {
+      threadId: command.threadId,
+      providerInstanceId: thread.providerInstanceId,
+      occurredAt: yield* DateTime.now,
+    };
+    if (command.type === "thread.contents.regroup.request") {
+      const state = (yield* readThreadContents(command.threadId))?.state;
+      if (state == null) return;
+      if (command.kind === "idle" && state.lastRunOrdinal <= state.regroupRequestedThrough) return;
+      yield* emit(
+        events,
+        command,
+      )({
+        ...event,
+        type: "thread.entries-updated",
+        payload: {
+          entries: [],
+          runLines: [],
+          state: {
+            ...state,
+            regroupRequestedThrough: Math.max(state.regroupRequestedThrough, state.lastRunOrdinal),
+          },
+        },
+      });
+      yield* Ref.update(effects, (existing) => [
+        ...existing,
+        threadRegroupEffect({
+          commandId: command.commandId,
+          threadId: command.threadId,
+          kind: command.kind,
+          key: command.kind === "idle" ? `idle:${state.lastRunOrdinal}` : command.commandId,
+        }),
+      ]);
+      return;
+    }
+    if (command.type === "thread.contents.backfill.record") {
+      const contents = yield* readThreadContents(command.threadId);
+      if (contents === null) return;
+      const runLines = yield* threadEntryStore.runLines(command.threadId).pipe(
+        Effect.catchTags({
+          ThreadEntryStoreError: (cause) =>
+            Effect.logWarning("Thread run lines could not be read", {
+              threadId: command.threadId,
+              cause,
+            }).pipe(Effect.as(null)),
+        }),
+      );
+      if (runLines === null) return;
+      // A run rolled back while the job read it would leave a line no rollback removes.
+      const { runs } = yield* projectionStore
+        .getThreadRecords(command.threadId, ["runs"], {
+          runIds: command.runLines.map((line) => line.runId),
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+          ),
+        );
+      const completed = new Set(
+        runs.flatMap((run) => (run.status === "completed" ? [run.id] : [])),
+      );
+      const update = applyBackfill({
+        contents,
+        runLines,
+        added: command.runLines.filter(
+          (line) => line.threadId === command.threadId && completed.has(line.runId),
+        ),
+        topics: command.topics,
+        threadTitle: thread.title,
+        at: DateTime.formatIso(event.occurredAt),
+      });
+      if (update !== null) {
+        yield* emit(events, command)({ ...event, type: "thread.entries-updated", payload: update });
+      }
+      return;
+    }
+    if (command.type === "thread.contents.regroup.record") {
+      // Applied to the entries as they are now, so a hand edit or a card since the read survives.
+      const contents = yield* readThreadContents(command.threadId);
+      if (contents === null) return;
+      const runLines = yield* threadEntryStore.runLines(command.threadId).pipe(
+        Effect.catchTags({
+          ThreadEntryStoreError: (cause) =>
+            Effect.logWarning("Thread run lines could not be read", {
+              threadId: command.threadId,
+              cause,
+            }).pipe(Effect.as(null)),
+        }),
+      );
+      if (runLines === null) return;
+      const update = applyRegroup({
+        contents,
+        runLines,
+        topics: command.topics,
+        at: DateTime.formatIso(event.occurredAt),
+      });
+      if (update !== null) {
+        yield* emit(events, command)({ ...event, type: "thread.entries-updated", payload: update });
+      }
+      return;
+    }
+    if (
+      command.type === "thread.entry.rename" ||
+      command.type === "thread.entry.merge" ||
+      command.type === "thread.entry.move-run" ||
+      command.type === "thread.entries.restore"
+    ) {
+      // An edit the owner asked for must fail loudly, not be dropped like a filing.
+      const read = Effect.mapError(
+        (cause: ThreadEntryStore.ThreadEntryStoreError) =>
+          new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+      );
+      const contents = yield* threadEntryStore.getThreadContents(command.threadId).pipe(read);
+      const lines = new Map(
+        (yield* threadEntryStore.runLines(command.threadId).pipe(read)).map((line) => [
+          line.runId,
+          line,
+        ]),
+      );
+      const result: HandEditResult =
+        command.type === "thread.entry.rename"
+          ? renameEntry(contents, lines, command.entryId, command.title)
+          : command.type === "thread.entry.merge"
+            ? mergeEntries(contents, lines, command.sourceEntryId, command.targetEntryId)
+            : command.type === "thread.entry.move-run"
+              ? moveRun(contents, lines, command.runId, command.target)
+              : restoreEntries(
+                  contents,
+                  lines,
+                  command.threadId,
+                  command.entries,
+                  command.expectRevision,
+                );
+      if ("refused" in result) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: result.refused,
+        });
+      }
+      if (result.update !== null) {
+        yield* emit(
+          events,
+          command,
+        )({ ...event, type: "thread.entries-updated", payload: result.update });
+      }
+      return;
+    }
+    const card = thread.card;
+    if (card == null) return;
+    const contents = yield* readThreadContents(command.threadId);
+    let open: ReadonlyArray<ThreadCardOpenItem>;
+    let update: ThreadEntriesUpdate | null;
+    if (command.type === "thread.open-items.resolve") {
+      const match = (item: ThreadCardOpenItem) =>
+        command.kinds?.includes(item.kind) === true ||
+        (command.key !== undefined && threadCardOpenItemKey(item) === command.key);
+      open = card.open.filter((item) => !match(item));
+      update = contents === null ? null : removeOpenItems(contents, match);
+    } else {
+      const restored = itemsToRestore(card.open, command.items);
+      open = [...card.open, ...restored.map(({ runId: _runId, ...item }) => item)];
+      update = contents === null ? null : restoreOpenItems(contents, restored);
+    }
+    if (open.length !== card.open.length) {
+      yield* emit(
+        events,
+        command,
+      )({
+        ...event,
+        type: "thread.card-updated",
+        payload: { card: { ...card, open } },
+      });
+    }
+    if (update !== null) {
+      yield* emit(events, command)({ ...event, type: "thread.entries-updated", payload: update });
+    }
   });
 
   const dispatchThreadCard = Effect.fn("orchestrationV2.dispatch.threadCard")(function* (
@@ -3843,6 +4152,55 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     };
     // Like a visit, a card must not bump updatedAt, which auto-settle and alerts read as activity.
     yield* emit(events, command)({ ...event, type: "thread.card-updated", payload: { card } });
+    const run = cardRunLine(command);
+    const contents = run === null ? null : yield* readThreadContents(command.threadId);
+    // A run rolled back while its card was written would leave a line no rollback removes.
+    const runStatus =
+      contents === null
+        ? undefined
+        : (yield* projectionStore
+            .getThreadRecords(command.threadId, ["runs"], { runIds: [command.runId] })
+            .pipe(
+              Effect.mapError(
+                (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+              ),
+            )).runs[0]?.status;
+    const filed =
+      run === null || contents === null || runStatus !== "completed"
+        ? null
+        : assignEntries({
+            ...contents,
+            run,
+            goAhead: command.run?.goAhead ?? false,
+            ownerSpokeMidRun: command.run?.ownerSpokeMidRun ?? false,
+            filing: command.filing ?? [],
+            card,
+          });
+    if (filed !== null) {
+      const { state } = filed.update;
+      const marked = filed.mark !== null && state.lastRunOrdinal > state.regroupRequestedThrough;
+      yield* emit(
+        events,
+        command,
+      )({
+        ...event,
+        type: "thread.entries-updated",
+        payload: marked
+          ? { ...filed.update, state: { ...state, regroupRequestedThrough: state.lastRunOrdinal } }
+          : filed.update,
+      });
+      if (marked) {
+        yield* Ref.update(effects, (existing) => [
+          ...existing,
+          threadRegroupEffect({
+            commandId: command.commandId,
+            threadId: command.threadId,
+            kind: "mark",
+            key: command.runId,
+          }),
+        ]);
+      }
+    }
     if (!cardCallsForRetitle(thread, command.topics)) return;
     // The retitle a card asks for is no more activity than the card, so it keeps updatedAt too.
     yield* emit(
@@ -3863,6 +4221,112 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         type: "regenerate",
       }),
     ]);
+  });
+
+  const dispatchFollowUp = Effect.fn("orchestrationV2.dispatch.followUp")(function* (
+    command: Extract<
+      OrchestrationV2ServerCommand,
+      {
+        readonly type:
+          | "thread.follow-up.set"
+          | "thread.follow-up.clear"
+          | "thread.follow-up.release"
+          | "thread.standing-check.set";
+      }
+    >,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+  ) {
+    const refuse = (cause: string) =>
+      new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause,
+      });
+    const thread = yield* projectionStore
+      .getThread(command.threadId)
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    if (thread.deletedAt !== null) return yield* refuse(`Thread ${command.threadId} is deleted.`);
+    if (thread.archivedAt !== null) return yield* refuse(`Thread ${command.threadId} is archived.`);
+    const now = yield* DateTime.now;
+    const nowMs = DateTime.toEpochMillis(now);
+    // Holding needs the same conditions as a snooze; without them a follow-up waits unfiled.
+    const hold = (next: OrchestrationV2AppThread, followUp: ThreadFollowUp) =>
+      snoozeRefusal(command.threadId).pipe(
+        Effect.map((refusal) => (refusal === null ? holdForFollowUp(next, followUp, now) : next)),
+      );
+    let next: OrchestrationV2AppThread;
+    switch (command.type) {
+      case "thread.follow-up.set": {
+        if (!isListedThreadLineage(thread.lineage)) {
+          return yield* refuse("Only a top-level thread can schedule a re-check.");
+        }
+        if (thread.settledOverride === "settled") {
+          return yield* refuse(`Thread ${command.threadId} is settled.`);
+        }
+        const { runs } = yield* projectionStore
+          .getThreadRecords(command.threadId, ["runs"])
+          .pipe(
+            Effect.mapError(
+              (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+            ),
+          );
+        const decided = nextFollowUp({
+          previous: thread.followUp,
+          activeRunId: runs.findLast(isActiveRun)?.id ?? null,
+          command,
+          nowMs,
+        });
+        if (Result.isFailure(decided)) return yield* refuse(decided.failure);
+        const { followUp, files } = decided.success;
+        next = files ? yield* hold({ ...thread, followUp }, followUp) : { ...thread, followUp };
+        break;
+      }
+      case "thread.follow-up.clear": {
+        if (thread.followUp == null) {
+          return yield* refuse("This thread has no re-check to cancel.");
+        }
+        const cleared = { ...thread, followUp: null };
+        next = thread.followUp.filedAt === undefined ? cleared : releaseSetAside(cleared, now);
+        break;
+      }
+      case "thread.follow-up.release": {
+        if (!threadFollowUpIsArmed(thread.followUp) || thread.followUp?.dueAt !== null) {
+          return yield* refuse("No re-check on this thread waits for a publish.");
+        }
+        next = { ...thread, followUp: { ...thread.followUp, dueAt: command.dueAt } };
+        break;
+      }
+      case "thread.standing-check.set": {
+        if (!isListedThreadLineage(thread.lineage)) {
+          return yield* refuse("Only a top-level thread can be a standing check.");
+        }
+        const flagged = { ...thread, standingCheck: command.enabled };
+        if (!command.enabled) {
+          next = releaseSetAside(flagged, now);
+        } else {
+          const refusal = yield* snoozeRefusal(command.threadId);
+          next =
+            refusal === null
+              ? { ...flagged, snoozedUntil: setAsideUntil, snoozedAt: now, updatedAt: now }
+              : flagged;
+        }
+        break;
+      }
+    }
+    yield* emit(
+      events,
+      command,
+    )({
+      type: "thread.follow-up-updated",
+      threadId: command.threadId,
+      providerInstanceId: thread.providerInstanceId,
+      occurredAt: now,
+      payload: next,
+    });
   });
 
   // Recheck under the lock after reading the host. Record the watch first so wake events carry it.
@@ -4059,6 +4523,59 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       payload: decided.success.thread,
     });
     return decided.success;
+  });
+
+  /** Why the thread cannot be held in Later now, or null. Snoozes and follow-ups share it. */
+  const snoozeRefusal = Effect.fn("Orchestrator.snoozeRefusal")(function* (threadId: ThreadId) {
+    const load = <K extends ProjectionRecordField>(
+      fields: ReadonlyArray<K>,
+      filter?: ProjectionRecordFilter,
+    ) =>
+      projectionStore
+        .getThreadRecords(threadId, fields, filter)
+        .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })));
+    const projection = yield* load(["runs", "runtimeRequests"], { turnItemTypes: [] });
+    if (
+      projection.runtimeRequests.some(
+        (request) => request.status === "pending" && request.kind !== "user_input",
+      )
+    ) {
+      return `Thread ${threadId} has a pending approval and cannot be snoozed.`;
+    }
+    const queuedRuns = projection.runs.filter((run) => run.status === "queued");
+    const queuedMessages =
+      queuedRuns.length === 0
+        ? []
+        : (yield* load(["messages"], { messageIds: queuedRuns.map((run) => run.userMessageId) }))
+            .messages;
+    const automaticMessageIds = new Set(
+      queuedMessages
+        .filter(
+          (message) =>
+            message.notification !== undefined ||
+            message.delegatedCompletion !== undefined ||
+            message.followUp === true,
+        )
+        .map((message) => message.id),
+    );
+    const userRuns = queuedRuns.filter((run) => !automaticMessageIds.has(run.userMessageId));
+    // User work waiting behind a usage limit cannot start until the reset or the user acts.
+    const latest = latestExecutedRun(projection.runs);
+    const limitRecords =
+      userRuns.length === 0 || latest?.status !== "failed"
+        ? null
+        : yield* load(["turnItems", "providerSessions"], {
+            turnItemTypes: ["error"],
+            turnItemRunIds: [latest.id],
+          });
+    const heldBehindLimit =
+      limitRecords !== null &&
+      userRuns.every((run) =>
+        usageLimitHoldsQueue({ ...limitRecords, runs: projection.runs }, run.providerInstanceId),
+      );
+    return userRuns.length > 0 && !heldBehindLimit
+      ? `Thread ${threadId} has a queued run and cannot be snoozed.`
+      : null;
   });
 
   const dispatchThreadMutation = Effect.fn("orchestrationV2.dispatch.threadMutation")(function* (
@@ -4519,9 +5036,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     let snoozedUntil: DateTime.Utc | null = null;
     if (command.type === "thread.snooze") {
-      const projection = yield* loadProjectionForCommand(command, ["runs", "runtimeRequests"], {
-        turnItemTypes: [],
-      });
       const parsedSnoozedUntil = DateTime.make(command.snoozedUntil);
       if (
         Option.isNone(parsedSnoozedUntil) ||
@@ -4533,52 +5047,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           cause: `Thread ${command.threadId} snooze wake time ${command.snoozedUntil} is not in the future.`,
         });
       }
-      if (
-        projection.runtimeRequests.some(
-          (request) => request.status === "pending" && request.kind !== "user_input",
-        )
-      ) {
+      const refusal = yield* snoozeRefusal(command.threadId);
+      if (refusal !== null) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
-          cause: `Thread ${command.threadId} has a pending approval and cannot be snoozed.`,
-        });
-      }
-      const queuedRuns = projection.runs.filter((run) => run.status === "queued");
-      const queuedMessages =
-        queuedRuns.length === 0
-          ? []
-          : (yield* loadProjectionForCommand(command, ["messages"], {
-              messageIds: queuedRuns.map((run) => run.userMessageId),
-            })).messages;
-      const automaticMessageIds = new Set(
-        queuedMessages
-          .filter(
-            (message) =>
-              message.notification !== undefined || message.delegatedCompletion !== undefined,
-          )
-          .map((message) => message.id),
-      );
-      const userRuns = queuedRuns.filter((run) => !automaticMessageIds.has(run.userMessageId));
-      // User work waiting behind a usage limit cannot start until the reset or the user acts.
-      const latest = latestExecutedRun(projection.runs);
-      const limitRecords =
-        userRuns.length === 0 || latest?.status !== "failed"
-          ? null
-          : yield* loadProjectionForCommand(command, ["turnItems", "providerSessions"], {
-              turnItemTypes: ["error"],
-              turnItemRunIds: [latest.id],
-            });
-      const heldBehindLimit =
-        limitRecords !== null &&
-        userRuns.every((run) =>
-          usageLimitHoldsQueue({ ...limitRecords, runs: projection.runs }, run.providerInstanceId),
-        );
-      if (userRuns.length > 0 && !heldBehindLimit) {
-        return yield* new OrchestratorDispatchError({
-          commandId: command.commandId,
-          commandType: command.type,
-          cause: `Thread ${command.threadId} has a queued run and cannot be snoozed.`,
+          cause: refusal,
         });
       }
       snoozedUntil = parsedSnoozedUntil.value;
@@ -4610,6 +5084,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             archivedAt: now,
             titleRegeneration: null,
             guestShare: null,
+            // An unarchived thread must not fire a months-old re-check.
+            followUp: spendFollowUp(thread.followUp, now),
             pullRequests: thread.pullRequests?.map((link) => withPullRequestWatch(link, undefined)),
             updatedAt: now,
           };
@@ -4630,6 +5106,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             activeOrderKey: null,
             snoozedUntil: null,
             snoozedAt: null,
+            // Settling means done, so a pending re-check would only reopen it.
+            followUp: spendFollowUp(thread.followUp, now),
             updatedAt:
               alreadySettled && thread.snoozedUntil == null && thread.snoozedAt == null
                 ? thread.updatedAt
@@ -6652,6 +7130,71 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     return thread;
   });
 
+  /** What a message does to Later: a re-check's own send, the owner writing, a standing check. */
+  const recordFollowUpMessage = Effect.fn("Orchestrator.recordFollowUpMessage")(function* (
+    command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
+    projection: OrchestrationV2ThreadProjection,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    options: { readonly ownerWrote: boolean; readonly standingCheckRun: boolean },
+  ) {
+    const thread = projection.thread;
+    const now = yield* DateTime.now;
+    let next: OrchestrationV2AppThread | null = null;
+    let type: "thread.follow-up-updated" | "thread.snoozed" = "thread.follow-up-updated";
+    if (command.followUp === true) {
+      if (
+        command.createdBy !== "agent" ||
+        command.creationSource !== "server" ||
+        command.dispatchMode.type !== "queue_after_active" ||
+        command.deliveryIntent !== undefined
+      ) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: "A re-check must be a server-created queued message.",
+        });
+      }
+      if (thread.followUp == null || !threadFollowUpIsArmed(thread.followUp)) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: "The re-check was cancelled before it was sent.",
+        });
+      }
+      // A queued send never steers, so this is the run the message starts or queues.
+      const runId = idAllocator.derive.run({
+        threadId: command.threadId,
+        ordinal: nextRunOrdinal(projection),
+      });
+      next = {
+        ...thread,
+        followUp: { ...thread.followUp, sentAt: DateTime.formatIso(now), runId },
+        ...(thread.snoozedUntil == null
+          ? {}
+          : { snoozedUntil: null, snoozedAt: null, lastSnoozeWakeAt: now }),
+        updatedAt: now,
+      };
+    } else if (options.ownerWrote) {
+      const followUp = followUpAfterOwnerMessage(thread.followUp);
+      if (followUp !== thread.followUp) next = { ...thread, followUp };
+    } else if (options.standingCheckRun) {
+      type = "thread.snoozed";
+      next = { ...thread, snoozedUntil: setAsideUntil, snoozedAt: now, updatedAt: now };
+    }
+    if (next === null) return projection;
+    const event = yield* emit(
+      events,
+      command,
+    )({
+      type,
+      threadId: command.threadId,
+      providerInstanceId: thread.providerInstanceId,
+      occurredAt: now,
+      payload: next,
+    });
+    return applyToProjection(projection, event);
+  });
+
   const dispatchMessage = Effect.fn("Orchestrator.dispatchMessage")(function* (
     command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -6908,8 +7451,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     // Background wakes and delegated completions continue work the user already snoozed, so
     // only a message someone actually sent ends the snooze.
     const automaticWake =
-      command.notification !== undefined || command.delegatedCompletion !== undefined;
-    if (projection.thread.snoozedUntil != null && !automaticWake) {
+      command.notification !== undefined ||
+      command.delegatedCompletion !== undefined ||
+      command.followUp === true;
+    // A standing check's scheduled run parks the thread again instead of waking it.
+    const standingCheckRun =
+      command.scheduledTaskId !== undefined && projection.thread.standingCheck === true;
+    if (projection.thread.snoozedUntil != null && !automaticWake && !standingCheckRun) {
       const now = yield* DateTime.now;
       const thread: OrchestrationV2AppThread = {
         ...projection.thread,
@@ -6950,7 +7498,30 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         payload: { card: threadCardWithoutAsks(card) },
       });
       projection = applyToProjection(projection, event);
+      const contents = yield* readThreadContents(command.threadId);
+      const update =
+        contents === null ? null : removeOpenItems(contents, (item) => item.kind === "ask");
+      if (update !== null) {
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "thread.entries-updated",
+          threadId: command.threadId,
+          providerInstanceId: projection.thread.providerInstanceId,
+          occurredAt: yield* DateTime.now,
+          payload: update,
+        });
+      }
     }
+    projection = yield* recordFollowUpMessage(command, projection, events, {
+      ownerWrote:
+        !automaticWake &&
+        command.createdBy === "user" &&
+        command.scheduledTaskId === undefined &&
+        !isNativeMaintenanceCommand(command),
+      standingCheckRun,
+    });
     const userMessages = projection.messages.filter((message) => message.role === "user");
     // The recent runs of a compacted thread can hold only a `/compact` while an older prompt
     // exists. Every prompt's turn item is loaded; without one, every user message is checked.
@@ -7625,6 +8196,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.scheduledTaskId === undefined
           ? {}
           : { scheduledTaskId: command.scheduledTaskId }),
+        ...(command.followUp === true ? { followUp: true as const } : {}),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.linkedSender === undefined ? {} : { linkedSender: command.linkedSender }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
@@ -8040,6 +8612,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.scheduledTaskId === undefined
           ? {}
           : { scheduledTaskId: command.scheduledTaskId }),
+        ...(command.followUp === true ? { followUp: true as const } : {}),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.linkedSender === undefined ? {} : { linkedSender: command.linkedSender }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
@@ -8831,6 +9404,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(command.scheduledTaskId === undefined
         ? {}
         : { scheduledTaskId: command.scheduledTaskId }),
+      ...(command.followUp === true ? { followUp: true as const } : {}),
       ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
       ...(command.linkedSender === undefined ? {} : { linkedSender: command.linkedSender }),
       ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
@@ -14751,6 +15325,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.card.record":
         yield* dispatchThreadCard(command, events, effects);
         break;
+      case "thread.contents.regroup.request":
+      case "thread.contents.regroup.record":
+      case "thread.entry.rename":
+      case "thread.entry.merge":
+      case "thread.entry.move-run":
+      case "thread.entries.restore":
+      case "thread.open-items.resolve":
+      case "thread.open-items.restore":
+      case "thread.contents.backfill.record":
+        yield* dispatchThreadContents(command, events, effects);
+        break;
+      case "thread.follow-up.set":
+      case "thread.follow-up.clear":
+      case "thread.follow-up.release":
+      case "thread.standing-check.set":
+        yield* dispatchFollowUp(command, events);
+        break;
       case "thread.auto-settle": {
         // Recheck live state; changes and explicit overrides take precedence over the sweep snapshot.
         const thread = yield* projectionStore
@@ -15228,6 +15819,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.type === "thread.visit" ||
           // A card for a thread deleted while the model ran has nowhere to go.
           command.type === "thread.card.record" ||
+          // Resolving or restoring items that are already gone or back changes nothing.
+          command.type === "thread.open-items.resolve" ||
+          command.type === "thread.open-items.restore" ||
+          // A regroup already requested for these runs, or for a thread deleted meanwhile.
+          command.type === "thread.contents.regroup.request" ||
+          command.type === "thread.contents.regroup.record" ||
+          // Older runs another card or backfill lined first.
+          command.type === "thread.contents.backfill.record" ||
+          // A rename to the title it has, or a move to where the message already sits alone.
+          command.type === "thread.entry.rename" ||
+          command.type === "thread.entry.move-run" ||
           // A read can answer a watch again before a push's reopen lands; nothing is left to clear.
           command.type === "thread.pull-request-watch.checks-reopen" ||
           command.type === "thread.interrupt.unresponsive" ||
@@ -16190,6 +16792,7 @@ export const layer: Layer.Layer<
   | ProjectionStoreV2
   | RuntimePolicyV2
   | ServerSettings.ServerSettingsService
+  | ThreadEntryStore.ThreadEntryStore
   | ThreadForkServiceV2
 > = Layer.effect(OrchestratorV2, makeOrchestrator()).pipe(
   Layer.provide(ThreadCommandExecutor.layer),

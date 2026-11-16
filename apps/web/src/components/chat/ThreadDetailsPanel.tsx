@@ -24,6 +24,8 @@ import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
+import { ThreadContentsSection } from "./ThreadContentsSection";
+import { ThreadLaterRow } from "./ThreadLaterRow";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 import { ThreadServersPanel } from "./ThreadServersPanel";
 import {
@@ -265,8 +267,22 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 </ThreadDetailsSection>
               ) : null}
 
+              {density !== "essential" &&
+              props.isServerThread &&
+              !props.draftId &&
+              visible.contents ? (
+                <ThreadContentsSection
+                  environmentId={props.environmentId}
+                  threadId={props.threadId}
+                />
+              ) : null}
+
               {density === "full" && !props.draftId && visible.servers ? (
                 <ThreadServersPanel environmentId={props.environmentId} threadId={props.threadId} />
+              ) : null}
+
+              {density === "full" && !props.draftId && visible.automations ? (
+                <ThreadLaterRow environmentId={props.environmentId} threadId={props.threadId} />
               ) : null}
 
               {density === "full" && !props.draftId && visible.automations ? (

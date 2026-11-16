@@ -28,6 +28,7 @@ import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-
 import {
   canSnooze,
   effectiveSnoozed,
+  laterWhenLabel,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
 import {
@@ -38,6 +39,7 @@ import {
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
   createOpenThreadTouchHold,
+  sortLaterThreads,
   threadRowProjectName,
   trailMoreLabel,
 } from "@t3tools/client-runtime/state/thread-zones";
@@ -130,6 +132,7 @@ import {
   useAcknowledgeThreadWoke,
   useThreadActions,
 } from "../hooks/useThreadActions";
+import { useThreadLaterActions } from "../hooks/useThreadLaterActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOrderWhileOpen } from "../hooks/useOrderWhileOpen";
 import { useProjectPin } from "../hooks/useProjectGroupUpdate";
@@ -192,8 +195,8 @@ import {
   filterSidebarProjectScopeItems,
   resolveSidebarVisibleProjectKeys,
   createOpenThreadPlacementHold,
+  hasUnseenCompletion,
   sidebarThreadNeedsYou,
-  firstValidTimestampMs,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
   moveSidebarFolderRow,
@@ -233,12 +236,7 @@ import {
 import { SidebarPointerSensor } from "./Sidebar.pointer";
 import { createSidebarListMotion } from "./Sidebar.motion";
 import { createSidebarShiftGuard } from "./Sidebar.shiftGuard";
-import {
-  pickSnoozePreset,
-  resolveSnoozePresets,
-  snoozeWakeLabel,
-  type SnoozePreset,
-} from "./Sidebar.snooze";
+import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "./Sidebar.snooze";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { deriveProviderEntriesByEnvironment } from "../providerInstances";
 import { useStableCallback } from "../hooks/useStableCallback";
@@ -285,6 +283,10 @@ import {
 import { SidebarDraftBlock } from "./sidebar/SidebarDraftBlock";
 import { SidebarNeedsYouNext, SidebarTrailHeader, SidebarTrailMore } from "./sidebar/SidebarTrail";
 import { registerTideCommands } from "./sidebar/tideCommands";
+import { SidebarHistoryAllButton } from "./sidebar/SidebarHistoryAllButton";
+import { useEntriesEnvironmentIds, useOpenItemTotals } from "../state/threadEntries";
+import { useStillOpenActions } from "../hooks/useStillOpenActions";
+import { publishTargets } from "./history/historyPage.logic";
 import {
   arrangeTideActive,
   arrangeTideHistory,
@@ -497,7 +499,8 @@ function useSidebarThreads(input: {
   const needsYouPlacementSetting = useClientSettings((s) => s.sidebarNeedsYouPlacement);
   const needsYouPlacement = tide ? "top" : needsYouPlacementSetting;
   const needsYouCompletedSetting = useClientSettings((s) => s.sidebarNeedsYouIncludesCompleted);
-  const needsYouIncludesCompleted = tide || needsYouCompletedSetting;
+  // The new layout files a finished run that owes nothing in the Trail, marked Done.
+  const needsYouIncludesCompleted = tide ? ("owed" as const) : needsYouCompletedSetting;
   const inboxReturnsVersion = useSyncExternalStore(
     inboxReturns.subscribe,
     inboxReturns.getSnapshot,
@@ -898,11 +901,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
             getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
           }),
     workingThreads: sortWorkingThreadsBySend(working),
-    snoozedThreads: snoozed.toSorted(
-      (left, right) =>
-        firstValidTimestampMs(left.snoozedUntil ?? null) -
-        firstValidTimestampMs(right.snoozedUntil ?? null),
-    ),
+    snoozedThreads: sortLaterThreads(snoozed),
     settledThreads: sortSettledThreads(settled),
     visibleThreads: visible,
     snoozeNow: preciseNow,
@@ -1147,6 +1146,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     archiveThread,
     deleteThread,
   } = useThreadActions();
+  const laterActions = useThreadLaterActions();
+  const attemptRecheck = useStableCallback((threadRef: ScopedThreadRef) => {
+    void laterActions.recheckLater(threadRef);
+  });
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -1445,6 +1448,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     }
   }, [revealedHiddenProjectKey, setPersistedProjectHidden]);
   const scopedProjectGroups = revealWidensScope ? [] : chosenProjectGroups;
+  // The open count names one project, so it shows only when Focus is on a single one.
+  const focusedGroup = tide && scopedProjectGroups.length === 1 ? scopedProjectGroups[0]! : null;
+  const focusedOpen = useOpenItemTotals(
+    focusedGroup?.memberProjectRefs ?? null,
+    focusedGroup !== null,
+  );
   const scopedProjectRefs = scopedProjectGroups.flatMap((project) => project.memberProjectRefs);
   const scopedProjectKeys = revealWidensScope
     ? resolveSidebarVisibleProjectKeys({
@@ -3328,8 +3337,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const inScope = [
       ...needsYouThreads,
       ...pinnedThreads.filter((thread) =>
-        sidebarThreadNeedsYou(thread, { includeCompleted: true }),
+        sidebarThreadNeedsYou(thread, { includeCompleted: "owed" }),
       ),
+      // Then finished runs not yet opened, which lead the Trail.
+      ...trailThreads.filter((thread) => hasUnseenCompletion(thread)),
     ];
     const key = nextNeedsYouKey({
       keys: inScope.map(threadShellKey),
@@ -3355,35 +3366,71 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     }
   };
   const focusShortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.focusProject");
+  const historyShortcutLabel = shortcutLabelForCommand(keybindings, "history.open");
+  const entriesEnvironmentIds = useEntriesEnvironmentIds();
+  const entriesAvailable = entriesEnvironmentIds.length > 0;
+  const stillOpenActions = useStillOpenActions();
+  const openThreadGroup = () => {
+    const open =
+      threads.find((candidate) => threadShellKey(candidate) === routeRowThreadKey) ??
+      routeDraftThread;
+    if (!open) return null;
+    return (
+      scopeGroups.find((project) =>
+        project.memberProjectRefs.some(
+          (projectRef) =>
+            projectRef.environmentId === open.environmentId &&
+            projectRef.projectId === open.projectId,
+        ),
+      ) ?? null
+    );
+  };
   const toggleProjectFocus = () => {
     if (projectScopeKeys.length > 0) {
       setProjectScopeKeys([]);
       return;
     }
-    const open =
-      threads.find((candidate) => threadShellKey(candidate) === routeRowThreadKey) ??
-      routeDraftThread;
-    if (!open) return;
-    const group = scopeGroups.find((project) =>
-      project.memberProjectRefs.some(
-        (projectRef) =>
-          projectRef.environmentId === open.environmentId &&
-          projectRef.projectId === open.projectId,
-      ),
-    );
+    const group = openThreadGroup();
     if (group) setProjectScopeKeys([group.projectKey]);
+  };
+  // The focused project, else the open thread's.
+  const markProjectPublished = () => {
+    const group =
+      (scopedProjectGroups.length === 1 ? scopedProjectGroups[0] : null) ?? openThreadGroup();
+    if (group === null || group === undefined) {
+      toastManager.add({
+        type: "info",
+        title: "Which project was published?",
+        description: "Focus the sidebar on it, or open one of its threads, then run this again.",
+      });
+      return;
+    }
+    void stillOpenActions.markPublished(
+      group.displayName,
+      publishTargets(group.memberProjectRefs, entriesEnvironmentIds),
+    );
   };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers this sidebar's list commands in the module-level registry the command palette runs
   useEffect(
     () =>
-      tide
-        ? registerTideCommands({
-            "thread.nextNeedsYou": goToNextNeedsYou,
-            "thread.clearTrail": clearTrail,
-            "sidebar.focusProject": toggleProjectFocus,
-          })
-        : undefined,
-    [tide, goToNextNeedsYou, clearTrail, toggleProjectFocus],
+      registerTideCommands({
+        ...(tide
+          ? {
+              "thread.nextNeedsYou": goToNextNeedsYou,
+              "thread.clearTrail": clearTrail,
+              "sidebar.focusProject": toggleProjectFocus,
+            }
+          : {}),
+        ...(entriesAvailable ? { "project.markPublished": markProjectPublished } : {}),
+      }),
+    [
+      tide,
+      entriesAvailable,
+      goToNextNeedsYou,
+      clearTrail,
+      toggleProjectFocus,
+      markProjectPublished,
+    ],
   );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window keydown for thread navigation shortcuts using the current thread list
@@ -3417,13 +3464,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         return;
       }
       const listCommand =
-        !tide || command === null
+        command === null
           ? undefined
           : (
               {
-                "thread.nextNeedsYou": goToNextNeedsYou,
-                "thread.clearTrail": clearTrail,
-                "sidebar.focusProject": toggleProjectFocus,
+                ...(tide
+                  ? {
+                      "thread.nextNeedsYou": goToNextNeedsYou,
+                      "thread.clearTrail": clearTrail,
+                      "sidebar.focusProject": toggleProjectFocus,
+                    }
+                  : {}),
+                ...(entriesAvailable ? { "project.markPublished": markProjectPublished } : {}),
               } as Partial<Record<typeof command, () => void>>
             )[command];
       if (listCommand !== undefined) {
@@ -3449,6 +3501,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     goToNextNeedsYou,
     clearTrail,
     toggleProjectFocus,
+    entriesAvailable,
+    markProjectPublished,
   ]);
 
   const showJumpHints = useThreadJumpHintsVisible(keybindings, routeThreadRef);
@@ -3752,6 +3806,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   ? scopedProjectGroups.map((project) => project.displayName).join(", ")
                   : null
               }
+              focusedOpen={
+                focusedOpen.available && focusedGroup !== null
+                  ? {
+                      total: focusedOpen.total,
+                      summary: focusedOpen.summary,
+                      projectKey: focusedGroup.projectKey,
+                    }
+                  : null
+              }
               onShowAllProjects={() => setProjectScopeKeys([])}
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
@@ -4019,10 +4082,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               actionSweep?.keys.has(threadKey) ? actionSweep.action : null
                             }
                             snoozeWakeLabelText={
-                              section === "snoozed" && thread.snoozedUntil != null
-                                ? snoozeWakeLabel(thread.snoozedUntil, {
-                                    now: new Date().toISOString(),
-                                  })
+                              section === "snoozed"
+                                ? laterWhenLabel(thread, { now: new Date().toISOString() })
                                 : null
                             }
                             wokeAt={threadWokeAt(thread, { now: snoozeNow })}
@@ -4089,6 +4150,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             onActionSweepStart={startActionSweep}
                             onUnsettle={attemptUnsettle}
                             onSnooze={attemptSnooze}
+                            onRecheck={attemptRecheck}
                             onUnsnooze={attemptUnsnooze}
                             onUnpin={attemptUnpin}
                             onAcknowledgeWoke={acknowledgeWoke}
@@ -4313,6 +4375,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   expanded: settledShelfExpanded,
                                   onToggle: toggleSettledShelf,
                                 }}
+                                action={
+                                  tide && entriesAvailable ? (
+                                    <SidebarHistoryAllButton shortcutLabel={historyShortcutLabel} />
+                                  ) : undefined
+                                }
                               />,
                             );
                             break;

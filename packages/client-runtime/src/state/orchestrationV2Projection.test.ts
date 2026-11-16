@@ -181,7 +181,6 @@ describe("applyOrchestrationV2ProjectionEvent", () => {
       messageId: MessageId.make("message-card"),
       at: "2026-06-20T01:00:00.000Z",
       runId,
-      chapters: [],
     };
     const next = applyOrchestrationV2ProjectionEvent(emptyProjection, {
       id: "event-card" as OrchestrationV2DomainEvent["id"],

@@ -336,6 +336,11 @@ export function readThreadTurnItems(ref: ScopedThreadRef) {
   );
 }
 
+/** The thread's loaded payload, for a handler that needs a field the shell leaves out. */
+export function readLoadedThread(ref: ScopedThreadRef) {
+  return appAtomRegistry.get(environmentThreadDetails.quietThreadAtom(ref))?.projection ?? null;
+}
+
 export function readThreadShell(ref: ScopedThreadRef): EnvironmentThreadShell | null {
   return appAtomRegistry.get(environmentThreadShells.threadShellAtom(ref));
 }

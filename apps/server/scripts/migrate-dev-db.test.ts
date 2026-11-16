@@ -142,7 +142,15 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
         VALUES ('delivery-1', 'task-1', 'key-1', 1900000000000, '{}', '{}', '[]')`;
       yield* sql`INSERT INTO auth_sessions (session_id, subject, scopes, method, issued_at, expires_at)
         VALUES ('session-1', 'user', '[]', 'pairing', '2026-08-01', '2027-08-01')`;
-      if (toMigrationInclusive === undefined) yield* insertPeerLink(sql);
+      if (toMigrationInclusive === undefined) {
+        yield* insertPeerLink(sql);
+        for (const threadId of ["stopped-thread", "running-thread"]) {
+          yield* sql`INSERT INTO tide_thread_runs
+            (run_id, thread_id, ordinal, user_message_id, reply_message_id, started_by, started_at, replied_at)
+            VALUES (${`run-${threadId}`}, ${threadId}, 1, 'message-user', 'message-reply', 'owner',
+              '2026-08-01', '2026-08-01')`;
+        }
+      }
     }),
   );
   return databasePath;
@@ -194,7 +202,20 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
                 (SELECT COUNT(*) FROM scheduled_task_webhook_pending) AS webhooks,
               (SELECT COUNT(*) FROM orchestration_v2_projection_context_transfers) AS transfers,
               (SELECT COUNT(*) FROM peer_environment_links) AS links`;
-          return { threads, events, sessions, pullRequest, project, leftovers };
+          const runLines = yield* sql<{ thread_id: string }>`
+            SELECT thread_id FROM tide_thread_runs ORDER BY thread_id`;
+          const forkLedger = yield* sql<{ migration_id: number }>`
+            SELECT migration_id FROM t3_fork_migrations ORDER BY migration_id`;
+          return {
+            threads,
+            events,
+            sessions,
+            pullRequest,
+            project,
+            leftovers,
+            runLines,
+            forkLedger,
+          };
         }),
       );
       assert.deepStrictEqual(
@@ -241,6 +262,15 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         transfers: 0,
         links: 0,
       });
+      assert.deepStrictEqual(
+        kept.runLines.map((row) => row.thread_id),
+        ["stopped-thread"],
+        "fork tables keyed by thread_id are pruned with their threads",
+      );
+      assert.deepStrictEqual(
+        kept.forkLedger.map((row) => row.migration_id),
+        [1, 2],
+      );
     }),
   );
 
@@ -326,6 +356,14 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { sharedHome: sourceDir },
       );
       assert.include(result.executedMigrations, "55_OrchestrationV2");
+      const forkLedger = yield* withDatabase(
+        result.databasePath,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          return yield* sql<{ migration_id: number }>`SELECT migration_id FROM t3_fork_migrations`;
+        }),
+      );
+      assert.lengthOf(forkLedger, 2, "a source without the fork ledger gets it on the snapshot");
     }),
   );
 

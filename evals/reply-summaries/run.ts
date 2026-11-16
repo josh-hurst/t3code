@@ -28,10 +28,11 @@ const { values } = NodeUtil.parseArgs({
 });
 const { out, model, effort } = values;
 const samples = Number(values.samples);
-const fixtures = cases.filter((fixture) => !values.case || fixture.id === values.case);
+const caseIds = values.case?.split(",").map((id) => id.trim());
+const fixtures = cases.filter((fixture) => !caseIds || caseIds.includes(fixture.id));
 if (!out || !fixtures.length || !Number.isSafeInteger(samples) || samples < 1) {
   throw new Error(
-    "Use --out <directory> [--model <codex model>] [--effort <level>] [--case <id>] [--samples <count>].",
+    "Use --out <directory> [--model <codex model>] [--effort <level>] [--case <id,...>] [--samples <count>].",
   );
 }
 const Results = Schema.fromJsonString(
@@ -43,6 +44,8 @@ const Results = Schema.fromJsonString(
       // Absent in results written before the summary became a card.
       topics: Schema.optional(Schema.Array(Schema.String)),
       open: Schema.optional(Schema.Array(Schema.String)),
+      // Absent in results written before cards filed runs under entries.
+      entries: Schema.optional(Schema.Array(Schema.String)),
     }),
   ),
 );
@@ -67,6 +70,9 @@ await Effect.runPromise(
         reply: fixture.reply,
         userMessage: fixture.userMessage ?? null,
         previous: fixture.previous ?? null,
+        contents: fixture.contents ?? { entries: [], previousRefs: [] },
+        midRun: fixture.midRun ?? [],
+        startedBy: fixture.startedBy ?? "owner",
         now: DateTime.formatIsoOffset(
           DateTime.makeZonedUnsafe(now, { timeZone: DateTime.zoneMakeLocal() }),
         ),
@@ -93,17 +99,24 @@ await Effect.runPromise(
               ? `${item.kind}: ${item.text}`
               : `${item.kind} ${item.dueAt}: ${item.text}`,
           ),
+          entries: (card?.entries ?? []).map((entry) =>
+            entry.title === null
+              ? `${entry.ref} | ${entry.outcome}`
+              : `${entry.ref} | ${entry.title} | ${entry.outcome}`,
+          ),
         };
-        results.push({ id: fixture.id, sample, ...row });
+        results.push({ id: fixture.id, sample, ...row, raw: transcription });
         const first = !previous || (yield* Random.nextBoolean);
         const before = previous && {
           summary: previous.summary,
           topics: previous.topics ?? [],
           open: previous.open ?? [],
+          entries: previous.entries ?? [],
         };
         review.push({
           id: fixture.id,
           rubric: fixture.rubric,
+          ...(fixture.expectEntries === undefined ? {} : { expectEntries: fixture.expectEntries }),
           sample,
           A: first ? row : before,
           B: first ? before : row,

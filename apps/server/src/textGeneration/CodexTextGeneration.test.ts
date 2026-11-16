@@ -17,6 +17,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -31,6 +32,7 @@ import * as TextGeneration from "./TextGeneration.ts";
 import * as TextGenerators from "./TextGenerators.ts";
 import { makeCodexTextGeneration } from "./CodexTextGeneration.ts";
 import { writeFakeCli } from "@t3tools/provider-testing/fakeCli";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 const DEFAULT_TEST_MODEL_SELECTION = createModelSelection(
@@ -59,6 +61,7 @@ interface FakeCodexInput {
   requiredCwd?: string;
   requireInstructions?: string;
   requireMcpServersOff?: ReadonlyArray<string>;
+  requireCodexHome?: string;
 }
 
 function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
@@ -75,6 +78,7 @@ function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
     requiredCwd: input.requiredCwd ?? null,
     requireInstructions: input.requireInstructions ?? null,
     requireMcpServersOff: input.requireMcpServersOff ?? [],
+    requireCodexHome: input.requireCodexHome ?? null,
     stderr: input.stderr ?? null,
     output: input.output,
     exitCode: input.exitCode ?? 0,
@@ -160,6 +164,7 @@ function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
         "}",
         'if (check.requiredCwd !== null && process.cwd() !== check.requiredCwd) fail("cannot inspect checkout", 10);',
         'if (check.requireInstructions !== null && !instructions.includes(check.requireInstructions)) fail("missing writer task", 11);',
+        'if (check.requireCodexHome !== null && process.env.CODEX_HOME !== check.requireCodexHome) fail("CODEX_HOME was " + process.env.CODEX_HOME, 14);',
         "if (check.requireArg !== null && !originalArgs.includes(` ${check.requireArg} `)) {",
         '  fail("missing arg: " + check.requireArg, 8);',
         "}",
@@ -207,23 +212,53 @@ function withFakeCodexEnv<A, E, R>(
     managedRuntime?: boolean;
     /** A fake codex-lite, reached through T3CODE_CODEX_LITE_PATH. */
     lite?: FakeCodexInput;
+    /** Codex homes holding an auth.json; defaults to the user's ~/.codex. */
+    logins?: ReadonlyArray<CodexHome>;
+    /** T3CODE_CODEX_LITE_HOME: the override home, or "off". */
+    liteHome?: "override" | "off";
+    /** The CODEX_HOME codex-lite must run with. */
+    liteCodexHome?: CodexHome;
   },
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-codex-text-" });
+    const path = yield* Path.Path;
+    const homeDirectory = path.join(tempDir, "home");
+    const codexHomes: Record<CodexHome, string> = {
+      default: path.join(homeDirectory, ".codex"),
+      instance: path.join(tempDir, "instance-home"),
+      override: path.join(tempDir, "lite-home"),
+    };
+    for (const home of input.logins ?? ["default"]) {
+      yield* fs.makeDirectory(codexHomes[home], { recursive: true });
+      yield* fs.writeFileString(path.join(codexHomes[home], "auth.json"), "{}");
+    }
     const codexPath = yield* makeFakeCodexBinary(tempDir, input);
     const litePath =
       input.lite === undefined
         ? undefined
-        : yield* makeFakeCodexBinary((yield* Path.Path).join(tempDir, "lite"), input.lite);
+        : yield* makeFakeCodexBinary(path.join(tempDir, "lite"), {
+            ...input.lite,
+            ...(input.liteCodexHome ? { requireCodexHome: codexHomes[input.liteCodexHome] } : {}),
+          });
     const environment =
       litePath === undefined
         ? input.environment
-        : { ...input.environment, T3CODE_CODEX_LITE_PATH: litePath };
+        : {
+            ...input.environment,
+            T3CODE_CODEX_LITE_PATH: litePath,
+            ...(input.liteHome === undefined
+              ? {}
+              : {
+                  T3CODE_CODEX_LITE_HOME:
+                    input.liteHome === "off" ? "off" : codexHomes[input.liteHome],
+                }),
+          };
     const config = decodeCodexSettings({
       binaryPath: codexPath,
+      homePath: codexHomes.instance,
       launchArgs: input.launchArgs,
       customModels: input.customModels,
     });
@@ -248,9 +283,13 @@ function withFakeCodexEnv<A, E, R>(
           })
         : undefined,
     );
-    return yield* effectFn(textGeneration);
+    return yield* effectFn(textGeneration).pipe(
+      Effect.provideService(HostProcess.HomeDirectory, homeDirectory),
+    );
   }).pipe(Effect.scoped);
 }
+
+type CodexHome = "default" | "instance" | "override";
 
 it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
   it.effect.each(["exec", "mcp list"] as const)(
@@ -631,12 +670,30 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
     ],
   );
 
-  it.effect("generates through codex-lite when it is installed", () =>
+  it.effect.each([
+    {
+      case: "the user's login when the instance home has none",
+      logins: ["default"],
+      liteCodexHome: "default",
+    },
+    {
+      case: "the instance's own login first",
+      logins: ["default", "instance"],
+      liteCodexHome: "instance",
+    },
+    {
+      case: "T3CODE_CODEX_LITE_HOME over both",
+      logins: ["default", "instance", "override"],
+      liteHome: "override",
+      liteCodexHome: "override",
+    },
+  ] as const)("generates through codex-lite with $case", ({ case: _, ...homes }) =>
     withFakeCodexEnv(
       {
         output: JSON.stringify({ title: "From codex exec" }),
         exitCode: 1,
         stderr: "codex exec should not run",
+        ...homes,
         lite: {
           output: JSON.stringify({ title: "From codex-lite" }),
           requireArg: "--model gpt-6-luna --effort low --fast --timeout 180 --output-schema",
@@ -656,8 +713,12 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
     ),
   );
 
-  it.effect("falls back to codex exec when codex-lite fails", () =>
-    withFakeCodexEnv(
+  it.effect("falls back to codex exec when codex-lite fails, warning once per reason", () => {
+    const warnings: string[] = [];
+    const logger = Logger.make(({ message }) => {
+      warnings.push(String(message));
+    });
+    return withFakeCodexEnv(
       {
         output: JSON.stringify({ title: "From codex exec" }),
         requireArg: "--ephemeral",
@@ -669,12 +730,66 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
       },
       (textGeneration) =>
         Effect.gen(function* () {
+          for (const _ of [1, 2]) {
+            const result = yield* textGeneration.generateThreadTitle({
+              cwd: process.cwd(),
+              message: "Describe this change",
+              modelSelection: PRIORITY_LOW_SELECTION,
+            });
+            expect(result.title).toBe("From codex exec");
+          }
+          expect(warnings.filter((message) => message.includes("codex-lite failed"))).toHaveLength(
+            1,
+          );
+        }).pipe(Effect.provide(Logger.layer([logger], { mergeWithExisting: false }))),
+    );
+  });
+
+  it.effect.each([
+    { case: "no Codex home has a login", logins: [] },
+    { case: "T3CODE_CODEX_LITE_HOME is off", logins: ["default"], liteHome: "off" },
+  ] as const)("keeps codex exec when $case", ({ case: _, ...homes }) =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ title: "From codex exec" }),
+        ...homes,
+        lite: { output: JSON.stringify({ title: "From codex-lite" }) },
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
           const result = yield* textGeneration.generateThreadTitle({
             cwd: process.cwd(),
             message: "Describe this change",
             modelSelection: PRIORITY_LOW_SELECTION,
           });
           expect(result.title).toBe("From codex exec");
+        }),
+    ),
+  );
+
+  it.effect("keeps codex exec for review guides, which investigate the checkout", () =>
+    withFakeCodexEnv(
+      {
+        output: "{}",
+        exitCode: 1,
+        stderr: "codex exec ran",
+        lite: { output: "{}" },
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const error = yield* textGeneration
+            .generateReviewGuide({
+              cwd: process.cwd(),
+              number: 1,
+              title: "Add codex-lite login lookup",
+              description: "",
+              baseBranch: "main",
+              baseCommit: "abc123",
+              settledReview: "",
+              modelSelection: PRIORITY_LOW_SELECTION,
+            })
+            .pipe(Effect.flip);
+          expect(error.detail).toContain("codex exec ran");
         }),
     ),
   );

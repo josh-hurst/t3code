@@ -25,6 +25,9 @@ import {
   type RuntimeRequestId,
   type ThreadId,
   type ThreadEnvMode,
+  type ThreadEntry,
+  type ThreadEntryId,
+  type ThreadEntryOpenItem,
   type UploadChatAttachment,
   type GuestMessageId,
 } from "@t3tools/contracts";
@@ -490,7 +493,8 @@ function simpleThreadCommand(
     | "thread.settle"
     | "thread.pin"
     | "thread.unpin"
-    | "thread.guest-share.close",
+    | "thread.guest-share.close"
+    | "thread.follow-up.clear",
   input: ThreadCommandInput,
 ) {
   return allocateCommandId(input).pipe(
@@ -653,6 +657,153 @@ export const unsnoozeThread = Effect.fn("EnvironmentCommands.unsnoozeThread")(fu
     reason: input.reason,
   });
 });
+
+export interface SetThreadFollowUpInput extends ThreadCommandInput {
+  readonly question: string;
+  readonly reason: string;
+  /** Exactly one of `dueAt` and `afterPublishMinutes`. */
+  readonly dueAt?: string;
+  readonly afterPublishMinutes?: number;
+  readonly armedBy: "user" | "agent";
+  /** The re-check limit as this client read it; the server refuses an agent's set without it. */
+  readonly limit?: number;
+}
+
+export const setThreadFollowUp = Effect.fn("EnvironmentCommands.setThreadFollowUp")(function* (
+  input: SetThreadFollowUpInput,
+) {
+  return yield* dispatch({
+    type: "thread.follow-up.set",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    question: input.question,
+    reason: input.reason,
+    ...(input.dueAt === undefined ? {} : { dueAt: input.dueAt }),
+    ...(input.afterPublishMinutes === undefined
+      ? {}
+      : { afterPublishMinutes: input.afterPublishMinutes }),
+    armedBy: input.armedBy,
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+  });
+});
+
+export interface RestoreThreadOpenItemsInput extends ThreadCommandInput {
+  readonly items: ReadonlyArray<ThreadEntryOpenItem>;
+}
+
+/** Puts back open items a "Done" or a publish cleared: the Undo of those. */
+export const restoreThreadOpenItems = Effect.fn("EnvironmentCommands.restoreThreadOpenItems")(
+  function* (input: RestoreThreadOpenItemsInput) {
+    return yield* dispatch({
+      type: "thread.open-items.restore",
+      commandId: yield* allocateCommandId(input),
+      threadId: input.threadId,
+      items: input.items,
+    });
+  },
+);
+
+export interface RenameThreadEntryInput extends ThreadCommandInput {
+  readonly entryId: ThreadEntryId;
+  readonly title: string;
+}
+
+export const renameThreadEntry = Effect.fn("EnvironmentCommands.renameThreadEntry")(function* (
+  input: RenameThreadEntryInput,
+) {
+  return yield* dispatch({
+    type: "thread.entry.rename",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    entryId: input.entryId,
+    title: input.title,
+  });
+});
+
+export interface MergeThreadEntriesInput extends ThreadCommandInput {
+  readonly sourceEntryId: ThreadEntryId;
+  readonly targetEntryId: ThreadEntryId;
+}
+
+export const mergeThreadEntries = Effect.fn("EnvironmentCommands.mergeThreadEntries")(function* (
+  input: MergeThreadEntriesInput,
+) {
+  return yield* dispatch({
+    type: "thread.entry.merge",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    sourceEntryId: input.sourceEntryId,
+    targetEntryId: input.targetEntryId,
+  });
+});
+
+export interface MoveRunToThreadEntryInput extends ThreadCommandInput {
+  readonly runId: RunId;
+  readonly target: { readonly entryId: ThreadEntryId } | { readonly newTitle: string };
+}
+
+export const moveRunToThreadEntry = Effect.fn("EnvironmentCommands.moveRunToThreadEntry")(
+  function* (input: MoveRunToThreadEntryInput) {
+    return yield* dispatch({
+      type: "thread.entry.move-run",
+      commandId: yield* allocateCommandId(input),
+      threadId: input.threadId,
+      runId: input.runId,
+      target: input.target,
+    });
+  },
+);
+
+export interface RestoreThreadEntriesInput extends ThreadCommandInput {
+  readonly entries: ReadonlyArray<ThreadEntry>;
+  readonly expectRevision: number;
+}
+
+/** The Undo of a rename, merge or move: refused once the topics changed since. */
+export const restoreThreadEntries = Effect.fn("EnvironmentCommands.restoreThreadEntries")(
+  function* (input: RestoreThreadEntriesInput) {
+    return yield* dispatch({
+      type: "thread.entries.restore",
+      commandId: yield* allocateCommandId(input),
+      threadId: input.threadId,
+      entries: input.entries,
+      expectRevision: input.expectRevision,
+    });
+  },
+);
+
+/** Asks the server to regroup the thread's topics now; it spends a few short model calls. */
+export const regroupThreadContents = Effect.fn("EnvironmentCommands.regroupThreadContents")(
+  function* (input: ThreadCommandInput) {
+    return yield* dispatch({
+      type: "thread.contents.regroup.request",
+      commandId: yield* allocateCommandId(input),
+      threadId: input.threadId,
+      kind: "manual",
+    });
+  },
+);
+
+export const clearThreadFollowUp = Effect.fn("EnvironmentCommands.clearThreadFollowUp")(function* (
+  input: ThreadCommandInput,
+) {
+  return yield* simpleThreadCommand("thread.follow-up.clear", input);
+});
+
+export interface SetThreadStandingCheckInput extends ThreadCommandInput {
+  readonly enabled: boolean;
+}
+
+export const setThreadStandingCheck = Effect.fn("EnvironmentCommands.setThreadStandingCheck")(
+  function* (input: SetThreadStandingCheckInput) {
+    return yield* dispatch({
+      type: "thread.standing-check.set",
+      commandId: yield* allocateCommandId(input),
+      threadId: input.threadId,
+      enabled: input.enabled,
+    });
+  },
+);
 
 export const visitThread = Effect.fn("EnvironmentCommands.visitThread")(function* (
   input: VisitThreadInput,

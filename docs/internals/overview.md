@@ -63,7 +63,11 @@ in the [outbox](../../apps/server/src/orchestration-v2/EffectOutbox.ts), so a sl
 generation can never delay a turn; add any new model-backed effect to that lane. A card is
 written with `thread.card-updated`, which must not change the thread's `updatedAt`: the
 auto-settle sweep reads `updatedAt` as activity and rejects a thread that changed after its
-snapshot.
+snapshot. The same command files the run under the thread's topic entries (`thread.entries-updated`,
+stored in the fork's `tide_` tables), so the entries and the card commit together and, after each filed run,
+the entries' open items equal the card's; that event keeps `updatedAt` too. A regroup of a
+thread's entries is a text-lane effect that is only ever enqueued once it is due, never for a later
+time: a pending text effect holds the thread's later ones, cards included, whatever its time.
 
 The event log only keeps what live readers need: about a day of history for reconnect replay and
 command-id retries.

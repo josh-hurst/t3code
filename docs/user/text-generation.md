@@ -9,6 +9,11 @@ for this in **Settings → Threads → Text generation model**. **Settings → S
 By default, a coding agent such as Codex or Claude writes this text, starting a session for each
 request. A **text generator** — a model API that only writes text — is usually faster and cheaper.
 
+When Codex writes this text and `codex-lite` is installed at `~/.local/bin/codex-lite`, T3 Code
+sends the request through it with your ChatGPT login (from `~/.codex` when the provider's Codex
+home has none), and uses a Codex session if that fails. Set `T3CODE_CODEX_LITE_HOME` to the
+folder holding the login to use, or to `off` to always use a Codex session.
+
 ## Add a text generator
 
 Go to **Settings → Providers → Text generators** and choose **Add generator**:

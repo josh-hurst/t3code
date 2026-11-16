@@ -7,8 +7,11 @@ import { MarkdownFindContext } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock } from "./WorkLog";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
-import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
+import type { ScopedThreadRef, WorktreeSetupSnapshot } from "@t3tools/contracts";
 import { deriveTimelineMinimapItems } from "./timelineMinimapItems";
+import { contentsVisible, entryByRunId } from "@t3tools/client-runtime/state/thread-entries";
+import { useThreadEntries } from "../../state/threadEntries";
+import { openAtMessageStep } from "./openAtMessage.logic";
 import {
   type AssistantCitation,
   type EnvironmentId,
@@ -322,6 +325,10 @@ interface MessagesTimelineProps {
   emptyPlaceholderInset: number;
   topFadeEnabled?: boolean;
   historyControls?: MessagesTimelineHistoryControls | undefined;
+  /** Open at this message, as from a History row; `onDone` drops it once scrolled or not found. */
+  openAtMessage?: { readonly messageId: string; readonly onDone: () => void } | null;
+  /** The server thread whose topics mark the jump rail and its messages' Topic menu; null in drafts and guest views. */
+  contentsThread?: ScopedThreadRef | null;
   findExpanded?: boolean;
   findQuery?: string;
   activeFindMatch?: ThreadFindMatch | null;
@@ -418,6 +425,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   emptyPlaceholderInset,
   topFadeEnabled = false,
   historyControls,
+  openAtMessage,
+  contentsThread = null,
 }: MessagesTimelineProps) {
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
@@ -769,7 +778,18 @@ const ConversationTimeline = memo(function ConversationTimeline({
   );
   // Run status/timestamps change per stream event; keep them out of shared row context.
   const runs = useStableHandoffRuns(runsProp);
-  const minimapItems = deriveTimelineMinimapItems(rows);
+  const contentsEntries =
+    useThreadEntries(
+      contentsThread?.environmentId ?? activeThreadEnvironmentId,
+      contentsThread?.threadId ?? null,
+    )?.entries ?? null;
+  // A one-topic thread keeps a plain rail.
+  const minimapItems = deriveTimelineMinimapItems(
+    rows,
+    contentsVisible(contentsEntries) && contentsEntries !== null
+      ? entryByRunId(contentsEntries)
+      : undefined,
+  );
   const minimapRowIndices = minimapItems.map((item) => item.rowIndex);
   const restoreRowIndex =
     restoringThreadPosition && rememberedPosition?.atEnd === false
@@ -793,6 +813,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const viewportRef = useRef<TimelineViewport | null>(null);
   const navigateTimeline = () => viewportRef.current?.navigate({ releasesFollow: true });
   const restoreReady = restoringThreadPosition && rows.length > 0;
+  const openAtMessageId = openAtMessage?.messageId ?? null;
+  const openAtPending = openAtMessageId !== null && listIdentityKey === routeThreadKey;
   // Z: syncs LegendList's scroll position with which thread it shows. The list
   // is not keyed per thread and reports no "new data" event, and the restore
   // must land before paint, after LegendList's own layout effects applied the
@@ -809,12 +831,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
       listIdentityKey,
       listOpenedOn,
       rememberedPosition,
-      citationPending: citationRequest !== null,
+      citationPending: citationRequest !== null || openAtPending,
       releaseForFind: findOpenAtOpening,
       onPositioned: setPositionedThreadKey,
     });
   }, [
     citationRequest,
+    openAtPending,
     findOpenAtOpening,
     listIdentityKey,
     listOpenedOn,
@@ -850,6 +873,49 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onCitationListLoad();
     setFindListReady(true);
   };
+  const openAtRequestedRef = useRef<string | null>(null);
+  const openAtReady = openAtPending && findListReady && !restoringThreadPosition && rows.length > 0;
+  const openAtHasMore = historyControls?.hasMoreHistory ?? false;
+  const openAtLoading = historyControls?.loading ?? false;
+  const stepOpenAt = useEffectEvent(
+    (
+      messageId: string,
+      loadedRows: ReadonlyArray<MessagesTimelineRow>,
+      hasMoreHistory: boolean,
+      loading: boolean,
+    ) => {
+      const requestKey = `${listIdentityKey}\n${messageId}`;
+      const step = openAtMessageStep({
+        rows: loadedRows,
+        messageId,
+        hasMoreHistory,
+        loading,
+        requested: openAtRequestedRef.current === requestKey,
+      });
+      if (step.kind === "wait") return;
+      if (step.kind === "load") {
+        openAtRequestedRef.current = requestKey;
+        historyControls?.onLoadEarlier(messageId);
+        return;
+      }
+      if (step.kind === "scroll") {
+        navigateTimeline();
+        void listRef.current?.scrollToIndex({
+          index: step.index,
+          animated: false,
+          viewOffset: TIMELINE_MINIMAP_TARGET_OFFSET,
+        });
+      }
+      openAtRequestedRef.current = null;
+      openAtMessage?.onDone();
+    },
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls LegendList to the message named in the URL once its rows are loaded, reading history up to it once, then drops `m` from the URL
+  useEffect(() => {
+    if (openAtReady && openAtMessageId !== null) {
+      stepOpenAt(openAtMessageId, rows, openAtHasMore, openAtLoading);
+    }
+  }, [openAtReady, openAtMessageId, rows, openAtHasMore, openAtLoading]);
   const [minimapHasPersistentGutter, setMinimapHasPersistentGutter] = useState(false);
   // Every full-screen viewer reports false when it unmounts, so a row that leaves the list
   // while full screen releases its pin too.
@@ -1106,6 +1172,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     timestampFormat,
     routeThreadKey,
     threadRef: citationThreadRef,
+    contentsThread,
     markdownCwd,
     resolvedTheme,
     workspaceRoot,

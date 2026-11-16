@@ -1,5 +1,11 @@
 // @effect-diagnostics globalDate:off -- UI snooze presets use local calendar boundaries and Intl labels.
 import * as DateTime from "effect/DateTime";
+import {
+  isThreadSetAside,
+  threadCardHasOpenAsk,
+  type ThreadCardSummary,
+  type ThreadFollowUpSummary,
+} from "@t3tools/contracts";
 import { DEFAULT_SNOOZE_PRESETS, type SnoozePresetSetting } from "@t3tools/contracts/settings";
 
 import type { EnvironmentThreadShell, PendingSubagentRequest } from "./models.ts";
@@ -77,6 +83,7 @@ export interface ThreadSnoozeShell extends QueuedThreadShell {
   readonly pendingUserInputAt?: string | null;
   readonly pendingSubagentRequest?: PendingSubagentRequest | null;
   readonly pendingGuestMessageCount?: number;
+  readonly card?: Pick<ThreadCardSummary, "open" | "at"> | null;
 }
 
 function pendingQuestionAt(shell: ThreadSnoozeShell): string | null {
@@ -108,6 +115,13 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
   }
   if (shell.pendingSubagentRequest != null) return true;
   if ((shell.pendingGuestMessageCount ?? 0) > 0) return true;
+  // Same rule for a question the agent wrote in its reply, such as at the end of a quiet re-check.
+  if (
+    threadCardHasOpenAsk(shell.card) &&
+    (shell.snoozedAt == null || Date.parse(shell.card?.at ?? "") > Date.parse(shell.snoozedAt))
+  ) {
+    return true;
+  }
   const failedAt = failureEdgeAt(shell);
   return (
     failedAt !== undefined &&
@@ -357,6 +371,45 @@ export function snoozeWakeLabel(snoozedUntil: string, options: { readonly now: s
   if (remainingMs < HOUR_MS) return `${Math.max(1, Math.ceil(remainingMs / 60_000))}m`;
   if (remainingMs < DAY_MS) return `${Math.ceil(remainingMs / HOUR_MS)}h`;
   return `${Math.ceil(remainingMs / DAY_MS)}d`;
+}
+
+/** A snooze's wake time to time against, in epoch ms; a set-aside hold has none. */
+export function snoozeWakeAtMs(snoozedUntil: string | null | undefined): number | null {
+  if (snoozedUntil == null || isThreadSetAside(snoozedUntil)) return null;
+  const wakeAtMs = Date.parse(snoozedUntil);
+  return Number.isNaN(wakeAtMs) ? null : wakeAtMs;
+}
+
+export interface ThreadLaterShell {
+  readonly snoozedUntil?: string | null;
+  readonly followUp?: Pick<ThreadFollowUpSummary, "dueAt" | "sentAt"> | null;
+}
+
+function armedFollowUpDueAt(thread: ThreadLaterShell): string | null {
+  const followUp = thread.followUp;
+  return followUp != null && followUp.sentAt === undefined ? followUp.dueAt : null;
+}
+
+/**
+ * When a held thread comes back: the sooner of its re-check and its snooze. Null when it has
+ * no time the user will reach (set aside, a standing check, a re-check waiting for a publish).
+ */
+export function threadLaterAt(thread: ThreadLaterShell): string | null {
+  const wakeAtMs = snoozeWakeAtMs(thread.snoozedUntil);
+  const dueAt = armedFollowUpDueAt(thread);
+  if (dueAt !== null && (wakeAtMs === null || Date.parse(dueAt) < wakeAtMs)) return dueAt;
+  return wakeAtMs === null ? null : (thread.snoozedUntil ?? null);
+}
+
+/** A Later row's short time ("3h", "now"), "due" for a re-check past its time, or null. */
+export function laterWhenLabel(
+  thread: ThreadLaterShell,
+  options: { readonly now: string },
+): string | null {
+  const at = threadLaterAt(thread);
+  if (at === null) return null;
+  const label = snoozeWakeLabel(at, options);
+  return label === "now" && at === armedFollowUpDueAt(thread) ? "due" : label;
 }
 
 export type CustomSnoozeInput =

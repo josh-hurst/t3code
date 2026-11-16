@@ -6,6 +6,7 @@ import {
   DATABASE_MIGRATIONS_FINISHED_MESSAGE,
   DATABASE_MIGRATIONS_STARTED_MESSAGE,
 } from "@t3tools/shared/databaseMigrationLog";
+import { hasPendingForkMigrations, runForkMigrations } from "./ForkMigrations.ts";
 import { reconcileV2PreviewMigration } from "./reconcileV2PreviewMigration.ts";
 
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -263,7 +264,11 @@ export const hasPendingMigrations = Effect.fn("hasPendingMigrations")(function* 
     FROM effect_sql_migrations
   `;
   const row = rows[0];
-  return (row?.latestId ?? 0) < latestMigrationId || (row?.previewRows ?? 0) > 0;
+  return (
+    (row?.latestId ?? 0) < latestMigrationId ||
+    (row?.previewRows ?? 0) > 0 ||
+    (yield* hasPendingForkMigrations())
+  );
 });
 
 const run = Migrator.make({});
@@ -312,7 +317,12 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     }
     executedMigrations.push(...(yield* run({ loader: makeMigrationLoader(id) })));
   }
-  const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
+  // Before the finished line: a start with only fork migrations pending still logged "started".
+  const forkMigrations = toMigrationInclusive === undefined ? yield* runForkMigrations() : [];
+  const migrations = [
+    ...executedMigrations.map(([id, name]) => `${id}_${name}`),
+    ...forkMigrations.map(([id, name]) => `fork:${id}_${name}`),
+  ];
   yield* migrations.length === 0
     ? Effect.logDebug("Database schema is current")
     : Effect.log(DATABASE_MIGRATIONS_FINISHED_MESSAGE).pipe(Effect.annotateLogs({ migrations }));

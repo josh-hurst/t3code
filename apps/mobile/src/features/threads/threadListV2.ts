@@ -2,10 +2,11 @@ import {
   canSnooze,
   effectiveSnoozed,
   hasQueuedTurnStart,
+  laterWhenLabel,
   pickSnoozePreset,
   QUEUED_TURN_START_GRACE_MS,
   resolveSnoozePresets,
-  snoozeWakeLabel,
+  snoozeWakeAtMs,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
@@ -13,11 +14,13 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models";
 import {
   hasUnseenCompletion as threadHasUnseenCompletion,
+  sortLaterThreads,
   sortNeedsYouThreads,
   sortTrailThreads,
   splitTrail,
   threadCardOwedLabel,
   threadCardRowLine,
+  threadLaterLead,
   threadRowLineText,
   threadRowProjectName,
   threadLastTouchAt,
@@ -203,16 +206,31 @@ export function resolveThreadListV2SnoozeGateExpiryMs(
   return messageAtMs + QUEUED_TURN_START_GRACE_MS;
 }
 
-/** The earliest `snoozedUntil` strictly after `nowMs`, in epoch ms. */
+/** A held row's ways out of what holds it, beside Wake thread. */
+export function threadListV2LaterMenuActions(
+  thread: Pick<EnvironmentThreadShell, "followUp" | "standingCheck">,
+): MenuAction[] {
+  return [
+    ...(thread.followUp != null && thread.followUp.sentAt === undefined
+      ? [{ id: "later:cancel-recheck", title: "Cancel re-check", image: "xmark.circle" }]
+      : []),
+    ...(thread.standingCheck === true
+      ? [{ id: "later:stop-standing-check", title: "Stop standing check", image: "calendar" }]
+      : []),
+  ];
+}
+
+/** The earliest `snoozedUntil` strictly after `nowMs`, in epoch ms; set aside has none. */
 export function nextSnoozeWakeAfter(
   threads: ReadonlyArray<{ readonly snoozedUntil?: string | null }>,
   nowMs: number,
 ): number | null {
   let next: number | null = null;
   for (const thread of threads) {
-    if (thread.snoozedUntil == null) continue;
-    const wakeAtMs = Date.parse(thread.snoozedUntil);
-    if (wakeAtMs > nowMs && (next === null || wakeAtMs < next)) next = wakeAtMs;
+    const wakeAtMs = snoozeWakeAtMs(thread.snoozedUntil);
+    if (wakeAtMs !== null && wakeAtMs > nowMs && (next === null || wakeAtMs < next)) {
+      next = wakeAtMs;
+    }
   }
   return next;
 }
@@ -229,9 +247,8 @@ export function threadListV2LayoutTime(input: {
   let previousWakeAt: number | undefined;
   let nextWakeAt: number | undefined;
   for (const thread of input.threads) {
-    if (thread.snoozedUntil == null) continue;
-    const wakeAt = Date.parse(thread.snoozedUntil);
-    if (!Number.isFinite(wakeAt)) continue;
+    const wakeAt = snoozeWakeAtMs(thread.snoozedUntil);
+    if (wakeAt === null) continue;
     if (wakeAt <= nowMs) previousWakeAt = Math.max(previousWakeAt ?? wakeAt, wakeAt);
     else nextWakeAt = Math.min(nextWakeAt ?? wakeAt, wakeAt);
   }
@@ -466,6 +483,8 @@ export interface ThreadListV2SettledShelfListItem {
   readonly count: number;
   readonly expanded: boolean;
   readonly disabled: boolean;
+  /** The header offers "All", which opens every topic; only where a server keeps topics. */
+  readonly showsAll: boolean;
 }
 
 export interface ThreadListV2SectionHeaderListItem {
@@ -574,7 +593,8 @@ export function threadListV2ListItemsAreEqual(
         previous.label === item.label &&
         previous.count === item.count &&
         previous.expanded === item.expanded &&
-        previous.disabled === item.disabled
+        previous.disabled === item.disabled &&
+        previous.showsAll === item.showsAll
       );
     case "v2-section-header":
       return (
@@ -614,7 +634,8 @@ function resolveThreadListV2ItemTimeLabel(
   inTrail: boolean,
 ): string {
   const { thread, variant, snoozed } = item;
-  if (showSnoozeWakeLabel) return "";
+  // A held row with no wake label is set aside or a standing check: it has no time to show.
+  if (showSnoozeWakeLabel || snoozed) return "";
   // The Trail is ordered by your last touch, so its rows show that time and read in order.
   if (inTrail) return relativeTime(new Date(threadLastTouchAt(thread)).toISOString());
   if (
@@ -661,14 +682,16 @@ export function buildThreadListV2ListItems(input: {
   readonly queuedThreadKeys?: ReadonlySet<string>;
   readonly moveAvailability?: ReadonlyMap<string, ThreadMoveAvailability>;
   readonly shelfPreferencesLoading?: boolean;
+  /** Some connected server keeps topics, so the self-filing History header links to them. */
+  readonly historyAll?: boolean;
 }): ThreadListV2ListItem[] {
   const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   const trailStart = input.tide?.trailHeaderIndex ?? null;
   const trailStop = input.settledShelfHeaderIndex ?? input.items.length;
   const threadItems = input.items.map((item, index): ThreadListV2ListItem => {
     const snoozeWakeLabelText =
-      item.snoozed && item.thread.snoozedUntil != null && input.snoozeLabelNow !== undefined
-        ? snoozeWakeLabel(item.thread.snoozedUntil, { now: input.snoozeLabelNow })
+      item.snoozed && input.snoozeLabelNow !== undefined
+        ? (laterWhenLabel(item.thread, { now: input.snoozeLabelNow }) ?? undefined)
         : undefined;
     // Put the clock on items so recycler equality limits ticks to rows displaying snooze preset times.
     const snoozePresetMinute =
@@ -803,6 +826,7 @@ export function buildThreadListV2ListItems(input: {
       count: settledCount,
       expanded: input.settledShelfExpanded !== false,
       disabled: shelfDisabled,
+      showsAll: tide !== null && input.historyAll === true,
     });
     result.push(...threadItems.slice(settledShelfHeaderIndex));
   }
@@ -837,7 +861,7 @@ function arrangeThreadListV2Tide(
   const needsYou: EnvironmentThreadShell[] = [];
   const rest: EnvironmentThreadShell[] = [];
   for (const thread of active) {
-    const needs = threadNeedsYou(thread, { includeCompleted: true });
+    const needs = threadNeedsYou(thread, { includeCompleted: "owed" });
     const sentAt =
       (thread.latestUserAuthoredMessageAt === undefined
         ? thread.latestRun?.requestedAt
@@ -899,12 +923,23 @@ function sortSettledThreadsReusingLast(
   return lastSettledOutput;
 }
 
-/** A slim row in the self-filing list: what is still to do, then the outcome. */
-function slimRowLine(thread: EnvironmentThreadShell): string | null {
-  return threadRowLineText({
-    owed: threadCardOwedLabel(thread.card),
-    line: threadCardRowLine(thread.card, { needsYou: false }),
-  });
+/**
+ * A slim row in the self-filing list: what is still to do, then the outcome. A Later row
+ * leads with what it waits for instead, such as "Re-check 2 of 3" and its reason.
+ */
+function slimRowLine(
+  thread: EnvironmentThreadShell,
+  later: { readonly recheckLimit: number | null } | null = null,
+): string | null {
+  const lead = later === null ? null : threadLaterLead(thread, later);
+  const line = threadCardRowLine(thread.card, { needsYou: false });
+  return lead === null
+    ? threadRowLineText({
+        // An unread finished run that owes nothing sits in the Trail, marked until opened.
+        owed: threadHasUnseenCompletion(thread) ? "Done" : threadCardOwedLabel(thread.card),
+        line,
+      })
+    : threadRowLineText({ owed: lead.word, line: lead.text ?? line });
 }
 
 /** The project a slim row names above its title, unless the list is scoped to one. */
@@ -930,6 +965,8 @@ export function buildThreadListV2Items(input: {
   readonly matchedThreadKeys?: ReadonlySet<string>;
   readonly settlementEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
+  /** Each environment's `laterRecheckLimit`, for "Re-check 2 of 3" on Later rows. */
+  readonly laterRecheckLimits?: ReadonlyMap<EnvironmentId, number>;
   readonly settledLimit?: number;
   readonly now: string;
   readonly workingShelfEnabled?: boolean;
@@ -981,6 +1018,9 @@ export function buildThreadListV2Items(input: {
     : null;
 
   const tide = input.tide ?? null;
+  const laterOf = (thread: EnvironmentThreadShell) => ({
+    recheckLimit: input.laterRecheckLimits?.get(thread.environmentId) ?? null,
+  });
   const workingShelfEnabled = input.workingShelfEnabled === true || tide !== null;
   const pinned: EnvironmentThreadShell[] = [];
   const active: EnvironmentThreadShell[] = [];
@@ -1024,10 +1064,11 @@ export function buildThreadListV2Items(input: {
     const supportsSnooze = input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true;
     if (supportsSnooze && effectiveSnoozed(thread, { now })) {
       snoozed.push(thread);
+      // A set-aside hold has no wake to arm a timer for.
+      const wakeAtMs = snoozeWakeAtMs(thread.snoozedUntil);
       if (
-        thread.snoozedUntil != null &&
-        (nextSnoozeWakeAt === null ||
-          parseTimestampMs(thread.snoozedUntil) < parseTimestampMs(nextSnoozeWakeAt))
+        wakeAtMs !== null &&
+        (nextSnoozeWakeAt === null || wakeAtMs < parseTimestampMs(nextSnoozeWakeAt))
       ) {
         nextSnoozeWakeAt = thread.snoozedUntil;
       }
@@ -1076,7 +1117,7 @@ export function buildThreadListV2Items(input: {
           tide === null
             ? null
             : slim.has(thread)
-              ? slimRowLine(thread)
+              ? slimRowLine(thread, snoozedThreads.has(thread) ? laterOf(thread) : null)
               : threadCardRowLine(thread.card, { needsYou: false }),
         projectLine: tide !== null && slim.has(thread) ? slimRowProject(thread, input) : null,
         isLast: index === results.length - 1,
@@ -1107,10 +1148,7 @@ export function buildThreadListV2Items(input: {
         ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
         : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
   const orderedWorking = sortWorkingThreadsBySend(working);
-  const orderedSnoozed = [...snoozed].sort(
-    (left, right) =>
-      parseTimestampMs(left.snoozedUntil ?? "") - parseTimestampMs(right.snoozedUntil ?? ""),
-  );
+  const orderedSnoozed = sortLaterThreads(snoozed);
   const visibleWorking =
     input.workingShelfExpanded === true
       ? orderedWorking
@@ -1243,7 +1281,7 @@ export function buildThreadListV2Items(input: {
       snoozed: true,
       pinned: false,
       wokeAt: null,
-      cardLine: slimLineOf(thread),
+      cardLine: tideZones === null ? null : slimRowLine(thread, laterOf(thread)),
       projectLine: slimProjectOf(thread),
       isLast: false,
     });

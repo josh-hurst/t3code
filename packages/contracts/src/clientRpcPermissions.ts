@@ -72,6 +72,14 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: AuthOrchestrationOperateScope,
   // Force stop kills agent processes, as Stop on a terminal does.
   [ORCHESTRATION_V2_WS_METHODS.forceStopThread]: AuthOrchestrationOperateScope,
+  // Publishing starts the follow-ups that wait for it.
+  [ORCHESTRATION_V2_WS_METHODS.markPublished]: AuthOrchestrationOperateScope,
+  [ORCHESTRATION_V2_WS_METHODS.undoPublished]: AuthOrchestrationOperateScope,
+  [ORCHESTRATION_V2_WS_METHODS.refreshOpenItems]: AuthOrchestrationOperateScope,
+  [ORCHESTRATION_V2_WS_METHODS.resolveOpenItem]: AuthOrchestrationOperateScope,
+  // A backfill spends model calls on this environment's summary model.
+  [ORCHESTRATION_V2_WS_METHODS.startContentsBackfill]: AuthOrchestrationOperateScope,
+  [ORCHESTRATION_V2_WS_METHODS.cancelContentsBackfill]: AuthOrchestrationOperateScope,
   // A guest link hands thread access to someone outside, like a pairing link.
   [WS_METHODS.guestShareCreate]: AuthAccessWriteScope,
   [WS_METHODS.peerLinksLink]: AuthAccessWriteScope,

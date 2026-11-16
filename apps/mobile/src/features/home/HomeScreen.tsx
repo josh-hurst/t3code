@@ -1,4 +1,6 @@
 import { useContentTopInset } from "../../components/ui/useBarInset";
+import { useNavigation } from "@react-navigation/native";
+import { useAnyEnvironmentKeepsEntries } from "../../state/threadEntries";
 import { usePaneRole } from "../../components/ui/Pane";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { useActiveNewTask } from "../../state/active-new-task";
@@ -75,6 +77,7 @@ import {
   ThreadListV2Row,
   ThreadListV2SectionHeader,
   ThreadListV2SettledShelfHeader,
+  historyAllAction,
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
   ThreadListV2TrailMoreRow,
@@ -412,6 +415,7 @@ export function HomeScreen(props: HomeScreenProps) {
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
     snoozePresetsByEnvironmentId,
+    laterRecheckLimitByEnvironmentId,
     pinningEnvironmentIds,
     autoSettleOptOutEnvironmentIds,
     pinReorderEnvironmentIds,
@@ -420,6 +424,9 @@ export function HomeScreen(props: HomeScreenProps) {
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder();
+  const historyAll = useAnyEnvironmentKeepsEntries();
+  const rootNavigation = useNavigation();
+  const openHistory = () => rootNavigation.navigate("History");
   const {
     layout: threadListV2Layout,
     items: threadListV2Items,
@@ -435,6 +442,7 @@ export function HomeScreen(props: HomeScreenProps) {
     searchMatches: threadSearchMatchByKey,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
+    laterRecheckLimits: laterRecheckLimitByEnvironmentId,
     pinReorderEnvironmentIds,
     activeReorderEnvironmentIds,
     queuedThreadKeys,
@@ -451,6 +459,7 @@ export function HomeScreen(props: HomeScreenProps) {
     selectedThreadKey,
     tide,
     trailExpanded,
+    historyAll,
   });
   // Called as `props.onSelectThread(...)`, the compiler would cache this handler on the whole
   // props object, which is new on every render of Home's parent.
@@ -574,6 +583,7 @@ export function HomeScreen(props: HomeScreenProps) {
           disabled={item.disabled}
           expanded={item.expanded}
           onToggle={toggleSettledShelf}
+          {...(item.showsAll ? { action: historyAllAction(openHistory) } : {})}
         />
       );
     }

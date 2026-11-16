@@ -6,6 +6,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   RunId,
+  ThreadEntryId,
   ThreadId,
   type OrchestrationV2DomainEvent,
   type ThreadCard,
@@ -28,6 +29,7 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { rebuildMessageSearch } from "./messageSearchIndex.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
+import * as ThreadEntryStore from "./ThreadEntryStore.ts";
 import * as ThreadSearch from "./ThreadSearch.ts";
 
 const layerTest = Layer.mergeAll(
@@ -129,7 +131,6 @@ const thread = (
             messageId: MessageId.make(`message:${threadId}:card`),
             at: DateTime.formatIso(at(0)),
             runId: RunId.make(`run:${threadId}:card`),
-            chapters: [],
           },
         }
       : {}),
@@ -1323,6 +1324,94 @@ it.layer(layerTest)("ThreadSearch.searchThreads", (it) => {
           (match) => match.title,
         ),
         ["Clean up auth tokens"],
+      );
+    }),
+  );
+
+  it.effect("adds topics as their own rows, except a titled thread's only topic", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const sql = yield* SqlClient.SqlClient;
+      const project = ProjectId.make("project:topics");
+      yield* createProject(project);
+      const long = ThreadId.make("thread:topics-long");
+      const single = ThreadId.make("thread:topics-single");
+      const titled = ThreadId.make("thread:topics-titled");
+      const chatty = ThreadId.make("thread:topics-chatty");
+      yield* Effect.forEach(
+        [
+          thread(long, project, { title: "Lobby work" }),
+          thread(single, project, { title: "Daily notes" }),
+          thread(titled, project, { title: "Killfeed polish" }),
+          thread(chatty, project, { title: "Weekly notes" }),
+          message(chatty, "chatty", "user", "the killfeed flickers again"),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+      const topics = (threadId: ThreadId, rows: ReadonlyArray<[string, string, number]>) =>
+        ThreadEntryStore.applyEntriesUpdated(sql, {
+          threadId,
+          payload: {
+            entries: rows.map(([title, outcome, minute], index) => ({
+              id: ThreadEntryId.make(`${threadId}:e${index + 1}`),
+              threadId,
+              title,
+              titleSource: "model",
+              outcome,
+              open: [],
+              runs: [{ runId: RunId.make(`${threadId}:run:${index}`), source: "online" }],
+              startMessageId: MessageId.make(`${threadId}:start:${index}`),
+              endMessageId: MessageId.make(`${threadId}:end:${index}`),
+              startedAt: DateTime.formatIso(at(minute)),
+              endedAt: DateTime.formatIso(at(minute)),
+              status: "active",
+            })),
+            runLines: [],
+            state: {
+              revision: 1,
+              nextEntrySeq: rows.length + 1,
+              ownerRuns: rows.length,
+              lastRunOrdinal: rows.length,
+              lastReplyAt: null,
+              runsSinceRegroup: 0,
+              regroupRequestedThrough: 0,
+              regroupedThrough: 0,
+              regroupedAt: null,
+            },
+          },
+        });
+      yield* topics(long, [
+        ["Shop button placement", "Moved it off the killfeed", 3],
+        ["Lobby music", "Quieter by default", 4],
+      ]);
+      yield* topics(single, [["Killfeed overlap", "The shop button no longer covers it", 5]]);
+      yield* topics(titled, [["Killfeed font", "Larger on phones", 6]]);
+
+      assert.deepEqual(
+        (yield* search.searchThreads({ query: "killfeed", projectId: project })).matches.map(
+          (match) => [match.threadId, match.source, match.snippet ?? null],
+        ),
+        [
+          [titled, "title", null],
+          [single, "topic", "Killfeed overlap: The shop button no longer covers it"],
+          [long, "topic", "Shop button placement: Moved it off the killfeed"],
+          [chatty, "user", "the killfeed flickers again"],
+        ],
+      );
+      // Topics take a fifth of the slots, so message matches keep theirs.
+      assert.deepEqual(
+        (yield* search.searchThreads({
+          query: "killfeed",
+          projectId: project,
+          limit: 5,
+        })).matches.map((match) => [match.threadId, match.source]),
+        [
+          [titled, "title"],
+          [single, "topic"],
+          [chatty, "user"],
+        ],
       );
     }),
   );

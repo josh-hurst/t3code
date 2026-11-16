@@ -118,6 +118,7 @@ vi.mock("./useSettings", () => ({
       timestampFormat: "12-hour",
     }),
 }));
+vi.mock("./useThreadLaterActions", () => ({ useThreadLaterActions: () => ({}) }));
 vi.mock("./useThreadActions", () => ({
   canTurnThreadIntoProject: () => false,
   useThreadActions: () =>

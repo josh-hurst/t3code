@@ -50,14 +50,18 @@ import {
   type DesktopWslState,
   type EnvironmentId,
   type FilesystemBrowseResult,
+  isThreadSetAside,
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
+  AlarmClockIcon,
+  AlarmClockOffIcon,
   ArrowLeftIcon,
   BellDotIcon,
+  CalendarSyncIcon,
   BugIcon,
   ChartNoAxesColumnIcon,
   CheckIcon,
@@ -68,6 +72,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  HistoryIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   ListChecksIcon,
@@ -78,12 +83,15 @@ import {
   MonitorIcon,
   PinIcon,
   PinOffIcon,
+  ListTreeIcon,
   PlugIcon,
+  RocketIcon,
   SquarePenIcon,
   TextSearchIcon,
   UserPlusIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
+import { useThreadLaterActions } from "../hooks/useThreadLaterActions";
 import { dispatchPreviewAction } from "./preview/previewActionBus";
 import { previewBridge } from "./preview/previewBridge";
 import {
@@ -237,6 +245,8 @@ import {
   useSortedProjectGroups,
 } from "./CommandPaletteLookups";
 import { runTideCommand } from "./sidebar/tideCommands";
+import { useSplitThreadTopics } from "./chat/useThreadContentsActions";
+import { useEntriesEnvironmentIds } from "../state/threadEntries";
 import {
   buildNewThreadInProjectItems,
   buildProjectSearchItems,
@@ -454,6 +464,7 @@ function OpenCommandPaletteDialog(props: {
   }
   const clientSettings = useClientSettings(selectCommandPaletteClientSettings);
   const sidebarClassicEnabled = useClientSettings((settings) => settings.sidebarClassicEnabled);
+  const entriesAvailable = useEntriesEnvironmentIds().length > 0;
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -485,6 +496,8 @@ function OpenCommandPaletteDialog(props: {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const paletteRouteTarget = useThreadRouteTarget();
+  const laterActions = useThreadLaterActions();
+  const splitThreadTopics = useSplitThreadTopics();
   const projects = useProjects();
   const referenceThreadRef =
     pathname === "/pull-requests"
@@ -1684,6 +1697,119 @@ function OpenCommandPaletteDialog(props: {
       await navigate({ to: "/usage" });
     },
   });
+
+  if (entriesAvailable) {
+    actionItems.push({
+      kind: "action",
+      value: "action:history.open",
+      searchTerms: ["history", "topics", "still open", "what did i do", "outcomes", "settled"],
+      title: "Open History",
+      description: "Every topic from every thread, newest first, with what is still open",
+      icon: <HistoryIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "history.open",
+      run: async () => {
+        await navigate({ to: "/history" });
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:project.markPublished",
+      searchTerms: ["published", "publish", "release", "shipped", "deployed", "mark"],
+      title: "Mark this project published",
+      description:
+        "The focused project, else the open thread's: clears what waits on a publish and starts its re-checks. Undo puts the items back",
+      icon: <RocketIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "project.markPublished",
+      run: async () => {
+        if (!runTideCommand("project.markPublished")) {
+          toastManager.add({
+            type: "info",
+            title: "Open the sidebar to mark a project published",
+          });
+        }
+      },
+    });
+  }
+
+  // Later, for the open thread. Set aside also has a key; the rest open a form or act at once.
+  if (activeThread && activeThreadServerConfig) {
+    const ref = scopeThreadRef(activeThread.environmentId, activeThread.id);
+    const setAside = isThreadSetAside(activeThread.snoozedUntil);
+    const armedRecheck =
+      activeThread.followUp != null && activeThread.followUp.sentAt === undefined;
+    actionItems.push({
+      kind: "action",
+      value: "action:thread.setAside",
+      searchTerms: ["set aside", "later", "park", "snooze", "no date", "bring back"],
+      title: setAside ? "Bring this thread back" : "Set this thread aside",
+      description: setAside
+        ? "Returns it from Later"
+        : "Moves it to Later with no wake time. Anything that needs you brings it back",
+      icon: <AlarmClockOffIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "thread.setAside",
+      run: async () => {
+        laterActions.toggleSetAside(ref);
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:later:recheck",
+      searchTerms: ["re-check", "recheck", "check again", "later", "follow up", "remind"],
+      title: armedRecheck ? "Edit this thread's re-check" : "Re-check this thread later",
+      description: "At a time you pick, asks the agent a question while the thread waits in Later",
+      icon: <AlarmClockIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await laterActions.recheckLater(ref);
+      },
+    });
+    if (armedRecheck) {
+      actionItems.push({
+        kind: "action",
+        value: "action:later:cancel-recheck",
+        searchTerms: ["cancel re-check", "recheck", "stop", "later"],
+        title: "Cancel this thread's re-check",
+        icon: <AlarmClockOffIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          await laterActions.cancelRecheck(ref);
+        },
+      });
+    }
+    actionItems.push({
+      kind: "action",
+      value: "action:later:standing-check",
+      searchTerms: ["standing check", "daily", "every morning", "watch", "monitor", "schedule"],
+      title:
+        activeThread.standingCheck === true
+          ? "Stop the standing check"
+          : "Make this a standing check",
+      description:
+        activeThread.standingCheck === true
+          ? "Its scheduled task keeps running, but runs no longer wait in Later"
+          : "Runs this thread on a schedule and keeps it in Later unless a run needs you",
+      icon: <CalendarSyncIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        if (activeThread.standingCheck === true) await laterActions.stopStandingCheck(ref);
+        else laterActions.makeStandingCheck(ref);
+      },
+    });
+    if (
+      activeThreadServerConfig.threadEntries === true &&
+      readEnvironmentScope(activeThread.environmentId, AuthOrchestrationOperateScope)
+    ) {
+      actionItems.push({
+        kind: "action",
+        value: "action:thread.splitTopics",
+        searchTerms: ["split", "topics", "contents", "regroup", "table of contents", "sections"],
+        title: "Split this thread into topics",
+        description:
+          "Regroups its replies into topics with three short model calls. Topics you renamed or moved stay as they are",
+        icon: <ListTreeIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          await splitThreadTopics(activeThread.environmentId, activeThread.id);
+        },
+      });
+    }
+  }
 
   if (!sidebarClassicEnabled) {
     for (const item of [

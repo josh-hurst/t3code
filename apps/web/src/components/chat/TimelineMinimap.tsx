@@ -205,9 +205,12 @@ export function TimelineMinimap({
                       ? "scale-x-100"
                       : activeDistance === 1
                         ? "scale-x-[0.667]"
-                        : activeDistance === 2
-                          ? "scale-x-[0.417]"
-                          : "scale-x-[0.333]",
+                        : // A topic's first tick rests longer, so the rail shows where topics begin.
+                          item.startsEntry === true
+                          ? "scale-x-[0.583]"
+                          : activeDistance === 2
+                            ? "scale-x-[0.417]"
+                            : "scale-x-[0.333]",
                   )}
                   data-in-view="false"
                   data-minimap-strip
@@ -230,6 +233,11 @@ export function TimelineMinimap({
                 style={{ top: `${activeTopPercent}%` }}
               >
                 <span className="dropdown-glass block rounded-xl p-3 text-left text-popover-foreground shadow-xl shadow-black/25">
+                  {activeItem.entryTitle !== undefined ? (
+                    <span className="mb-0.5 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground text-xs leading-4">
+                      {activeItem.entryTitle}
+                    </span>
+                  ) : null}
                   <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium leading-5">
                     {activeItem.userText ?? "User message"}
                   </span>

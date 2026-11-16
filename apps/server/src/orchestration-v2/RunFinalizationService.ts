@@ -32,13 +32,24 @@ export class RunFinalizationRefreshError extends Schema.TaggedError<RunFinalizat
 
 export class RunFinalizationObserver extends Context.Reference<{
   readonly refreshAfterTurn: (projectId: ProjectId) => Effect.Effect<void>;
+  /** True when `cwd` is a repository with no working-tree changes. */
   readonly refresh: (input: {
     readonly cwd: string;
     readonly threadId: ThreadId;
     readonly runId: RunId;
-  }) => Effect.Effect<void, RunFinalizationRefreshError>;
+  }) => Effect.Effect<boolean, RunFinalizationRefreshError>;
 }>("t3/orchestration-v2/RunFinalizationObserver", {
-  defaultValue: () => ({ refresh: () => Effect.void, refreshAfterTurn: () => Effect.void }),
+  defaultValue: () => ({
+    refresh: () => Effect.succeed(false),
+    refreshAfterTurn: () => Effect.void,
+  }),
+}) {}
+
+/** Told when a finished run leaves its checkout clean. Set by the production runtime. */
+export class RunFinalizationCleanCheckout extends Context.Reference<
+  (cwd: string) => Effect.Effect<void>
+>("t3/orchestration-v2/RunFinalizationCleanCheckout", {
+  defaultValue: () => () => Effect.void,
 }) {}
 
 export class RunFinalizationService extends Context.Service<
@@ -56,6 +67,7 @@ const make = Effect.gen(function* () {
   const checkpointCapture = yield* CheckpointCapture.CheckpointCaptureServiceV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const observer = yield* RunFinalizationObserver;
+  const cleanCheckout = yield* RunFinalizationCleanCheckout;
 
   const finalize: RunFinalizationService["Service"]["finalize"] = Effect.fn(
     "RunFinalizationService.finalize",
@@ -77,15 +89,18 @@ const make = Effect.gen(function* () {
     const cwd = projection.checkpointScopes.find((scope) => scope.id === input.scopeId)?.cwd;
     if (cwd !== undefined) {
       // Retrying a display refresh after the checkpoint is durable blocks the next turn.
-      yield* observer.refresh({ cwd, threadId: input.threadId, runId: input.runId }).pipe(
-        Effect.catchTags({
-          RunFinalizationRefreshError: (cause) =>
-            Effect.logWarning("Failed to refresh workspace after checkpoint capture", {
-              ...input,
-              cause,
-            }),
-        }),
-      );
+      const clean = yield* observer
+        .refresh({ cwd, threadId: input.threadId, runId: input.runId })
+        .pipe(
+          Effect.catchTags({
+            RunFinalizationRefreshError: (cause) =>
+              Effect.logWarning("Failed to refresh workspace after checkpoint capture", {
+                ...input,
+                cause,
+              }).pipe(Effect.as(false)),
+          }),
+        );
+      if (clean) yield* cleanCheckout(cwd);
     }
   });
   return RunFinalizationService.of({ finalize });
@@ -134,15 +149,16 @@ export const layerObserver = Layer.effect(
             [workspaceEntries.refresh(cwd), vcsStatus.refreshLocalStatus(cwd)],
             { concurrency: "unbounded" },
           );
+          const clean = local.isRepo && !local.hasWorkingTreeChanges;
           const thread = yield* projections.getThreadShell(threadId);
-          if (!thread) return;
+          if (!thread) return clean;
           // Forge discovery probes can take seconds; like the PR lookup, the next turn must not wait.
           yield* refreshMissingRepositoryIdentity(thread.projectId).pipe(
             FiberMap.run(identityRefreshes, thread.projectId),
           );
-          if (local.refName === null || local.isDefaultRef) return;
-          if (thread.branch !== local.refName) return;
-          if (thread.activeRunId !== null && thread.activeRunId !== runId) return;
+          if (local.refName === null || local.isDefaultRef) return clean;
+          if (thread.branch !== local.refName) return clean;
+          if (thread.activeRunId !== null && thread.activeRunId !== runId) return clean;
           // The forge CLI can take minutes, so the next turn must not wait for it. A newer
           // turn's lookup replaces a running one instead of queueing behind the cwd's lock.
           yield* vcsStatus.refreshPullRequestStatus(cwd).pipe(
@@ -155,6 +171,7 @@ export const layerObserver = Layer.effect(
             ),
             FiberMap.run(pullRequestLookups, cwd),
           );
+          return clean;
         },
         (effect, { cwd }) =>
           effect.pipe(Effect.mapError((cause) => new RunFinalizationRefreshError({ cwd, cause }))),

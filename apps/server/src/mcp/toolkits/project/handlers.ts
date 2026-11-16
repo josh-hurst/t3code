@@ -14,6 +14,7 @@ import * as Schema from "effect/Schema";
 import { OrchestratorRuntimeModeAboveCeilingError } from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
+import * as OpenItemService from "../../../orchestration-v2/OpenItemService.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
@@ -421,5 +422,65 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
       }),
     // An existing destination is never adopted.
     { linkedCallers: "allowed" },
+  ),
+  t3_open_items: McpToolAccess.either(
+    (input) => input.action === "list",
+    McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const scope = yield* McpInvocationContext.McpInvocationContext;
+        const projectId = yield* resolveProjectId(yield* readCaller(), input.projectId);
+        const openItems = yield* OpenItemService.OpenItemService;
+        const { items, lastPublishedAt } = yield* openItems
+          .list({ projectIds: [projectId] })
+          .pipe(Effect.mapError(unavailable));
+        return {
+          items: items.map((item) => ({
+            kind: item.kind,
+            text: item.text,
+            ...(item.dueAt === undefined ? {} : { dueAt: item.dueAt }),
+            key: item.key,
+            threadId: item.threadId,
+            link: McpInvocationContext.threadLinkFor(scope, item.threadId, item.threadTitle),
+            topic: item.entryTitle,
+            messageId: item.messageId,
+            settled: item.threadSettled,
+          })),
+          lastPublishedAt,
+        };
+      }),
+    ),
+    McpToolAccess.either(
+      (input) => input.action === "mark_published",
+      // Publishing starts unattended runs (post-publish checks), as running a scheduled task does.
+      McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const context = yield* readCaller();
+          const projectId = yield* resolveProjectId(context, input.projectId);
+          const openItems = yield* OpenItemService.OpenItemService;
+          return yield* openItems
+            .markPublished({ projectIds: [projectId], threadId: context.caller?.id })
+            .pipe(Effect.mapError(unavailable));
+        }),
+      ),
+      McpToolAccess.writesThreads(
+        (input) => [input.threadId],
+        (input) =>
+          Effect.gen(function* () {
+            const context = yield* readCaller();
+            const threadId = input.threadId ?? context.caller?.id;
+            if (threadId === undefined || input.key === undefined) {
+              return yield* new OrchestratorMcpFailure({
+                code: "invalid_request",
+                message: "resolve needs a listed item's threadId and key.",
+              });
+            }
+            const openItems = yield* OpenItemService.OpenItemService;
+            yield* openItems
+              .resolveItem({ threadId, key: input.key })
+              .pipe(Effect.mapError(unavailable));
+            return { resolved: true as const };
+          }),
+      ),
+    ),
   ),
 });

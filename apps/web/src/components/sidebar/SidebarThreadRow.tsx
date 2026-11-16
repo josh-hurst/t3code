@@ -1,4 +1,4 @@
-import { useAtomMount } from "@effect/atom-react";
+import { useAtomMount, useAtomValue } from "@effect/atom-react";
 import { asLaunchingThread } from "@t3tools/client-runtime/state/thread-inbox";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
@@ -14,6 +14,8 @@ import {
   canSnooze,
   hasQueuedTurnStart,
   QUEUED_TURN_START_GRACE_MS,
+  snoozeWakeLabel,
+  threadLaterAt,
 } from "@t3tools/client-runtime/state/thread-settled";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import {
@@ -28,10 +30,12 @@ import {
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   AuthOrchestrationOperateScope,
+  THREAD_SET_ASIDE_UNTIL,
   threadCardHasOpenAsk,
   type EnvironmentId,
   type EnvironmentMachineKind,
   type ScopedThreadRef,
+  type ThreadId,
 } from "@t3tools/contracts";
 
 import type { SidebarRowDetail, TimestampFormat } from "@t3tools/contracts/settings";
@@ -75,6 +79,7 @@ import { useNowMinute } from "../../hooks/useNowMinute";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { vcsEnvironment, vcsBranchRevalidation } from "../../state/vcs";
 import { useEnvironmentQuery } from "../../state/query";
+import { serverEnvironment } from "../../state/server";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import {
   formatRelativeTimeLabel,
@@ -164,6 +169,25 @@ function RelativeTimeLabel(props: { timestamp: string | null }) {
     : compactSidebarTimeLabel(
         formatRelativeTimeLabel(props.timestamp, Date.parse(`${nowMinute}:00.000Z`)),
       );
+}
+
+/** A standing check's next scheduled run, from the task bound to the thread; nothing without one. */
+function StandingCheckNextRun(props: { environmentId: EnvironmentId; threadId: ThreadId }) {
+  const nowMinute = useNowMinute();
+  // One subscription per environment, shared by every row that reads it.
+  const tasks = useEnvironmentQuery(
+    serverEnvironment.scheduledTasksLive({ environmentId: props.environmentId, input: {} }),
+  );
+  const nextRunAt = tasks.data?.tasks.find(
+    (task) => task.threadId === props.threadId && task.enabled && task.nextRunAt !== null,
+  )?.nextRunAt;
+  if (nextRunAt == null) return null;
+  return <>{laterTimeText(snoozeWakeLabel(nextRunAt, { now: `${nowMinute}:00.000Z` }))}</>;
+}
+
+/** A Later row's time as shown: "in 3h", or "now" and "due" as they are. */
+function laterTimeText(label: string): string {
+  return label === "now" || label === "due" ? label : `in ${label}`;
 }
 
 // An absolute day, so the hover card never needs the clock: "Sun 15 Nov".
@@ -432,10 +456,11 @@ function SnoozeMenuButton(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSnooze: (preset: Pick<SnoozePreset, "snoozedUntil">) => void;
+  onRecheck: () => void;
   timestampFormat: TimestampFormat;
   environmentId: EnvironmentId;
 }) {
-  const { open, onOpenChange, onSnooze, timestampFormat, environmentId } = props;
+  const { open, onOpenChange, onSnooze, onRecheck, timestampFormat, environmentId } = props;
   const presets = open
     ? // oxlint-disable-next-line react/purity -- Presets are resolved only while the menu is open, so each opening reads a fresh time.
       resolveSnoozePresets(new Date(), timestampFormat, environmentId)
@@ -485,6 +510,23 @@ function SnoozeMenuButton(props: {
           }}
         >
           Custom…
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem
+          onClick={(event) => {
+            event.stopPropagation();
+            onSnooze({ snoozedUntil: THREAD_SET_ASIDE_UNTIL });
+          }}
+        >
+          Set aside
+        </MenuItem>
+        <MenuItem
+          onClick={(event) => {
+            event.stopPropagation();
+            onRecheck();
+          }}
+        >
+          Re-check with a question…
         </MenuItem>
       </MenuPopup>
     </Menu>
@@ -679,6 +721,7 @@ type SidebarThreadRowProps = {
   ) => void;
   onUnsettle: (threadRef: ScopedThreadRef) => void;
   onSnooze: (threadRef: ScopedThreadRef, preset: Pick<SnoozePreset, "snoozedUntil">) => void;
+  onRecheck: (threadRef: ScopedThreadRef) => void;
   onUnsnooze: (threadRef: ScopedThreadRef) => void;
   onUnpin: (threadRef: ScopedThreadRef) => void;
   onAcknowledgeWoke: (threadRef: ScopedThreadRef, visitedAt: string) => void;
@@ -738,6 +781,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     onSettle,
     onActionSweepStart,
     onSnooze,
+    onRecheck,
     onStartRename,
     onThreadActivate,
     onThreadClick,
@@ -929,10 +973,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   });
   const showsBranchDetail = showsBranch && (Boolean(checkoutThread.branch) || showsScratchMachine);
   // The new layout's last line; Needs you, Working and pinned rows (cards) show status.
+  const recheckLimit = useAtomValue(serverEnvironment.laterRecheckLimitAtom(thread.environmentId));
   const tideLead = props.tide
     ? resolveTideRowLead(
         { ...thread, lastVisitedAt: lastVisitedAt ?? null },
-        { showsStatus: variant === "card", isWoke },
+        {
+          // An unread finished run in the Trail shows Done until it is opened.
+          showsStatus: variant === "card" || (variantAction === "settle" && isUnread),
+          isWoke,
+          later: variantAction === "unsnooze" ? { recheckLimit } : undefined,
+        },
       )
     : null;
   const tideText = tideLead?.text ?? null;
@@ -941,7 +991,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         variantAction,
         needsYou: props.needsYou,
         tideTimeAt: props.tideTimeAt,
-        snoozedUntil: thread.snoozedUntil ?? null,
+        laterAt: threadLaterAt(thread),
+        recheck: thread.followUp != null && thread.followUp.sentAt === undefined,
         settledAt: resolveSettledThreadTimestamp(thread),
       })
     : null;
@@ -1052,6 +1103,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const handleSnoozePreset = (preset: Pick<SnoozePreset, "snoozedUntil">) => {
     onSnooze(threadRef, preset);
   };
+  const handleRecheck = () => onRecheck(threadRef);
   const [snoozeMenuOpenRaw, setSnoozeMenuOpen] = useState(false);
   // The React Compiler caches render results on their inputs, so a clock read
   // here would stay frozen until `thread` changes and a queued-turn gate would
@@ -1430,8 +1482,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         <span className="inline-flex items-center gap-1">
           {/* The clock tells a wake time from an age at a glance. */}
           <AlarmClockIcon aria-hidden className="size-3" />
-          {props.snoozeWakeLabelText === "now" ? "now" : `in ${props.snoozeWakeLabelText}`}
+          {laterTimeText(props.snoozeWakeLabelText)}
         </span>
+      ) : variantAction === "unsnooze" ? (
+        // Set aside has no time; a standing check shows its next run when it has one.
+        thread.standingCheck === true ? (
+          <StandingCheckNextRun environmentId={thread.environmentId} threadId={thread.id} />
+        ) : null
       ) : isRunning ? null : (
         <RelativeTimeLabel
           timestamp={
@@ -1489,6 +1546,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               open={snoozeMenuOpen}
               onOpenChange={setSnoozeMenuOpen}
               onSnooze={handleSnoozePreset}
+              onRecheck={handleRecheck}
               timestampFormat={props.timestampFormat}
               environmentId={thread.environmentId}
             />
@@ -2036,6 +2094,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           open={snoozeMenuOpen}
                           onOpenChange={setSnoozeMenuOpen}
                           onSnooze={handleSnoozePreset}
+                          onRecheck={handleRecheck}
                           timestampFormat={props.timestampFormat}
                           environmentId={thread.environmentId}
                         />

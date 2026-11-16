@@ -59,6 +59,7 @@ import {
 } from "./SnapShotAttachmentDetails";
 import { GuestMessageName, guestBubbleClassName } from "./guestMessageStyle";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { UserMessageTopicMenu } from "./UserMessageTopicMenu";
 import { promptLinkFor } from "../promptLinks/copyPromptLink";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { formatBytes } from "../../lib/formatBytes";
@@ -818,6 +819,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         {typeof revertTurnCount === "number" && (
           <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
         )}
+        {ctx.contentsThread && row.message.runId !== null ? (
+          <UserMessageTopicMenu thread={ctx.contentsThread} runId={row.message.runId} />
+        ) : null}
         {copyText && (
           <MessageCopyButton
             text={contextClipboardFragment ? copyText : plainText}

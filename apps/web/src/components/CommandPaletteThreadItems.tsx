@@ -32,12 +32,17 @@ import {
   usePrimaryEnvironmentId,
 } from "../state/environments";
 import { useThreadSearch } from "../state/queries";
+import { useTopicSearch } from "../state/threadEntries";
 import { primaryServerProvidersAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { formatRelativeTimeLabel } from "../timestampFormat";
-import { buildThreadActionItems, ITEM_ICON_CLASS } from "./CommandPalette.logic";
+import {
+  buildThreadActionItems,
+  type CommandPaletteActionItem,
+  ITEM_ICON_CLASS,
+} from "./CommandPalette.logic";
 import { useEnvironmentLookups, useProjectLookups } from "./CommandPaletteLookups";
 import { ThreadCommandSubtitle } from "./ThreadCommandSubtitle";
 import {
@@ -105,6 +110,7 @@ export function useCommandPaletteThreadItems(input: {
   const { projectEnvironmentLocationById } = useEnvironmentLookups();
   const providerEntryByEnvironmentAndInstanceId = useProviderEntryByEnvironmentAndInstanceId();
   const messageSearch = useConnectedThreadSearch(threadSearchQuery);
+  const topicMatches = useTopicSearch(messageSearch.query);
   const { projectByKey } = useProjectLookups();
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   // Ranking is relative to when the palette opened, so rows do not reorder as time passes.
@@ -247,9 +253,38 @@ export function useCommandPaletteThreadItems(input: {
   );
   if (order !== shownOrder) setShownOrder(order);
   const messageItemByValue = new Map(rankedMessageItems.map((item) => [item.value, item]));
-  const threadMessageItems = order.keys
-    .slice(0, order.shown)
-    .flatMap((value) => messageItemByValue.get(value) ?? []);
+  // A topic is its own row and opens the thread where the topic started.
+  const topicItems = topicMatches.map((entry): CommandPaletteActionItem => {
+    const item = itemByValue.get(`thread:${entry.environmentId}:${entry.threadId}`);
+    // An older settled thread has no row here; its topic still opens it.
+    const { description: _description, ...rest } = item ?? {
+      kind: "action" as const,
+      searchTerms: [],
+      title: entry.threadTitle,
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+    };
+    return {
+      ...rest,
+      value: `topic:${entry.environmentId}:${entry.id}`,
+      timestamp: formatRelativeTimeLabel(entry.endedAt),
+      threadContentMatch: {
+        source: "topic" as const,
+        snippet: entry.outcome === "" ? entry.title : `${entry.title}: ${entry.outcome}`,
+        query: messageSearch.query,
+      },
+      run: async () => {
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams(scopeThreadRef(entry.environmentId, entry.threadId)),
+          search: { m: entry.startMessageId },
+        });
+      },
+    };
+  });
+  const threadMessageItems = [
+    ...topicItems,
+    ...order.keys.slice(0, order.shown).flatMap((value) => messageItemByValue.get(value) ?? []),
+  ];
 
   return {
     threadItems,

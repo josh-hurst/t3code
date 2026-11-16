@@ -1,14 +1,16 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { ProviderInstanceId, type ThreadId } from "@t3tools/contracts";
+import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useState } from "react";
 
 import { newMessageId, newThreadId } from "~/lib/utils";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useProjects, useThreadShell } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
-import { primaryServerProvidersAtom } from "../state/server";
+import { primaryServerProvidersAtom, serverEnvironment } from "../state/server";
+import { recheckReason } from "./LaterRecheckDialog.logic";
 import { threadEnvironment } from "../state/threads";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
@@ -22,6 +24,8 @@ const DEV_REPLAY_INSTANCE_ID = ProviderInstanceId.make("devReplay");
 /**
  * Starts free replay threads on the primary environment in dev builds. Ctrl+Alt+Shift+R
  * opens a picker, and `window.t3dev.replay(scenario)` does the same from the console.
+ * `window.t3dev.followUp(threadId, { inSeconds, question, as })` arms a Later re-check; with
+ * `as: "agent"` it sends what the agent tool sends, so the server's limits apply to it.
  */
 export function DevReplayHost() {
   const [open, setOpen] = useState(false);
@@ -32,6 +36,9 @@ export function DevReplayHost() {
   const target = resolveThreadRouteTarget(useParams({ strict: false }));
   const routeThread = useThreadShell(target?.kind === "server" ? target.threadRef : null);
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, { reportFailure: false });
+  const setFollowUp = useOrchestrationCommand(threadEnvironment.setFollowUp, {
+    reportFailure: false,
+  });
 
   const replayProvider = providers.find(
     (provider) => provider.instanceId === DEV_REPLAY_INSTANCE_ID && provider.enabled,
@@ -85,7 +92,33 @@ export function DevReplayHost() {
     return threadId;
   };
 
+  const followUp = async (
+    threadId: string,
+    options: { inSeconds?: number; question?: string; as?: "user" | "agent" } = {},
+  ): Promise<void> => {
+    if (environmentId === null) throw new Error("No primary environment.");
+    const armedBy = options.as ?? "user";
+    const settings = appAtomRegistry.get(serverEnvironment.settingsValueAtom(environmentId));
+    if (armedBy === "agent" && settings == null) {
+      throw new Error("Server settings have not loaded yet; the agent path needs the limit.");
+    }
+    const question = options.question ?? "Is the result in yet? Check and report what changed.";
+    const result = await setFollowUp({
+      environmentId,
+      input: {
+        threadId: ThreadId.make(threadId),
+        question,
+        reason: recheckReason(question),
+        dueAt: new Date(Date.now() + (options.inSeconds ?? 60) * 1_000).toISOString(),
+        armedBy,
+        ...(armedBy === "agent" && settings != null ? { limit: settings.laterRecheckLimit } : {}),
+      },
+    });
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+  };
+
   const replayFromConsole = useEffectEvent(replay);
+  const followUpFromConsole = useEffectEvent(followUp);
   const listScenarios = useEffectEvent(() => scenarios.map((scenario) => scenario.slug));
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- exposes the console API on window and listens for the hidden window hotkey
@@ -93,6 +126,7 @@ export function DevReplayHost() {
     window.t3dev = {
       replayScenarios: () => listScenarios(),
       replay: (scenario) => replayFromConsole(scenario),
+      followUp: (threadId, options) => followUpFromConsole(threadId, options),
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.repeat) return;

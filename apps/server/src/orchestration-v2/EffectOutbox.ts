@@ -130,6 +130,11 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     runId: RunId,
   }),
   Schema.Struct({
+    type: Schema.Literal("thread-contents.regroup"),
+    /** A mark is one model sample; idle and manual are three. */
+    kind: Schema.Literals(["mark", "idle", "manual"]),
+  }),
+  Schema.Struct({
     type: Schema.Literal("delegated-tasks.stop"),
     reason: Schema.optional(Schema.String),
   }),
@@ -147,6 +152,7 @@ export const REPLAY_SAFE_EFFECT_TYPES_AFTER_PROCESS_LOSS = [
   "attachment.cleanup",
   "thread-title.generate",
   "thread-card.generate",
+  "thread-contents.regroup",
   "delegated-tasks.stop",
 ] as const satisfies ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
 
@@ -329,8 +335,10 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
         available,
         Array.from({ length: Math.min(64, Math.max(0, Math.floor(count))) }, () => undefined),
       ).pipe(Effect.asVoid);
-    // Titles and cards wait on a model, so they queue apart from the effects a turn needs.
-    const textLane = sql.literal("('thread-title.generate', 'thread-card.generate')");
+    // Titles, cards and regroups wait on a model, so they queue apart from the effects a turn needs.
+    const textLane = sql.literal(
+      "('thread-title.generate', 'thread-card.generate', 'thread-contents.regroup')",
+    );
     // Retry backoff must block later effects so turns cannot race a pending rollback.
     const claimableCandidatePredicate = (
       availableBefore?: string,

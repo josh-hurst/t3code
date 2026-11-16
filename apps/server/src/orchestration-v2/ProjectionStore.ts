@@ -6,6 +6,7 @@ import {
   pendingGuestMessageCount,
   type ThreadCardSummary,
   threadCardSummary,
+  threadFollowUpSummary,
 } from "@t3tools/contracts";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
@@ -103,6 +104,7 @@ import type * as Statement from "effect/sql/Statement";
 import { MCP_APP_OUTPUT_KEY } from "@t3tools/shared/mcpApp";
 import { threadHtmlRenderAttachmentIds } from "../attachmentStore.ts";
 import { readableSearchText } from "./messageSearchIndex.ts";
+import * as ThreadEntryStore from "./ThreadEntryStore.ts";
 import {
   isFoldableWorkItem,
   isThreadHistoryUserTurn,
@@ -236,12 +238,21 @@ export type ProjectionSettlementCandidate = Pick<
   | "pendingRuntimeRequest"
   | "pendingBackgroundTasks"
   | "pendingGuestMessageCount"
+  | "followUp"
+  | "standingCheck"
 > &
   Pick<OrchestrationV2AppThread, "lastSnoozeWakeAt"> & {
     readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
-    /** Only its open items matter here, so a thread's card and a shell's summary both fit. */
-    readonly card?: Pick<ThreadCardSummary, "open"> | null | undefined;
+    /** Only its open items and time matter here, so a thread's card and a shell's summary both fit. */
+    readonly card?: Pick<ThreadCardSummary, "open" | "at"> | null | undefined;
   };
+
+/** A thread holding a follow-up, sent or not. */
+export interface ProjectionFollowUpRow {
+  readonly thread: OrchestrationV2AppThread;
+  /** The run its sent question started is still working. */
+  readonly runActive: boolean;
+}
 
 const ProjectionCheckpointContext = Schema.Struct({
   runs: Schema.Array(
@@ -616,6 +627,11 @@ export interface ProjectionStoreV2Shape {
   readonly getSettlementCandidates: (
     threadId?: ThreadId,
   ) => Effect.Effect<ReadonlyArray<ProjectionSettlementCandidate>, ProjectionStoreV2Error>;
+  /** Unarchived threads with a follow-up. Scans thread payloads; the Later sweep reads it. */
+  readonly getFollowUps: () => Effect.Effect<
+    ReadonlyArray<ProjectionFollowUpRow>,
+    ProjectionStoreV2Error
+  >;
   readonly getThreadsWithPullRequests: (
     threadId?: ThreadId,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadPullRequests>, ProjectionStoreV2Error>;
@@ -924,10 +940,11 @@ export function applyToProjection(
         ...base,
         thread: event.payload,
       };
-    // Reordering and PR refreshes preserve the orchestrator's activity timestamp.
+    // Reordering, PR refreshes and follow-ups preserve the orchestrator's activity timestamp.
     case "thread.active-reordered":
     case "thread.tags-updated":
     case "thread.pull-request-synced":
+    case "thread.follow-up-updated":
       return {
         ...base,
         thread: event.payload,
@@ -949,6 +966,9 @@ export function applyToProjection(
         ...projection,
         thread: applyOrchestrationV2ThreadCard(projection.thread, event.payload),
       };
+    // Contents live in their own tables, never on the thread projection.
+    case "thread.entries-updated":
+      return projection;
     case "run.created":
     case "run.updated":
       return withLocalVisibleTurnItems({
@@ -1091,6 +1111,8 @@ export type AgentAwarenessThread = ProjectThreadAwarenessV2Input["thread"] &
     | "activeRunId"
     | "latestRunId"
     | "hasActionableProposedPlan"
+    | "snoozedUntil"
+    | "snoozedAt"
   >;
 
 type ShellThreadRow = {
@@ -1800,7 +1822,9 @@ export function threadShellFromProjection(
         DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt),
     );
   const latestUserAuthoredMessageAt =
-    userMessages.find((message) => message.createdBy === "user")?.updatedAt ?? null;
+    userMessages.find(
+      (message) => message.createdBy === "user" && message.scheduledTaskId === undefined,
+    )?.updatedAt ?? null;
   if (pendingRuntimeRequest === null || pendingRuntimeRequest.kind === "user_input") {
     const waitingCard = secretRequestAsPendingInput(
       projection.turnItems
@@ -1921,6 +1945,10 @@ export function threadShellFromProjection(
     lastVisitedAt: projection.thread.lastVisitedAt,
     opens: projection.thread.opens ?? null,
     ...(projection.thread.card ? { card: threadCardSummary(projection.thread.card) } : {}),
+    ...(projection.thread.followUp
+      ? { followUp: threadFollowUpSummary(projection.thread.followUp) }
+      : {}),
+    ...(projection.thread.standingCheck === true ? { standingCheck: true } : {}),
     titleRegeneration: projection.thread.titleRegeneration ?? null,
     lastTitleRegeneration: projection.thread.lastTitleRegeneration ?? null,
     limitRecovery: projection.thread.limitRecovery ?? null,
@@ -2220,6 +2248,10 @@ function shellFromState(input: {
     lastVisitedAt: input.state.thread.lastVisitedAt,
     opens: input.state.thread.opens ?? null,
     ...(input.state.thread.card ? { card: threadCardSummary(input.state.thread.card) } : {}),
+    ...(input.state.thread.followUp
+      ? { followUp: threadFollowUpSummary(input.state.thread.followUp) }
+      : {}),
+    ...(input.state.thread.standingCheck === true ? { standingCheck: true } : {}),
     titleRegeneration: input.state.thread.titleRegeneration ?? null,
     lastTitleRegeneration: input.state.thread.lastTitleRegeneration ?? null,
     limitRecovery: input.state.thread.limitRecovery ?? null,
@@ -2375,6 +2407,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               });
               break;
             }
+            case "thread.entries-updated":
+              yield* ThreadEntryStore.applyEntriesUpdated(sql, event);
+              break;
             case "thread.created":
             case "thread.archived":
             case "thread.unarchived":
@@ -2397,7 +2432,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             case "thread.interaction-mode-updated":
             case "thread.model-selection-updated":
             case "thread.provider-switched":
-            case "thread.guest-share-updated": {
+            case "thread.guest-share-updated":
+            case "thread.follow-up-updated": {
+              if (event.type === "thread.deleted") {
+                yield* ThreadEntryStore.deleteThreadContents(sql, event.threadId);
+              }
               const payloadJson = yield* encodeThreadPayload(event.payload);
               const payload = parseEncodedPayload(payloadJson);
               yield* sql`
@@ -2450,6 +2489,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             }
             case "run.created":
             case "run.updated": {
+              if (event.payload.status === "rolled_back") {
+                yield* ThreadEntryStore.removeRunFromContents(
+                  sql,
+                  event.threadId,
+                  event.payload.id,
+                );
+              }
               const payloadJson = yield* encodeRunPayload(event.payload);
               const payload = parseEncodedPayload(payloadJson);
               yield* sql`
@@ -3209,6 +3255,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             event.type !== "thread.visited" &&
             event.type !== "thread.visit-recorded" &&
             event.type !== "thread.card-updated" &&
+            event.type !== "thread.entries-updated" &&
             event.type !== "thread.marked-unread" &&
             event.type !== "thread.metadata-updated" &&
             event.type !== "thread.pull-request-synced" &&
@@ -3217,7 +3264,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             event.type !== "thread.interaction-mode-updated" &&
             event.type !== "thread.model-selection-updated" &&
             event.type !== "thread.provider-switched" &&
-            event.type !== "thread.guest-share-updated"
+            event.type !== "thread.guest-share-updated" &&
+            event.type !== "thread.follow-up-updated"
           ) {
             const updatedAt = yield* encodeThreadUpdatedAt(event.occurredAt);
             yield* sql`
@@ -4810,6 +4858,36 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           (value): value is number => value != null,
         );
         return wakes.length === 0 ? null : Math.round(Math.min(...wakes));
+      },
+      Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+    );
+
+    const getFollowUps = Effect.fn("ProjectionStore.getFollowUps")(
+      function* () {
+        const rows = yield* sql<{
+          readonly payload_json: string;
+          readonly run_status: string | null;
+        }>`
+          SELECT t.payload_json, r.status AS run_status
+          FROM orchestration_v2_projection_threads t
+          LEFT JOIN orchestration_v2_projection_runs r
+            ON r.run_id = json_extract(t.payload_json, '$.followUp.runId')
+          WHERE t.deleted_at IS NULL
+            AND json_extract(t.payload_json, '$.archivedAt') IS NULL
+            AND json_extract(t.payload_json, '$.followUp') IS NOT NULL
+        `;
+        return yield* Effect.forEach(rows, (row) =>
+          decodeThreadPayload(row.payload_json).pipe(
+            Effect.map((thread): ProjectionFollowUpRow => ({
+              thread,
+              runActive:
+                row.run_status === "preparing" ||
+                row.run_status === "starting" ||
+                row.run_status === "running" ||
+                row.run_status === "waiting",
+            })),
+          ),
+        );
       },
       Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
     );
@@ -7900,6 +7978,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 WHERE message.thread_id = t.thread_id
                   AND message.role = 'user'
                   AND json_extract(message.payload_json, '$.createdBy') = 'user'
+                  -- A scheduled task the owner made sends as the user, but is not the owner writing.
+                  AND json_extract(message.payload_json, '$.scheduledTaskId') IS NULL
                   AND NOT ${isIdleCompactionMessage("message")}
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
@@ -8221,6 +8301,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 FROM orchestration_v2_projection_messages message
                 WHERE message.thread_id = t.thread_id AND message.role = 'user'
                   AND json_extract(message.payload_json, '$.createdBy') = 'user'
+                  AND json_extract(message.payload_json, '$.scheduledTaskId') IS NULL
                   AND NOT ${isIdleCompactionMessage("message")}
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
@@ -8844,6 +8925,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               latestRunBackgroundWake: state.latestRunBackgroundWake,
               pendingRuntimeRequest: state.pendingRuntimeRequest,
               pendingBackgroundTasks: state.pendingBackgroundTasks,
+              snoozedUntil: state.thread.snoozedUntil ?? null,
+              snoozedAt: state.thread.snoozedAt ?? null,
             })),
           ),
         );
@@ -9208,6 +9291,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getProviderControlContext: readOnReader(getProviderControlContext),
       getLimitRecoveryCandidates: readOnReader(getLimitRecoveryCandidates),
       getLimitRecoveryWakeAt: readOnReader(getLimitRecoveryWakeAt),
+      getFollowUps: readOnReader(getFollowUps),
       getRecoveryThreadIds: readOnReader(getRecoveryThreadIds),
       getUnreadableThreadIds: readOnReader(getUnreadableThreadIds),
       getThreadSnapshot: readOnReader(getThreadSnapshot),

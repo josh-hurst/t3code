@@ -27,11 +27,12 @@ import { Tool, Toolkit } from "effect/ai";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTaskService from "../../../scheduledTasks/ScheduledTaskService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as ThreadFollowUpService from "../../../orchestration-v2/ThreadFollowUpService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const ThreadOrganizeTool = Tool.make("t3_thread_organize", {
   description:
-    "Pin, snooze, settle, archive, or mark a thread unread. Omit `threadId` for this thread. `snooze` needs `snoozedUntil`. Settling this thread applies at turn end. A failed turn or queued message leaves it active.",
+    "Pin, snooze, settle, archive, or mark a thread unread. Omit `threadId` for this thread. `snooze` needs `snoozedUntil`. Settling this thread applies at turn end. A failed turn or queued message leaves it active. `check_later`: this thread only; needs `question`, `reason`, and one of `at`, `inMinutes`, `afterPublish`. T3 sends you `question` then, with no user present.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     threadId: Schema.optional(ThreadId),
@@ -45,18 +46,35 @@ const ThreadOrganizeTool = Tool.make("t3_thread_organize", {
       "archive",
       "unarchive",
       "mark_unread",
+      "check_later",
     ]),
     snoozedUntil: Schema.optional(IsoDateTime),
+    /** With an offset. */
+    at: Schema.optional(IsoDateTime),
+    inMinutes: Schema.optional(
+      Schema.Int.check(Schema.isBetween({ minimum: 10, maximum: 43_200 })),
+    ),
+    afterPublish: Schema.optional(Schema.Boolean),
+    question: Schema.optional(Schema.String.check(Schema.isMaxLength(2_000))),
+    reason: Schema.optional(Schema.String.check(Schema.isMaxLength(80))),
   }),
   success: Schema.Union([
     OrchestrationV2DispatchCommandResult,
     Schema.Struct({ settlesWhenTurnEnds: Schema.Literal(true) }),
+    Schema.Struct({
+      /** Null while the re-check waits for the next publish. */
+      checkAt: Schema.NullOr(IsoDateTime),
+      /** Re-checks in a row that found nothing new, this one included. */
+      recheck: NonNegativeInt,
+      limit: NonNegativeInt,
+    }),
   ]),
   failure: OrchestratorMcpFailure,
   failureMode: "return" as const,
   dependencies: [
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
+    ThreadFollowUpService.ThreadFollowUpService,
     SecureRandom.SecureRandom,
   ],
 })
@@ -193,7 +211,7 @@ const ThreadTransferTool = Tool.make("t3_thread_transfer", {
 const ThreadSearchTool = Tool.make("t3_thread_search", {
   ...commandTool,
   description:
-    "Search active threads by title, branch, PR, project, then message text. Skips subagent threads. `projectId`: one project, else yours, else all outside a thread. Not exhaustive.",
+    "Search active threads by title, branch, PR, project, then topics, then message text. Skips subagent threads. `projectId`: one project, else yours, else all outside a thread. Not exhaustive.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     ...OrchestrationSearchThreadsInput.fields,
@@ -207,7 +225,7 @@ const ThreadSearchTool = Tool.make("t3_thread_search", {
         projectId: OrchestrationThreadSearchMatch.fields.projectId,
         title: Schema.String,
         link: Schema.optional(Schema.String),
-        source: Schema.Literals(["title", "user", "assistant"]),
+        source: Schema.Literals(["title", "topic", "user", "assistant"]),
         snippet: Schema.optional(OrchestrationThreadSearchMatch.fields.snippet),
         messageCreatedAt: Schema.optional(OrchestrationThreadSearchMatch.fields.messageCreatedAt),
       }),

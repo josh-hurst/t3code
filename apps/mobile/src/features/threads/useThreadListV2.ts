@@ -58,6 +58,7 @@ export function useThreadListV2(input: {
   readonly searchMatches: ReadonlyMap<string, unknown>;
   readonly settlementEnvironmentIds: ReadonlySet<EnvironmentId>;
   readonly snoozeEnvironmentIds: ReadonlySet<EnvironmentId>;
+  readonly laterRecheckLimits: ReadonlyMap<EnvironmentId, number>;
   readonly pinReorderEnvironmentIds: ReadonlySet<EnvironmentId>;
   readonly activeReorderEnvironmentIds: ReadonlySet<EnvironmentId>;
   readonly queuedThreadKeys: ReadonlySet<string>;
@@ -77,6 +78,8 @@ export function useThreadListV2(input: {
   /** For the project names on the self-filing list's slim rows. */
   readonly projects: ReadonlyArray<Pick<EnvironmentProject, "environmentId" | "id" | "title">>;
   readonly trailExpanded: boolean;
+  /** Some connected server keeps topics; History's header then links to them. */
+  readonly historyAll: boolean;
 }) {
   const { threads, workingShelfEnabled } = input;
   // Per list: the home screen and the sidebar can have different threads open.
@@ -188,6 +191,7 @@ export function useThreadListV2(input: {
       matchedThreadKeys: new Set(input.searchMatches.keys()),
       settlementEnvironmentIds: input.settlementEnvironmentIds,
       snoozeEnvironmentIds: input.snoozeEnvironmentIds,
+      laterRecheckLimits: input.laterRecheckLimits,
       queuedThreadKeys: input.queuedThreadKeys,
       settledLimit: input.settledLimit,
       now: layoutTime,
@@ -224,6 +228,7 @@ export function useThreadListV2(input: {
     input.searchMatches,
     input.settlementEnvironmentIds,
     input.snoozeEnvironmentIds,
+    input.laterRecheckLimits,
     input.queuedThreadKeys,
     input.settledLimit,
     layoutTime,
@@ -285,6 +290,7 @@ export function useThreadListV2(input: {
         queuedThreadKeys: input.queuedThreadKeys,
         moveAvailability,
         shelfPreferencesLoading: !input.shelfPreferencesLoaded,
+        historyAll: input.historyAll,
       }),
     [
       layout,
@@ -299,6 +305,7 @@ export function useThreadListV2(input: {
       input.shelfPreferencesLoaded,
       input.tide,
       input.trailExpanded,
+      input.historyAll,
     ],
   );
   return { layout, items, contentOnlyThreadKeys, olderSettledShelf };

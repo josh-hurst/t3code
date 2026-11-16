@@ -36,6 +36,8 @@ import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
+import * as ThreadFollowUpService from "../orchestration-v2/ThreadFollowUpService.ts";
+import * as OpenItemService from "../orchestration-v2/OpenItemService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
@@ -131,7 +133,13 @@ const layerTools = Layer.mergeAll(
       list: () => Effect.succeed([]),
     }),
   ),
-  Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+  Layer.provide(
+    Layer.mergeAll(
+      Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+      Layer.mock(ThreadFollowUpService.ThreadFollowUpService)({}),
+      Layer.mock(OpenItemService.OpenItemService)({}),
+    ),
+  ),
   Layer.provide(
     Layer.mock(ProjectService.ProjectService)({
       getById: (id) =>

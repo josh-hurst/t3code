@@ -26,6 +26,7 @@ import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "./ProviderTurnStartService.ts";
 import * as RuntimeRequestService from "./RuntimeRequestService.ts";
 import * as ThreadCardService from "./ThreadCardService.ts";
+import * as ThreadRegroupService from "./ThreadRegroupService.ts";
 import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationService.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -83,6 +84,7 @@ export const layerExecutor: Layer.Layer<
   | RuntimeRequestService.RuntimeRequestServiceV2
   | ThreadTitleRegenerationService.ThreadTitleRegenerationService
   | ThreadCardService.ThreadCardService
+  | ThreadRegroupService.ThreadRegroupService
   | ThreadManagementService.ThreadManagementService
   | ServerSettings.ServerSettingsService
 > = Layer.effect(
@@ -98,6 +100,7 @@ export const layerExecutor: Layer.Layer<
     const threadTitleRegeneration =
       yield* ThreadTitleRegenerationService.ThreadTitleRegenerationService;
     const threadCards = yield* ThreadCardService.ThreadCardService;
+    const threadRegroups = yield* ThreadRegroupService.ThreadRegroupService;
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const settings = yield* ServerSettings.ServerSettingsService;
     return OrchestrationEffectExecutorV2.of({
@@ -615,6 +618,12 @@ export const layerExecutor: Layer.Layer<
               );
           case "thread-card.generate":
             return threadCards.execute({ threadId: effect.threadId, runId: effect.request.runId });
+          case "thread-contents.regroup":
+            return threadRegroups.execute({
+              threadId: effect.threadId,
+              kind: effect.request.kind,
+              effectId: effect.id,
+            });
           case "delegated-tasks.stop":
             return threads
               .stopDelegatedTasks({

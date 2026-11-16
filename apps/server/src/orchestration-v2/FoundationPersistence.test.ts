@@ -2531,7 +2531,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
     }),
   );
 
-  it.effect("runs title generation beside critical work while serializing each lane", () =>
+  it.effect("runs a regroup beside critical work while serializing each lane", () =>
     Effect.gen(function* () {
       const outbox = yield* EffectOutbox.EffectOutboxV2;
       const commandId = CommandId.make("command:foundation-title-effect-lane");
@@ -2545,13 +2545,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
           id: titleEffectId,
           commandId,
           threadId,
-          request: {
-            type: "thread-title.generate",
-            kind: {
-              type: "initial",
-              messageId: MessageId.make("message:foundation-title-effect-lane"),
-            },
-          },
+          request: { type: "thread-contents.regroup", kind: "idle" },
         },
         {
           id: providerEffectId,

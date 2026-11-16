@@ -77,6 +77,7 @@ export const idleThreadProjection = (
     itemCount: _itemCount,
     visibleItemCount: _visibleItemCount,
     card: _card,
+    followUp: _followUp,
     lastVisitedAt,
     ...thread
   } = shell;

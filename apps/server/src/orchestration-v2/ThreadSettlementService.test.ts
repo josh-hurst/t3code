@@ -176,6 +176,28 @@ describe("isAutoSettlementCandidate", () => {
     );
   });
 
+  it("never settles a thread with a pending re-check or a standing check", () => {
+    const followUp = {
+      reason: "Nightly test",
+      dueAt: "2026-06-21T00:00:00.000Z",
+      armedBy: "agent" as const,
+      quietCount: 0,
+    };
+    expect(ThreadSettlementService.isAutoSettlementCandidate(shell({ followUp }), NOW_MS)).toBe(
+      false,
+    );
+    expect(
+      ThreadSettlementService.isAutoSettlementCandidate(shell({ standingCheck: true }), NOW_MS),
+    ).toBe(false);
+    // A sent re-check is inert: the thread settles like any other.
+    expect(
+      ThreadSettlementService.isAutoSettlementCandidate(
+        shell({ followUp: { ...followUp, sentAt: "2026-06-20T00:00:00.000Z" } }),
+        NOW_MS,
+      ),
+    ).toBe(true);
+  });
+
   it("never settles, or keeps snoozed, a thread whose guest is waiting on the owner", () => {
     expect(
       ThreadSettlementService.isAutoSettlementCandidate(
@@ -2064,6 +2086,21 @@ describe("isSnoozed", () => {
         NOW_MS,
       ),
     ).toBe(false);
+  });
+  it("wakes on a question the agent wrote after the snooze began, not on an older one", () => {
+    const card = (at: DateTime.Utc) => ({
+      line: "Numbers dropped",
+      topics: [],
+      open: [{ kind: "ask" as const, text: "Roll back the release?" }],
+      messageId: MessageId.make("message:card"),
+      at: DateTime.formatIso(at),
+    });
+    expect(
+      ThreadSettlementService.isSnoozed(shell({ ...snoozed, card: card(at(-DAY_MS)) }), NOW_MS),
+    ).toBe(false);
+    expect(
+      ThreadSettlementService.isSnoozed(shell({ ...snoozed, card: card(at(-3 * DAY_MS)) }), NOW_MS),
+    ).toBe(true);
   });
   it("keeps a run requested and completed after snoozing parked until the timer", () => {
     const thread = shell({

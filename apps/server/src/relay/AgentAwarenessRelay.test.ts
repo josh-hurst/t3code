@@ -709,6 +709,7 @@ describe("AgentAwarenessRelay", () => {
           settledAt: now,
           lastVisitedAt: null,
           card: null,
+          followUp: null,
         };
         yield* Ref.set(currentShell, settled);
         yield* Queue.offer(events, {
@@ -751,6 +752,49 @@ describe("AgentAwarenessRelay", () => {
       assert.deepEqual(
         publications.map((publication) => publication.state?.phase),
         ["running", "completed"],
+      );
+    }),
+  );
+
+  it.effect.each([
+    {
+      name: "a completion on a normal thread",
+      status: "completed",
+      snooze: "none",
+      phase: "completed",
+    },
+    { name: "a completion while snoozed", status: "completed", snooze: "before", phase: null },
+    {
+      name: "a completion snoozed only afterwards",
+      status: "completed",
+      snooze: "after",
+      phase: "completed",
+    },
+    { name: "a failure while snoozed", status: "failed", snooze: "before", phase: "failed" },
+  ] as const)("publishes $name as $phase", ({ status, snooze, phase }) =>
+    Effect.gen(function* () {
+      const { relay, currentShell, publications } = yield* makeTestRelay();
+      yield* relay.publishThread(THREAD_ID);
+      const completedAt = DateTime.makeUnsafe(NOW);
+      yield* Ref.set(
+        currentShell,
+        shell({
+          status,
+          latestRunCompletedAt: completedAt,
+          ...(snooze === "none"
+            ? {}
+            : {
+                snoozedUntil: DateTime.makeUnsafe("9999-12-31T00:00:00.000Z"),
+                snoozedAt: DateTime.add(completedAt, { minutes: snooze === "before" ? -5 : 5 }),
+              }),
+        }),
+      );
+      yield* relay.publishThread(THREAD_ID);
+      yield* TestClock.adjust("5 seconds");
+      yield* relay.drain;
+      assert.deepEqual(
+        publications.map((publication) => publication.state?.phase ?? null),
+        ["running", phase],
       );
     }),
   );

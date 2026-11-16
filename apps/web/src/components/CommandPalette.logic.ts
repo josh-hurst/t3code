@@ -179,7 +179,8 @@ export function resolveAddProjectEntry(
 }
 
 export interface CommandPaletteThreadContentMatch {
-  readonly source: "user" | "assistant";
+  /** "topic": one of the thread's topics, as "title: outcome". */
+  readonly source: "user" | "assistant" | "topic";
   readonly snippet: string;
   readonly query: string;
 }

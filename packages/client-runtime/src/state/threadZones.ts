@@ -1,5 +1,6 @@
 // @effect-diagnostics globalDate:off -- Trail day groups use local calendar boundaries.
 import {
+  isThreadSetAside,
   threadCardHasOpenAsk,
   type OrchestrationV2PendingRuntimeRequestSummary,
   type OrchestrationV2ThreadShell,
@@ -10,7 +11,13 @@ import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2Pe
 import * as DateTime from "effect/DateTime";
 
 import type { EnvironmentThreadShell, ThreadRunSummary, ThreadRuntimeSummary } from "./models.ts";
-import { effectiveSnoozed, snoozeWakeLabel, type ThreadSnoozeShell } from "./threadSettled.ts";
+import {
+  effectiveSnoozed,
+  laterWhenLabel,
+  threadLaterAt,
+  type ThreadLaterShell,
+  type ThreadSnoozeShell,
+} from "./threadSettled.ts";
 import { toSortableTimestamp } from "./threadSort.ts";
 
 export type ThreadStatusKind =
@@ -153,14 +160,40 @@ const NEEDS_YOU_KINDS: ReadonlySet<ThreadStatusKind> = new Set([
   "plan",
 ]);
 
-/** Whether the thread asks you to act, or with `includeCompleted`, to look. */
+// A followup is a later re-read, not something to act on when the run lands.
+const OWED_KINDS: ReadonlySet<ThreadCardOpenKind> = new Set(["ask", "verify", "commit", "ship"]);
+
+/**
+ * Whether a finished run leaves you something to do. Unknown counts as yes: no card, or a
+ * card written before this run completed (its summary is still coming or failed).
+ */
+function threadCompletionOwes(
+  thread: Pick<ThreadStatusInput, "latestRun"> & Partial<Pick<EnvironmentThreadShell, "card">>,
+): boolean {
+  const card = thread.card;
+  if (card == null) return true;
+  const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
+  if (Number.isNaN(completedAt) || Date.parse(card.at) < completedAt) return true;
+  return card.open.some((item) => OWED_KINDS.has(item.kind));
+}
+
+/**
+ * Whether the thread asks you to act, or with `includeCompleted`, to look at a finished run.
+ * `"owed"` counts a finished run only when it leaves something to do (`threadCompletionOwes`).
+ */
 export function threadNeedsYou(
   thread: ThreadStatusInput,
-  options: { readonly includeCompleted: boolean },
+  options: { readonly includeCompleted: boolean | "owed" },
 ): boolean {
   const kind = threadStatusKind(thread);
   if (kind !== null && NEEDS_YOU_KINDS.has(kind)) return true;
-  if (kind === "completed" && options.includeCompleted) return true;
+  if (
+    kind === "completed" &&
+    (options.includeCompleted === true ||
+      (options.includeCompleted === "owed" && threadCompletionOwes(thread)))
+  ) {
+    return true;
+  }
   return threadCardHasOpenAsk(thread.card);
 }
 
@@ -233,11 +266,82 @@ export function threadRowLineText(parts: {
 
 /** "Later · in 3d" for a thread still in Later, so search results keep its state. */
 export function threadLaterLabel(
-  thread: ThreadSnoozeShell,
+  thread: ThreadSnoozeShell & ThreadLaterShell,
   options: { readonly now: string },
 ): string | null {
   if (thread.snoozedUntil == null || !effectiveSnoozed(thread, options)) return null;
-  return `Later · in ${snoozeWakeLabel(thread.snoozedUntil, options)}`;
+  const when = laterWhenLabel(thread, options);
+  return when === null ? "Later" : when === "due" ? "Later · due" : `Later · in ${when}`;
+}
+
+type LaterLeadInput = Pick<EnvironmentThreadShell, "snoozedUntil"> &
+  Partial<Pick<EnvironmentThreadShell, "followUp" | "standingCheck">>;
+
+/**
+ * What a Later row leads with, and its text when the row has its own: an armed re-check
+ * ("Re-check 2 of 3" once it has re-armed itself) with its reason, a standing check, or a
+ * thread set aside. Null for a plain snooze, which reads like any other row.
+ */
+export function threadLaterLead(
+  thread: LaterLeadInput,
+  options: { readonly recheckLimit: number | null },
+): { readonly word: string; readonly text: string | null } | null {
+  const followUp = thread.followUp;
+  if (followUp != null && followUp.sentAt === undefined) {
+    const count =
+      followUp.quietCount === 0
+        ? ""
+        : options.recheckLimit === null
+          ? ` ${followUp.quietCount}`
+          : ` ${followUp.quietCount} of ${options.recheckLimit}`;
+    const reason = followUp.reason.trim();
+    return {
+      word: `Re-check${count}`,
+      text: reason !== "" ? reason : followUp.dueAt === null ? "After the next publish" : null,
+    };
+  }
+  if (thread.standingCheck === true) return { word: "Standing check", text: null };
+  if (isThreadSetAside(thread.snoozedUntil)) return { word: "Set aside", text: null };
+  return null;
+}
+
+/** A held thread's status line: "Snoozed, wakes in 3h", "Re-check 1 of 3, due", "Set aside". */
+export function threadLaterStatusLabel(
+  thread: LaterLeadInput & ThreadLaterShell,
+  options: { readonly now: string; readonly recheckLimit: number | null },
+): string {
+  const word = threadLaterLead(thread, options)?.word ?? "Snoozed";
+  const when = laterWhenLabel(thread, options);
+  if (when === null || when === "now") return word;
+  return when === "due" ? `${word}, due` : `${word}, wakes in ${when}`;
+}
+
+/** Later, soonest first; rows with no time (set aside, standing checks) last, oldest hold first. */
+export function sortLaterThreads<
+  T extends SortKeyInput & ThreadLaterShell & { readonly snoozedAt?: string | null },
+>(threads: readonly T[]): T[] {
+  const keys = new Map(
+    threads.map((thread) => {
+      const at = threadLaterAt(thread);
+      return [
+        thread,
+        {
+          at: at === null ? Number.POSITIVE_INFINITY : Date.parse(at),
+          heldAt: toSortableTimestamp(thread.snoozedAt ?? undefined) ?? 0,
+        },
+      ] as const;
+    }),
+  );
+  return [...threads].sort((left, right) => {
+    const a = keys.get(left)!;
+    const b = keys.get(right)!;
+    return (
+      (a.at === b.at ? 0 : a.at < b.at ? -1 : 1) ||
+      a.heldAt - b.heldAt ||
+      left.id.localeCompare(right.id) ||
+      left.environmentId.localeCompare(right.environmentId)
+    );
+  });
 }
 
 type WaitingSinceInput = Pick<
@@ -306,11 +410,15 @@ export function sortNeedsYouThreads<T extends SortKeyInput & WaitingSinceInput>(
   return sortByTimestamp(threads, threadWaitingSince, 1);
 }
 
-/** Latest touch first. */
-export function sortTrailThreads<T extends SortKeyInput & LastTouchInput>(
-  threads: readonly T[],
-): T[] {
-  return sortByTimestamp(threads, threadLastTouchAt, -1);
+/** Finished runs not yet opened first, then latest touch first. */
+export function sortTrailThreads<
+  T extends SortKeyInput & LastTouchInput & Pick<EnvironmentThreadShell, "latestRun">,
+>(threads: readonly T[]): T[] {
+  const sorted = sortByTimestamp(threads, threadLastTouchAt, -1);
+  return [
+    ...sorted.filter((thread) => hasUnseenCompletion(thread)),
+    ...sorted.filter((thread) => !hasUnseenCompletion(thread)),
+  ];
 }
 
 const TRAIL_VISIBLE_COUNT = 8;

@@ -1,6 +1,11 @@
 import * as WorktreeBranchSync from "./WorktreeBranchSync.ts";
 import * as GuestShareService from "../guest/GuestShareService.ts";
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
+import * as LaterFollowUpWorker from "./LaterFollowUpWorker.ts";
+import * as ContentsBackfillService from "./ContentsBackfillService.ts";
+import * as ContentsRegroupWorker from "./ContentsRegroupWorker.ts";
+import * as ThreadFollowUpService from "./ThreadFollowUpService.ts";
+import * as OpenItemService from "./OpenItemService.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -39,6 +44,8 @@ import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import * as ProviderContinuationService from "./ProviderContinuationService.ts";
 import * as ThreadCardService from "./ThreadCardService.ts";
+import * as ThreadEntryStore from "./ThreadEntryStore.ts";
+import * as ThreadRegroupService from "./ThreadRegroupService.ts";
 import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationService.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
@@ -85,6 +92,7 @@ const layerStores = Layer.mergeAll(
   layerCommandReceiptStoreProvided,
   EffectOutbox.layer,
   TurnItemPositionStore.layer,
+  ThreadEntryStore.layer,
 );
 
 export const layerEventSink = EventSink.layerFromStores.pipe(Layer.provide(layerStores));
@@ -306,6 +314,19 @@ const layerScheduledTaskProvided = ScheduledTaskService.layer.pipe(
     ),
   ),
 );
+const layerThreadFollowUpProvided = ThreadFollowUpService.layer.pipe(
+  Layer.provide(Layer.merge(ProjectionStore.layer, layerThreadManagementProvided)),
+);
+const layerOpenItemsProvided = OpenItemService.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      ThreadEntryStore.layer,
+      layerThreadManagementProvided,
+      layerThreadFollowUpProvided,
+      layerScheduledTaskProvided,
+    ),
+  ),
+);
 const layerScratchThreadPromotionProvided = ScratchThreadPromotion.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
@@ -337,6 +358,27 @@ const layerThreadCardProvided = ThreadCardService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
       layerThreadManagementProvided,
+      ThreadEntryStore.layer,
+      TextGeneration.layer.pipe(Layer.provide(ProviderInstallationGate.layer)),
+    ),
+  ),
+);
+const layerThreadRegroupProvided = ThreadRegroupService.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerThreadManagementProvided,
+      ThreadEntryStore.layer,
+      TextGeneration.layer.pipe(Layer.provide(ProviderInstallationGate.layer)),
+    ),
+  ),
+);
+// Outside the outbox on purpose: a pending text effect would hold that thread's cards.
+const layerContentsBackfillProvided = ContentsBackfillService.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerThreadManagementProvided,
+      ThreadEntryStore.layer,
+      layerThreadRegroupProvided,
       TextGeneration.layer.pipe(Layer.provide(ProviderInstallationGate.layer)),
     ),
   ),
@@ -352,6 +394,7 @@ const layerEffectExecutorProvided = EffectWorker.layerExecutor.pipe(
       layerRuntimeRequestServiceProvided,
       layerThreadTitleRegenerationProvided,
       layerThreadCardProvided,
+      layerThreadRegroupProvided,
       layerThreadManagementProvided,
     ),
   ),
@@ -399,7 +442,13 @@ export const layerProduction = Layer.mergeAll(
   WorktreeBranchSync.layer.pipe(
     Layer.provide(Layer.merge(layerThreadManagementProvided, ProjectionStore.layer)),
   ),
-  layer,
+  // Run finalization reads the hook when `layer` builds it; nothing else in this runtime builds
+  // RunFinalizationService, so the memoized instance always has it.
+  layer.pipe(
+    Layer.provide(OpenItemService.layerCleanCheckout.pipe(Layer.provide(layerOpenItemsProvided))),
+  ),
+  layerOpenItemsProvided,
+  layerContentsBackfillProvided,
   layerManagedProjectFoldersProvided,
   layerThreadLaunchProvided,
   layerScheduledTaskProvided,
@@ -417,6 +466,26 @@ export const layerProduction = Layer.mergeAll(
       ),
     ),
   ),
+  LaterFollowUpWorker.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        ProjectionStore.layer,
+        layerThreadManagementProvided,
+        layerOrchestratorProvided,
+      ),
+    ),
+  ),
+  ContentsRegroupWorker.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        ThreadEntryStore.layer,
+        ProjectionStore.layer,
+        layerThreadManagementProvided,
+        layerOrchestratorProvided,
+      ),
+    ),
+  ),
+  layerThreadFollowUpProvided,
   layerProviderContinuationWorkerProvided,
   layerAgentSessionScannerProvided,
   layerAgentSessionImporterProvided,

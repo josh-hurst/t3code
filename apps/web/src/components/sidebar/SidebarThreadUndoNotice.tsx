@@ -19,7 +19,7 @@ export function SidebarThreadUndoNotice() {
   // Short enough to fit beside the utility icons; screen readers hear the full summary.
   const summary = notice
     ? notice.count === 1
-      ? notice.action
+      ? notice.action.replace(/ of$/, "")
       : `${notice.action} ${notice.count}`
     : null;
 

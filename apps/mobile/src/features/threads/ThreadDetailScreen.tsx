@@ -11,6 +11,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomMount, useAtomValue } from "@effect/atom-react";
 import { mobilePreferencesAtom } from "../../state/preferences";
+import { serverEnvironment } from "../../state/server";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import { createThreadVisitTracker } from "@t3tools/client-runtime/state/thread-visits";
 import { useChildThreadInputs, useThreadReportedModelSelection } from "../../state/entities";
@@ -20,8 +21,9 @@ import {
   effectiveSnoozed,
   threadWokeAt,
   isThreadWokeUnseen,
-  snoozeWakeLabel,
+  snoozeWakeAtMs,
 } from "@t3tools/client-runtime/state/thread-settled";
+import { threadLaterStatusLabel } from "@t3tools/client-runtime/state/thread-zones";
 import type { WorktreeSetupCardProps } from "./worktree-setup-card";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
@@ -357,7 +359,7 @@ const wakeAwareVisitShell = Atom.family((key: string) => {
     if (shell === null) return null;
     const nowMs = Date.now();
     const wokeAt = threadWokeAt(shell, { now: new Date(nowMs).toISOString() });
-    const wakeAtMs = shell.snoozedUntil == null ? NaN : Date.parse(shell.snoozedUntil);
+    const wakeAtMs = snoozeWakeAtMs(shell.snoozedUntil) ?? NaN;
     if (wokeAt === null && wakeAtMs > nowMs) {
       const timer = setTimeout(
         () => get.refreshSelf(),
@@ -655,14 +657,16 @@ function ThreadDetailBody(
     }, []),
   );
   const configLoaded = props.serverConfig !== null;
+  const recheckLimit = useAtomValue(serverEnvironment.laterRecheckLimitAtom(props.environmentId));
   const snoozed = configLoaded && effectiveSnoozed(props.selectedThread, { now: lifecycleNow });
   const snoozedUntil = props.selectedThread.snoozedUntil;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- arms a timer that refreshes the lifecycle clock when the thread's snooze expires
   useEffect(() => {
-    if (!snoozed || snoozedUntil === null) return;
+    const wakeAtMs = snoozeWakeAtMs(snoozedUntil);
+    if (!snoozed || wakeAtMs === null) return;
     const timer = setTimeout(
       () => setLifecycleNow(new Date().toISOString()),
-      Math.min(Math.max(0, Date.parse(snoozedUntil) - Date.now()) + 50, 2_147_483_647),
+      Math.min(Math.max(0, wakeAtMs - Date.now()) + 50, 2_147_483_647),
     );
     return () => clearTimeout(timer);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Re-arm if timer clamping fires before the wake time.
@@ -856,12 +860,11 @@ function ThreadDetailBody(
     }
     if (contentPresentationKind === "ready" && (lifecycleSnoozed || settled || woke)) {
       const state = lifecycleSnoozed ? "snoozed" : settled ? "settled" : "woke";
-      const label =
-        lifecycleSnoozed && snoozedUntil !== null
-          ? `Snoozed, wakes in ${snoozeWakeLabel(snoozedUntil, { now: lifecycleNow })}`
-          : settled
-            ? "Settled"
-            : "Woke from snooze";
+      const label = lifecycleSnoozed
+        ? threadLaterStatusLabel(props.selectedThread, { now: lifecycleNow, recheckLimit })
+        : settled
+          ? "Settled"
+          : "Woke from snooze";
       const actionLabel = lifecycleSnoozed ? "Wake now" : settled ? "Un-settle" : "Dismiss";
       return {
         kind: "lifecycle",

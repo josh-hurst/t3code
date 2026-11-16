@@ -1,6 +1,6 @@
 // @effect-diagnostics globalDate:off -- Tests exercise local calendar snooze boundaries.
 import * as DateTime from "effect/DateTime";
-import { RuntimeRequestId } from "@t3tools/contracts";
+import { MessageId, RuntimeRequestId, THREAD_SET_ASIDE_UNTIL } from "@t3tools/contracts";
 import { ThreadId } from "@t3tools/contracts";
 import { TurnId } from "@t3tools/contracts";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
@@ -10,6 +10,7 @@ import {
   canSnooze,
   effectiveSnoozed,
   hasQueuedTurnStart,
+  laterWhenLabel,
   pickSnoozePreset,
   resolveSnoozePresets,
   threadRaisedHandWhileSnoozed,
@@ -227,6 +228,59 @@ describe("threadRaisedHandWhileSnoozed", () => {
         makeShell({ snoozedUntil: FUTURE_WAKE, sessionStatus: "error" }),
       ),
     ).toBe(true);
+  });
+
+  it("is true for a question the agent wrote after the snooze, not for an older one", () => {
+    const card = (at: string) => ({
+      line: "Numbers dropped",
+      topics: [],
+      open: [{ kind: "ask" as const, text: "Roll back the release?" }],
+      messageId: MessageId.make("message:card"),
+      at,
+    });
+    const snoozed = makeShell({ snoozedUntil: FUTURE_WAKE, snoozedAt: SNOOZED_AT });
+    expect(
+      threadRaisedHandWhileSnoozed({ ...snoozed, card: card("2026-04-10T11:00:00.000Z") }),
+    ).toBe(true);
+    expect(
+      threadRaisedHandWhileSnoozed({ ...snoozed, card: card("2026-04-10T08:00:00.000Z") }),
+    ).toBe(false);
+  });
+});
+
+describe("laterWhenLabel", () => {
+  const followUp = (dueAt: string, sentAt?: string) => ({
+    dueAt,
+    ...(sentAt === undefined ? {} : { sentAt }),
+  });
+
+  it("shows the sooner of a re-check and a snooze, and no time for a thread set aside", () => {
+    expect(laterWhenLabel({ snoozedUntil: THREAD_SET_ASIDE_UNTIL }, { now: NOW })).toBeNull();
+    expect(
+      laterWhenLabel(
+        { snoozedUntil: FUTURE_WAKE, followUp: followUp("2026-04-10T15:00:00.000Z") },
+        { now: NOW },
+      ),
+    ).toBe("3h");
+    expect(
+      laterWhenLabel(
+        { snoozedUntil: "2026-04-10T13:00:00.000Z", followUp: followUp(FUTURE_WAKE) },
+        { now: NOW },
+      ),
+    ).toBe("1h");
+    // A re-check past its time is due until the sweep sends it; a sent one no longer counts.
+    expect(
+      laterWhenLabel(
+        { snoozedUntil: THREAD_SET_ASIDE_UNTIL, followUp: followUp(PAST_WAKE) },
+        { now: NOW },
+      ),
+    ).toBe("due");
+    expect(
+      laterWhenLabel(
+        { snoozedUntil: THREAD_SET_ASIDE_UNTIL, followUp: followUp(FUTURE_WAKE, SNOOZED_AT) },
+        { now: NOW },
+      ),
+    ).toBeNull();
   });
 });
 
