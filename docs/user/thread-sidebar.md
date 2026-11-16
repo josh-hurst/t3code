@@ -63,7 +63,7 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 Pin a thread from its menu to keep it above your active work.
 
 On web and desktop, the rest of the sidebar files itself. Below your pins come
-**Needs you**, **Working**, **Later**, the **Trail**, and **History**, and each section
+**Needs you**, **Working**, the **Trail**, **Later**, and **History**, and each section
 keeps its own order, so there is nothing to arrange by hand. Dragging still pins, unpins,
 settles, un-settles, and wakes a thread; a thread you drop below the pins goes to Needs
 you or the Trail, wherever it belongs; an older thread can land under the Trail's
@@ -164,8 +164,9 @@ own choice.
 **Needs you** gathers threads waiting on an approval, an answer, or a
 guest, with a plan ready, with a question you have not answered, or with a failed run you
 haven't opened. A finished run you haven't opened lands here only when it leaves something to
-do (a question, a check, a commit or a publish) or before its summary has arrived; one that
-owes nothing goes to the top of the Trail, marked **Done**, until you open it. The thread that
+do (a question, a check, a commit or a publish), and its row leads with that instead of
+**Done**. One that owes nothing, or has no summary, goes to the top of the Trail, marked
+**Done**, until you open it; if its summary arrives owing something, it moves to Needs you. The thread that
 has waited longest comes first. Pinned threads stay pinned and working threads stay in Working.
 
 A thread leaves Needs you when you open it, answer it, or settle it. The thread you have

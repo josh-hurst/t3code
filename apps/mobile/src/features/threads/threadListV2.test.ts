@@ -1897,6 +1897,17 @@ describe("self-filing list", () => {
         assistantMessageId: null,
       },
     });
+  // A finish only needs you when its own card owes something.
+  const owing = (thread: EnvironmentThreadShell): EnvironmentThreadShell => ({
+    ...thread,
+    card: {
+      line: "Fixed it",
+      topics: [],
+      open: [{ kind: "commit", text: "Commit the fix" }],
+      messageId: MessageId.make(`message:${thread.id}`),
+      at: thread.latestRun?.completedAt ?? NOW,
+    },
+  });
   const build = (
     threads: ReadonlyArray<EnvironmentThreadShell>,
     input: Partial<Parameters<typeof buildThreadListV2Items>[0]> = {},
@@ -1939,7 +1950,7 @@ describe("self-filing list", () => {
             : `[${item.type}]`,
     );
 
-  it("files Pinned, Needs you, Working, Later, the Trail, then History", () => {
+  it("files Pinned, Needs you, Working, the Trail, Later, then History", () => {
     const card = (line: string, ask?: string) => ({
       line,
       topics: [],
@@ -1970,7 +1981,7 @@ describe("self-filing list", () => {
           updatedAt: NOW,
         },
       }),
-      finishedUnseen("waited-longest", 8),
+      owing(finishedUnseen("waited-longest", 8)),
       makeThread({
         id: ThreadId.make("snoozed"),
         title: "snoozed",
@@ -2001,11 +2012,11 @@ describe("self-filing list", () => {
       "waited-less",
       "[v2-working-shelf]",
       "working",
-      "[Later]",
-      "snoozed",
       "[Trail]",
       "trail-newer",
       "trail-older",
+      "[Later]",
+      "snoozed",
       "[History]",
       "settled",
     ]);
@@ -2020,7 +2031,7 @@ describe("self-filing list", () => {
     expect(layout.items.map((item) => [item.thread.id, item.cardLine])).toEqual(
       expect.arrayContaining([
         ["waited-less", "Which branch?"],
-        ["waited-longest", null],
+        ["waited-longest", "Fixed it"],
       ]),
     );
 
@@ -2183,7 +2194,7 @@ describe("self-filing list", () => {
     });
     const ids = (layout: ThreadListV2Layout) => layout.items.map((item) => item.thread.id);
 
-    const finished = finishedUnseen("finished", 9);
+    const finished = owing(finishedUnseen("finished", 9));
     const other = touched("other", localIso(10));
     expect(layoutWith([finished, other], "finished").needsYouCount).toBe(1);
     expect(layoutWith([visit(finished), other], "finished").needsYouCount).toBe(1);

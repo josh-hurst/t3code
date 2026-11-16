@@ -114,7 +114,7 @@ describe("threadNeedsYou", () => {
     [
       "unseen completion with an open ask",
       { latestRun: run("completed", T2), card: card("ask") },
-      "completed",
+      "question",
       true,
       true,
     ],
@@ -135,8 +135,8 @@ describe("threadNeedsYou", () => {
   // The self-filing list: a finished run needs you only when it leaves something to do.
   const cardAt = (at: string, ...kinds: ThreadCardOpenKind[]) => ({ ...card(...kinds), at });
   it.each<[string, Partial<EnvironmentThreadShell>, boolean]>([
-    ["no card yet", { latestRun: run("completed", T2) }, true],
-    ["only the previous run's card", { latestRun: run("completed", T2), card: cardAt(T0) }, true],
+    ["no card yet", { latestRun: run("completed", T2) }, false],
+    ["only the previous run's card", { latestRun: run("completed", T2), card: cardAt(T0) }, false],
     ["this run's card owes nothing", { latestRun: run("completed", T2), card: cardAt(T3) }, false],
     [
       "this run's card has only a followup",
@@ -151,6 +151,11 @@ describe("threadNeedsYou", () => {
       ],
     ),
     ["seen, owing nothing", { latestRun: run("completed", T0), card: cardAt(T3) }, false],
+    [
+      "the previous run's card owes a commit",
+      { latestRun: run("completed", T2), card: cardAt(T0, "commit") },
+      false,
+    ],
     ["unseen failure", { latestRun: run("failed", T2), card: cardAt(T3) }, true],
   ])("owed: %s", (_name, overrides, needsYou) => {
     const thread = { ...shell("t"), ...seen, ...overrides };

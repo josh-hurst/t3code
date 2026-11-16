@@ -125,9 +125,9 @@ export function threadStatusKind(thread: ThreadStatusInput): ThreadStatusKind | 
   ) {
     return "plan";
   }
-  if (hasUnseenCompletion(thread)) return "completed";
-  // Explains a seen thread that Needs you still holds for its open question.
+  // An open question outranks "Done": it is what the thread needs, read or not.
   if (threadCardHasOpenAsk(thread.card)) return "question";
+  if (hasUnseenCompletion(thread)) return "completed";
   return null;
 }
 
@@ -164,16 +164,16 @@ const NEEDS_YOU_KINDS: ReadonlySet<ThreadStatusKind> = new Set([
 const OWED_KINDS: ReadonlySet<ThreadCardOpenKind> = new Set(["ask", "verify", "commit", "ship"]);
 
 /**
- * Whether a finished run leaves you something to do. Unknown counts as yes: no card, or a
- * card written before this run completed (its summary is still coming or failed).
+ * Whether a finished run leaves you something to do: its own card owes an item. A run with no
+ * card of its own (summaries off, failed, still coming, or it finished before cards) owes nothing.
  */
 function threadCompletionOwes(
   thread: Pick<ThreadStatusInput, "latestRun"> & Partial<Pick<EnvironmentThreadShell, "card">>,
 ): boolean {
   const card = thread.card;
-  if (card == null) return true;
+  if (card == null) return false;
   const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
-  if (Number.isNaN(completedAt) || Date.parse(card.at) < completedAt) return true;
+  if (Number.isNaN(completedAt) || Date.parse(card.at) < completedAt) return false;
   return card.open.some((item) => OWED_KINDS.has(item.kind));
 }
 

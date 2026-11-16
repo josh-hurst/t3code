@@ -181,8 +181,8 @@ export function tideRenderedOrder<T>(sections: {
     ...sections.pinned,
     ...sections.needsYou,
     ...sections.working,
-    ...sections.later,
     ...sections.trail,
+    ...sections.later,
     ...sections.history,
   ];
 }
@@ -311,6 +311,11 @@ export function resolveTideRowLead(
   const later = options.later === undefined ? null : threadLaterLead(thread, options.later);
   if (later !== null) {
     return { lead: { kind: "owed", word: later.word }, text: later.text ?? line(false), running };
+  }
+  // A finished run that still owes leads with what it owes, not "Done".
+  if (kind === "completed" && options.showsStatus) {
+    const owed = threadCardOwedLabel(thread.card);
+    if (owed !== null) return { lead: { kind: "owed", word: owed }, text: line(false), running };
   }
   if (kind !== null && options.showsStatus) {
     const limited = kind === "failed" && thread.runtime?.lastErrorClass === "usage_limit";

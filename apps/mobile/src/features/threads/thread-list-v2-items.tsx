@@ -935,10 +935,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     (status === "working" && workingLabel !== undefined && thread.goal?.status === "active"
       ? { ...workingLabel, label: "Goal" }
       : workingLabel) ??
-    (isUnread
-      ? DONE_STATUS_LABEL
-      : status === "ready" && threadCardHasOpenAsk(thread.card)
-        ? QUESTION_STATUS_LABEL
+    (status === "ready" && threadCardHasOpenAsk(thread.card)
+      ? QUESTION_STATUS_LABEL
+      : isUnread
+        ? DONE_STATUS_LABEL
         : undefined);
   const recede = shouldRecedeThreadRow({ status, selected });
   const isRegeneratingTitle = thread.titleRegeneration != null;

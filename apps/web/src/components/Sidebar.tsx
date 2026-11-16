@@ -474,7 +474,7 @@ function useSidebarThreads(input: {
   readonly folderGroups: readonly SidebarProjectSnapshot[] | null;
   // Keeps folders with no active threads, so a project the user filtered to or pinned can start one.
   readonly keepEmptyFolders: (group: SidebarProjectSnapshot) => boolean;
-  // The self-filing layout: Needs you, Working, Later, Trail, History.
+  // The self-filing layout: Needs you, Working, Trail, Later, History.
   readonly tide: boolean;
   readonly projectOf: TideProjectOf;
 }) {
@@ -2319,10 +2319,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       items.push({ kind: "marker", marker: "working-header" });
       items.push(...rowsOf(visibleWorkingThreads, "working"));
     }
-    if (snoozedThreads.length > 0) {
+    const pushLater = () => {
+      if (snoozedThreads.length === 0) return;
       items.push({ kind: "marker", marker: "snoozed-header" });
       items.push(...rowsOf(visibleSnoozedThreads, "snoozed"));
-    }
+    };
+    // The new layout keeps Later at the bottom with History: put away until it wakes.
+    if (!tide) pushLater();
     if (tide) {
       // The placeholder sits under the Trail's header so a drop from below can reach an empty Trail.
       items.push({ kind: "marker", marker: "trail-header" });
@@ -2331,6 +2334,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       if (trailCounts !== null && trailCounts.moreToday + trailCounts.earlier > 0) {
         items.push({ kind: "marker", marker: "trail-more" });
       }
+      pushLater();
     }
     items.push({ kind: "marker", marker: "settled-header" });
     const settledRows = rowsOf(renderedSettledThreads, "settled");
@@ -4315,7 +4319,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="snoozed-shelf-header"
                                 marker="snoozed-header"
-                                className={cn(!tide && workingThreads.length === 0 && "mt-auto")}
+                                className={cn((tide || workingThreads.length === 0) && "mt-auto")}
                                 label={tide ? "Later" : "Snoozed"}
                                 count={snoozedThreads.length}
                                 toggle={{
@@ -4364,7 +4368,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 key="settled-shelf-header"
                                 marker="settled-header"
                                 className={cn(
-                                  (tide || workingThreads.length + snoozedThreads.length === 0) &&
+                                  (tide
+                                    ? snoozedThreads.length === 0
+                                    : workingThreads.length + snoozedThreads.length === 0) &&
                                     "mt-auto",
                                 )}
                                 label={tide ? "History" : "Settled"}

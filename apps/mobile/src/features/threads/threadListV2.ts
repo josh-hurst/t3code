@@ -687,7 +687,9 @@ export function buildThreadListV2ListItems(input: {
 }): ThreadListV2ListItem[] {
   const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   const trailStart = input.tide?.trailHeaderIndex ?? null;
-  const trailStop = input.settledShelfHeaderIndex ?? input.items.length;
+  // The self-filing list draws Later after the Trail, so the Trail stops where Later starts.
+  const trailStop =
+    input.snoozedShelfHeaderIndex ?? input.settledShelfHeaderIndex ?? input.items.length;
   const threadItems = input.items.map((item, index): ThreadListV2ListItem => {
     const snoozeWakeLabelText =
       item.snoozed && input.snoozeLabelNow !== undefined
@@ -738,9 +740,12 @@ export function buildThreadListV2ListItems(input: {
   const settledShelfHeaderIndex = input.settledShelfHeaderIndex ?? null;
   const tide = input.tide ?? null;
   const trailHeaderIndex = tide?.trailHeaderIndex ?? null;
-  const trailEnd = settledShelfHeaderIndex ?? threadItems.length;
-  const snoozedEnd = trailHeaderIndex ?? trailEnd;
-  const workingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
+  const listEnd = settledShelfHeaderIndex ?? threadItems.length;
+  const trailEnd = snoozedShelfHeaderIndex ?? listEnd;
+  const snoozedEnd = tide === null ? (trailHeaderIndex ?? listEnd) : listEnd;
+  const workingEnd =
+    (tide === null ? snoozedShelfHeaderIndex : (trailHeaderIndex ?? snoozedShelfHeaderIndex)) ??
+    snoozedEnd;
   const activeEnd = workingShelfHeaderIndex ?? workingEnd;
   const shelfDisabled = input.shelfPreferencesLoading === true;
   const result: ThreadListV2ListItem[] = [...pendingItems];
@@ -787,17 +792,20 @@ export function buildThreadListV2ListItems(input: {
     });
     result.push(...threadItems.slice(workingShelfHeaderIndex, workingEnd));
   }
-  if (snoozedShelfHeaderIndex !== null && snoozedCount > 0) {
-    result.push({
-      type: "v2-snoozed-shelf",
-      key: "v2-snoozed-shelf",
-      label: tide === null ? "Snoozed" : "Later",
-      count: snoozedCount,
-      expanded: input.snoozedShelfExpanded === true,
-      disabled: shelfDisabled,
-    });
-    result.push(...threadItems.slice(snoozedShelfHeaderIndex, snoozedEnd));
-  }
+  const pushLater = () => {
+    if (snoozedShelfHeaderIndex !== null && snoozedCount > 0) {
+      result.push({
+        type: "v2-snoozed-shelf",
+        key: "v2-snoozed-shelf",
+        label: tide === null ? "Snoozed" : "Later",
+        count: snoozedCount,
+        expanded: input.snoozedShelfExpanded === true,
+        disabled: shelfDisabled,
+      });
+      result.push(...threadItems.slice(snoozedShelfHeaderIndex, snoozedEnd));
+    }
+  };
+  if (tide === null) pushLater();
   if (tide !== null && trailHeaderIndex !== null && tide.trailCount > 0) {
     result.push({
       type: "v2-section-header",
@@ -818,6 +826,7 @@ export function buildThreadListV2ListItems(input: {
       });
     }
   }
+  if (tide !== null) pushLater();
   if (settledShelfHeaderIndex !== null && settledCount > 0) {
     result.push({
       type: "v2-settled-shelf",
@@ -936,7 +945,8 @@ function slimRowLine(
   return lead === null
     ? threadRowLineText({
         // An unread finished run that owes nothing sits in the Trail, marked until opened.
-        owed: threadHasUnseenCompletion(thread) ? "Done" : threadCardOwedLabel(thread.card),
+        owed:
+          threadCardOwedLabel(thread.card) ?? (threadHasUnseenCompletion(thread) ? "Done" : null),
         line,
       })
     : threadRowLineText({ owed: lead.word, line: lead.text ?? line });
@@ -994,7 +1004,7 @@ export function buildThreadListV2Items(input: {
   readonly isListedSettled?: (thread: EnvironmentThreadShell) => boolean;
   /** Settled threads in scope that are not local (older settled threads not loaded). */
   readonly unloadedSettledCount?: number;
-  /** The self-filing list: Needs you, Working, Later, then the Trail. Ignores project folders. */
+  /** The self-filing list: Needs you, Working, the Trail, then Later. Ignores project folders. */
   readonly tide?: ThreadListV2TideInput;
   /** Names a slim row's project in the self-filing list. */
   readonly projectTitleOf?: (thread: EnvironmentThreadShell) => string | null;
@@ -1273,19 +1283,24 @@ export function buildThreadListV2Items(input: {
       isLast: false,
     });
   }
-  const snoozedShelfHeaderIndex = orderedSnoozed.length > 0 ? items.length : null;
-  for (const thread of visibleSnoozed) {
-    items.push({
-      thread,
-      variant: "slim",
-      snoozed: true,
-      pinned: false,
-      wokeAt: null,
-      cardLine: tideZones === null ? null : slimRowLine(thread, laterOf(thread)),
-      projectLine: slimProjectOf(thread),
-      isLast: false,
-    });
-  }
+  let snoozedShelfHeaderIndex: number | null = null;
+  const pushLater = () => {
+    snoozedShelfHeaderIndex = orderedSnoozed.length > 0 ? items.length : null;
+    for (const thread of visibleSnoozed) {
+      items.push({
+        thread,
+        variant: "slim",
+        snoozed: true,
+        pinned: false,
+        wokeAt: null,
+        cardLine: tideZones === null ? null : slimRowLine(thread, laterOf(thread)),
+        projectLine: slimProjectOf(thread),
+        isLast: false,
+      });
+    }
+  };
+  // The self-filing list keeps Later at the bottom with History: put away until it wakes.
+  if (tideZones === null) pushLater();
   const trailHeaderIndex = tideZones !== null && tideZones.trail.length > 0 ? items.length : null;
   for (const thread of tideZones?.visibleTrail ?? []) {
     items.push({
@@ -1299,6 +1314,7 @@ export function buildThreadListV2Items(input: {
       isLast: false,
     });
   }
+  if (tideZones !== null) pushLater();
   const settledShelfHeaderIndex = settledTotal > 0 ? items.length : null;
   for (const thread of visibleSettled) {
     items.push({
