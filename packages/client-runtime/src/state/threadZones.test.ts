@@ -22,6 +22,7 @@ import {
   threadNeedsYou,
   threadCardOwedLabel,
   threadCardRowLine,
+  threadAwaitingAsk,
   threadLaterLabel,
   threadLaterLead,
   threadLaterStatusLabel,
@@ -178,6 +179,26 @@ describe("threadCardRowLine", () => {
     expect(threadCardRowLine(null, { needsYou: true, request })).toBe("Run: rm -rf build");
     expect(threadCardRowLine(card("ask"), { needsYou: true, request: {} })).toBe("ask");
     expect(threadCardRowLine(card("ask"), { needsYou: false, request })).toBe("Line");
+  });
+});
+
+describe("threadAwaitingAsk", () => {
+  const latest = (role: "user" | "assistant", id = "message") => ({
+    ...shell("t").source,
+    latestVisibleMessage: {
+      id: MessageId.make(id),
+      role,
+      text: "",
+      updatedAt: DateTime.makeUnsafe(T0),
+    },
+  });
+  it.each([
+    ["the last reply's card asks", latest("assistant"), card("verify", "ask"), "ask"],
+    ["the card asks nothing", latest("assistant"), card("verify"), null],
+    ["you answered", latest("user", "answer"), card("ask"), null],
+    ["a newer reply has no card yet", latest("assistant", "newer"), card("ask"), null],
+  ] as const)("%s", (_name, source, threadCard, expected) => {
+    expect(threadAwaitingAsk({ card: threadCard, source })).toBe(expected);
   });
 });
 

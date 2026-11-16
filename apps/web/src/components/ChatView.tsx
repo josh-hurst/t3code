@@ -51,7 +51,8 @@ import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { freshSessionBannerItem } from "./chat/ComposerFreshSession";
-import { awaitingQuestionBannerItem, useAwaitingQuestion } from "./chat/AwaitingQuestionBanner";
+import { awaitingQuestionBannerItem } from "./chat/AwaitingQuestionBanner";
+import { threadAwaitingAsk } from "@t3tools/client-runtime/state/thread-zones";
 import { armFreshSession, disarmFreshSession, useFreshSessionArmed } from "./chat/freshSessionArms";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
 import { useWorktreeSetup } from "./chat/useWorktreeSetup";
@@ -1505,11 +1506,10 @@ export default function ChatView(props: ChatViewProps) {
   const isWorking =
     phase === "running" || isSendBusy || isCompacting || runlessWorkStartedAt !== null;
   // A pending approval or question already has its own panel in the composer.
-  const awaitingQuestion = useAwaitingQuestion(
-    environmentId,
-    activeThreadShell ?? null,
-    !isWorking && !activePendingApproval && !activePendingUserInput,
-  );
+  const awaitingQuestion =
+    activeThreadShell && !isWorking && !activePendingApproval && !activePendingUserInput
+      ? threadAwaitingAsk(activeThreadShell)
+      : null;
   const activeContextWindow = deriveLatestContextWindowSnapshot(
     serverVisibleTurnItems ?? [],
     activeThreadLiveTokenUsage,

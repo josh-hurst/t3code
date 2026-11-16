@@ -217,6 +217,18 @@ export function threadCardRowLine(
   );
 }
 
+/**
+ * The question the thread's last reply leaves you, in its card's words. Only while the card is
+ * about that reply: once you answer, or a newer reply has no card yet, there is nothing to show.
+ */
+export function threadAwaitingAsk(
+  thread: Pick<EnvironmentThreadShell, "card" | "source">,
+): string | null {
+  const message = thread.source.latestVisibleMessage;
+  if (message?.role !== "assistant" || thread.card?.messageId !== message.id) return null;
+  return thread.card.open.find((item) => item.kind === "ask")?.text ?? null;
+}
+
 const OWED_LABELS: Record<Exclude<ThreadCardOpenKind, "ask">, string> = {
   verify: "Check",
   commit: "Commit",
