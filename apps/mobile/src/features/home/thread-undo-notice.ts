@@ -3,7 +3,9 @@ import { useSyncExternalStore } from "react";
 
 type UndoNotice = {
   readonly action: "Settled" | "Snoozed" | "Unpinned";
-  readonly claim: ReturnType<typeof ThreadUndo.begin>;
+  /** How many threads one Undo restores; unset means one. */
+  readonly count?: number;
+  readonly claim: Pick<ReturnType<typeof ThreadUndo.begin>, "isCurrent" | "finish">;
   readonly undo: () => Promise<void>;
 };
 

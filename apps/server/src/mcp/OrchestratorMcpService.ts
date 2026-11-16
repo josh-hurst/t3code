@@ -881,6 +881,7 @@ function listItemFromShell(
     projectId: shell.projectId,
     title: shell.title,
     link: threadLinkFor(scope, shell.id, shell.title),
+    ...(shell.card?.line ? { summary: shell.card.line } : {}),
     createdBy: shell.createdBy,
     creationSource: shell.creationSource,
     status: listedThreadStatus(shell),

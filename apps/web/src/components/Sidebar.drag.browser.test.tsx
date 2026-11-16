@@ -38,6 +38,8 @@ it("keeps the title when dragging a search result from a collapsed folder", asyn
   using _environment = installFakeEnvironment([first, second]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    // Project folders belong to the classic sidebar.
+    sidebarClassicEnabled: true,
     boringSidebarEnabled: true,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });

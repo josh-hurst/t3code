@@ -49,8 +49,8 @@ export class ThreadTitleRegenerationService extends Context.Service<
 >()("t3/orchestration-v2/ThreadTitleRegenerationService") {}
 
 type Outcome =
-  | { readonly status: "renamed"; readonly title: string }
-  | { readonly status: "unchanged" }
+  | { readonly status: "renamed"; readonly title: string; readonly needsRefinement?: boolean }
+  | { readonly status: "unchanged"; readonly needsRefinement?: boolean }
   | { readonly status: "failed"; readonly message: string };
 
 const MAX_FAILURE_MESSAGE_LENGTH = 300;
@@ -83,6 +83,7 @@ const make = Effect.gen(function* () {
     readonly requestId: CommandId;
     readonly kind: { readonly type: "initial" | "regenerate" };
     readonly outcome: Outcome;
+    readonly needsRefinement?: boolean;
   }) =>
     threads
       .dispatch({
@@ -99,6 +100,7 @@ const make = Effect.gen(function* () {
               },
             }
           : {}),
+        ...(input.needsRefinement === true ? { needsRefinement: true } : {}),
       })
       .pipe(Effect.asVoid);
 
@@ -215,10 +217,12 @@ const make = Effect.gen(function* () {
         projectId: projection.thread.projectId,
       });
       const generatedTitle = result.title.trim();
+      // Only a first title can be a guess; a later one had the conversation to read.
+      const needsRefinement = input.kind.type === "initial" && result.needsRefinement === true;
       return generatedTitle === "New thread" ||
         (input.kind.type === "regenerate" && generatedTitle === projection.thread.title.trim())
-        ? { status: "unchanged" as const }
-        : { status: "renamed" as const, title: result.title };
+        ? { status: "unchanged" as const, needsRefinement }
+        : { status: "renamed" as const, title: result.title, needsRefinement };
     }).pipe(
       Effect.retry({
         times: input.kind.type === "initial" ? 2 : 0,
@@ -238,7 +242,11 @@ const make = Effect.gen(function* () {
     if (outcome.status === "stale") {
       return;
     }
-    yield* complete({ ...input, outcome });
+    yield* complete({
+      ...input,
+      outcome,
+      needsRefinement: outcome.status !== "failed" && outcome.needsRefinement === true,
+    });
   });
 
   return ThreadTitleRegenerationService.of({ execute });

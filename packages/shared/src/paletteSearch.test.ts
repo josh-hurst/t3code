@@ -333,6 +333,28 @@ describe("scoreThreadSearch beyond Latin text and titles", () => {
       ranges: [{ start: 0, end: 7 }],
     });
     expect(scoreThreadSearch("trim", subject, NOW)?.explain?.()).toBeUndefined();
+    // What the thread did, from its card, explains a match too, below a title that names it.
+    const carded = thread("Weekly notes", {
+      cardLine: "Fixed flaky login test",
+      topics: ["session cookie", "auth"],
+    });
+    expect(scoreThreadSearch("flaky login", carded, NOW)?.explain?.()).toEqual({
+      label: "Summary",
+      text: "Fixed flaky login test",
+      ranges: [
+        { start: 6, end: 11 },
+        { start: 12, end: 17 },
+      ],
+    });
+    expect(scoreThreadSearch("cookie", carded, NOW)?.explain?.()).toEqual({
+      label: "Topic",
+      text: "session cookie, auth",
+      ranges: [{ start: 8, end: 14 }],
+    });
+    expect(rankTitles("cookie", [carded, thread("Cookie banner")])).toEqual([
+      "Cookie banner",
+      "Weekly notes",
+    ]);
     // Nor is it in the flat t3-<hex> form used when a `t3` branch blocks nested refs.
     const flat = thread("Add search", { branch: "t3-abcd1234" });
     expect(scoreThreadSearch("t3", flat, NOW)).toBeNull();

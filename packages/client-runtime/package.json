@@ -407,6 +407,10 @@
       "types": "./src/state/threadVisits.ts",
       "default": "./src/state/threadVisits.ts"
     },
+    "./state/thread-zones": {
+      "types": "./src/state/threadZones.ts",
+      "default": "./src/state/threadZones.ts"
+    },
     "./state/turn-item-presentation": {
       "types": "./src/state/turnItemPresentation.ts",
       "default": "./src/state/turnItemPresentation.ts"

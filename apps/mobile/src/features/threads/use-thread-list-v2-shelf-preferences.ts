@@ -4,18 +4,28 @@ import { useMemo } from "react";
 
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 
+/** The shelf flags as the list uses them: the self-filing list forces Working on and folders off. */
 export function useThreadListV2ShelfPreferences() {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const loaded = AsyncResult.isSuccess(preferencesResult);
-  const snoozedShelfExpanded =
-    loaded && preferencesResult.value.threadListSnoozedShelfExpanded === true;
+  // Unset means the self-filing list, so it is also what shows before preferences load.
+  const tide = !(loaded && preferencesResult.value.classicThreadList === true);
+  // Each layout keeps its own Later/Snoozed state, so switching back restores the classic shelf.
+  const snoozedShelfExpanded = tide
+    ? !loaded || preferencesResult.value.threadListLaterExpanded !== false
+    : loaded && preferencesResult.value.threadListSnoozedShelfExpanded === true;
   const settledShelfExpanded =
     loaded && preferencesResult.value.threadListSettledShelfExpanded === true;
-  const workingShelfEnabled = loaded && preferencesResult.value.workingShelfEnabled !== false;
-  const workingShelfExpanded =
-    loaded && preferencesResult.value.threadListWorkingShelfExpanded === true;
-  const projectFoldersEnabled = loaded && preferencesResult.value.projectFoldersEnabled === true;
+  const workingShelfEnabled =
+    tide || (loaded && preferencesResult.value.workingShelfEnabled !== false);
+  // The self-filing list shows Working open until it is collapsed, as the web sidebar does.
+  const workingShelfExpanded = tide
+    ? !loaded || preferencesResult.value.threadListWorkingShelfExpanded !== false
+    : loaded && preferencesResult.value.threadListWorkingShelfExpanded === true;
+  const trailExpanded = loaded && preferencesResult.value.threadListTrailExpanded === true;
+  const projectFoldersEnabled =
+    !tide && loaded && preferencesResult.value.projectFoldersEnabled === true;
   const collapsedProjectGroups = loaded
     ? preferencesResult.value.collapsedProjectGroups
     : undefined;
@@ -28,9 +38,10 @@ export function useThreadListV2ShelfPreferences() {
   const toggleSnoozedShelf = () => {
     if (!loaded) return;
     savePreferences({
-      transform: (current) => ({
-        threadListSnoozedShelfExpanded: current.threadListSnoozedShelfExpanded !== true,
-      }),
+      transform: (current) =>
+        current.classicThreadList === true
+          ? { threadListSnoozedShelfExpanded: current.threadListSnoozedShelfExpanded !== true }
+          : { threadListLaterExpanded: current.threadListLaterExpanded === false },
     });
   };
   const toggleSettledShelf = () => {
@@ -45,7 +56,18 @@ export function useThreadListV2ShelfPreferences() {
     if (!loaded) return;
     savePreferences({
       transform: (current) => ({
-        threadListWorkingShelfExpanded: current.threadListWorkingShelfExpanded !== true,
+        threadListWorkingShelfExpanded:
+          current.classicThreadList === true
+            ? current.threadListWorkingShelfExpanded !== true
+            : current.threadListWorkingShelfExpanded === false,
+      }),
+    });
+  };
+  const toggleTrail = () => {
+    if (!loaded) return;
+    savePreferences({
+      transform: (current) => ({
+        threadListTrailExpanded: current.threadListTrailExpanded !== true,
       }),
     });
   };
@@ -66,15 +88,18 @@ export function useThreadListV2ShelfPreferences() {
 
   return {
     loaded,
+    tide,
     collapsedFolderKeys,
     projectFoldersEnabled,
     settledShelfExpanded,
     snoozedShelfExpanded,
+    trailExpanded,
     workingShelfEnabled,
     workingShelfExpanded,
     toggleSettledShelf,
     toggleSnoozedShelf,
     toggleFolder,
+    toggleTrail,
     toggleWorkingShelf,
   } as const;
 }

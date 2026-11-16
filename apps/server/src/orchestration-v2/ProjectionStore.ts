@@ -1,5 +1,12 @@
 import type { ProjectThreadAwarenessV2Input } from "@t3tools/shared/agentAwareness";
-import { applyOrchestrationV2ThreadVisit, pendingGuestMessageCount } from "@t3tools/contracts";
+import {
+  applyOrchestrationV2ThreadCard,
+  isListedThreadLineage,
+  applyOrchestrationV2ThreadVisit,
+  pendingGuestMessageCount,
+  type ThreadCardSummary,
+  threadCardSummary,
+} from "@t3tools/contracts";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
 import * as Stream from "effect/Stream";
@@ -232,6 +239,8 @@ export type ProjectionSettlementCandidate = Pick<
 > &
   Pick<OrchestrationV2AppThread, "lastSnoozeWakeAt"> & {
     readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
+    /** Only its open items matter here, so a thread's card and a shell's summary both fit. */
+    readonly card?: Pick<ThreadCardSummary, "open"> | null | undefined;
   };
 
 const ProjectionCheckpointContext = Schema.Struct({
@@ -274,6 +283,8 @@ export interface ProjectionCheckpointCaptureContext {
   readonly preservedCheckpointOrdinals: ReadonlyArray<number>;
   /** Side chats share their parent's worktree and never snapshot it. */
   readonly sideChat: boolean;
+  /** False for subagents and side chats, which no thread list shows. */
+  readonly listed: boolean;
 }
 
 const RollbackTargetAttempts = Schema.Array(
@@ -933,6 +944,11 @@ export function applyToProjection(
         ...projection,
         thread: applyOrchestrationV2ThreadVisit(projection.thread, event.payload),
       };
+    case "thread.card-updated":
+      return {
+        ...projection,
+        thread: applyOrchestrationV2ThreadCard(projection.thread, event.payload),
+      };
     case "run.created":
     case "run.updated":
       return withLocalVisibleTurnItems({
@@ -1102,6 +1118,7 @@ type ShellThreadRow = {
   readonly blocking_run_background_wake: number;
   readonly blocking_failure_payload_json: string | null;
   readonly pending_request_payload_json: string | null;
+  readonly pending_request_item_payload_json: string | null;
   readonly pending_secret_request_payload_json: string | null;
   readonly pending_link_request_payload_json: string | null;
   readonly latest_user_message_at: string | null;
@@ -1606,15 +1623,43 @@ function buildVisibleTurnItems(input: {
   );
 }
 
+const PENDING_REQUEST_DESCRIPTION_MAX = 140;
+
+/** What the request asks, on one line, from its card: an approval's prompt or the first question. */
+function pendingRuntimeRequestDescription(
+  requestId: RuntimeRequestId,
+  items: ReadonlyArray<OrchestrationV2TurnItem>,
+): string | undefined {
+  const item = items.find(
+    (candidate) =>
+      (candidate.type === "approval_request" || candidate.type === "user_input_request") &&
+      candidate.requestId === requestId,
+  );
+  const text =
+    item?.type === "approval_request"
+      ? item.prompt
+      : item?.type === "user_input_request"
+        ? item.questions[0]?.question
+        : undefined;
+  const line = text?.replace(/\s+/g, " ").trim() ?? "";
+  if (line === "") return undefined;
+  return line.length <= PENDING_REQUEST_DESCRIPTION_MAX
+    ? line
+    : `${line.slice(0, PENDING_REQUEST_DESCRIPTION_MAX - 1).trimEnd()}…`;
+}
+
 function pendingRuntimeRequestSummary(
   request: OrchestrationV2ThreadProjection["runtimeRequests"][number] | null,
+  items: ReadonlyArray<OrchestrationV2TurnItem>,
 ): OrchestrationV2PendingRuntimeRequestSummary | null {
   if (request === null) return null;
+  const description = pendingRuntimeRequestDescription(request.id, items);
   return {
     id: request.id,
     kind: request.kind,
     createdAt: request.createdAt,
     blocking: request.responseCapability.type !== "message",
+    ...(description === undefined ? {} : { description }),
   };
 }
 
@@ -1745,6 +1790,7 @@ export function threadShellFromProjection(
           Number(left.kind === "user_input") - Number(right.kind === "user_input") ||
           DateTime.toEpochMillis(right.createdAt) - DateTime.toEpochMillis(left.createdAt),
       )[0] ?? null,
+    projection.turnItems,
   );
 
   const userMessages = projection.messages
@@ -1874,6 +1920,7 @@ export function threadShellFromProjection(
     ...(projection.thread.tags?.length ? { tags: projection.thread.tags } : {}),
     lastVisitedAt: projection.thread.lastVisitedAt,
     opens: projection.thread.opens ?? null,
+    ...(projection.thread.card ? { card: threadCardSummary(projection.thread.card) } : {}),
     titleRegeneration: projection.thread.titleRegeneration ?? null,
     lastTitleRegeneration: projection.thread.lastTitleRegeneration ?? null,
     limitRecovery: projection.thread.limitRecovery ?? null,
@@ -2172,6 +2219,7 @@ function shellFromState(input: {
     ...(input.state.thread.tags?.length ? { tags: input.state.thread.tags } : {}),
     lastVisitedAt: input.state.thread.lastVisitedAt,
     opens: input.state.thread.opens ?? null,
+    ...(input.state.thread.card ? { card: threadCardSummary(input.state.thread.card) } : {}),
     titleRegeneration: input.state.thread.titleRegeneration ?? null,
     lastTitleRegeneration: input.state.thread.lastTitleRegeneration ?? null,
     limitRecovery: input.state.thread.limitRecovery ?? null,
@@ -2314,6 +2362,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ...event,
                 type: "thread.visited",
                 payload: applyOrchestrationV2ThreadVisit(thread, event.payload),
+              });
+              break;
+            }
+            case "thread.card-updated": {
+              const thread = yield* getThread(event.threadId);
+              // Stored through the full-payload event that keeps the thread's updatedAt.
+              yield* apply({
+                ...event,
+                type: "thread.tags-updated",
+                payload: applyOrchestrationV2ThreadCard(thread, event.payload),
               });
               break;
             }
@@ -3150,6 +3208,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             event.type !== "thread.tags-updated" &&
             event.type !== "thread.visited" &&
             event.type !== "thread.visit-recorded" &&
+            event.type !== "thread.card-updated" &&
             event.type !== "thread.marked-unread" &&
             event.type !== "thread.metadata-updated" &&
             event.type !== "thread.pull-request-synced" &&
@@ -5936,8 +5995,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       sql
         .withTransaction(
           Effect.gen(function* () {
-            const threadRows = yield* sql<{ readonly side_chat: number | null }>`
-          SELECT json_extract(payload_json, '$.lineage.sideChat') AS side_chat
+            const threadRows = yield* sql<{
+              readonly side_chat: number | null;
+              readonly relationship: "fork" | "subagent" | null;
+            }>`
+          SELECT json_extract(payload_json, '$.lineage.sideChat') AS side_chat,
+            json_extract(payload_json, '$.lineage.relationshipToParent') AS relationship
           FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId} LIMIT 1`;
             if (threadRows[0] === undefined) {
               return yield* new ProjectionStoreThreadNotFoundError({ threadId });
@@ -5980,6 +6043,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   : yield* decodeProviderThreadPayload(providerRows[0].payload_json),
               preservedCheckpointOrdinals: preservedRows.map(({ ordinal }) => ordinal),
               sideChat: threadRows[0].side_chat === 1,
+              listed: isListedThreadLineage({
+                relationshipToParent: threadRows[0].relationship,
+                sideChat: threadRows[0].side_chat === 1,
+              }),
             };
           }),
         )
@@ -7780,6 +7847,22 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 LIMIT 1
               ) AS pending_request_payload_json,
               (
+                -- The card of that same request, for its prompt; only threads with a pending request look.
+                SELECT card.payload_json
+                FROM orchestration_v2_projection_runtime_requests request
+                CROSS JOIN orchestration_v2_projection_turn_items card
+                  INDEXED BY orchestration_v2_projection_turn_items_node_ordinal_idx
+                  ON card.node_id = request.node_id
+                WHERE request.thread_id = t.thread_id
+                  AND request.status = 'pending'
+                  AND card.thread_id = t.thread_id
+                  AND card.type IN ('approval_request', 'user_input_request')
+                  AND json_extract(card.payload_json, '$.requestId') = request.runtime_request_id
+                ORDER BY (request.kind = 'user_input') ASC,
+                  request.created_at DESC, request.runtime_request_id DESC
+                LIMIT 1
+              ) AS pending_request_item_payload_json,
+              (
                 SELECT secret.payload_json
                 -- Keep runs outermost so completed history is never scanned for a pending secret.
                 FROM orchestration_v2_projection_runs r
@@ -8375,6 +8458,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           row.pending_request_payload_json !== null
             ? pendingRuntimeRequestSummary(
                 yield* decodeRuntimeRequestPayload(row.pending_request_payload_json),
+                row.pending_request_item_payload_json === null
+                  ? []
+                  : [yield* decodeTurnItemPayload(row.pending_request_item_payload_json)],
               )
             : null;
         if (

@@ -474,6 +474,28 @@ describe("thread action undo", () => {
     expect(readThreadUndoNotice()).toBeNull();
   });
 
+  it("settles a batch behind one Undo, skipping threads this connection cannot change", async () => {
+    const offlineEnvironmentId = EnvironmentId.make("offline");
+    state.scopes.set(offlineEnvironmentId, new Set([AuthOrchestrationOperateScope]));
+    const threads = [
+      makeThread({ id: ThreadId.make("first") }),
+      makeThread({ id: ThreadId.make("second") }),
+      makeThread({ id: ThreadId.make("read-only"), environmentId: otherEnvironmentId }),
+      makeThread({ id: ThreadId.make("offline"), environmentId: offlineEnvironmentId }),
+    ];
+    expect(await useThreadListActions().settleThreads(threads)).toBe(true);
+    expect(state.alerts).toEqual([]);
+    expect(readThreadUndoNotice()?.count).toBe(2);
+    await readThreadUndoNotice()!.undo();
+    expect(state.requests.map(({ action, input }) => [action, input.threadId])).toEqual([
+      ["settle", "first"],
+      ["settle", "second"],
+      ["unsettle", "first"],
+      ["unsettle", "second"],
+    ]);
+    expect(readThreadUndoNotice()).toBeNull();
+  });
+
   // regression: #21401 restore archive and thread action undo
   it("wakes a snoozed thread through the undo action", async () => {
     const thread = makeThread();

@@ -60,9 +60,11 @@ import {
   ThreadListV2FolderHeader,
   ThreadListV2PendingRow,
   ThreadListV2Row,
+  ThreadListV2SectionHeader,
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
+  ThreadListV2TrailMoreRow,
   ThreadListV2WorkingShelfHeader,
 } from "./thread-list-v2-items";
 import { useThreadRowProviderInstanceResolver } from "./thread-provider-instance";
@@ -133,6 +135,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     archiveThread,
     confirmDeleteThread,
     settleThread,
+    settleThreads,
     snoozeThread,
     unsnoozeThread,
     unsettleThread,
@@ -235,12 +238,15 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     setSettledVisibleCount((count) => count + THREAD_LIST_V2_SETTLED_PAGE_COUNT);
   const {
     loaded: shelfPreferencesLoaded,
+    tide,
     settledShelfExpanded,
     snoozedShelfExpanded,
+    trailExpanded,
     workingShelfEnabled,
     workingShelfExpanded,
     toggleSettledShelf,
     toggleSnoozedShelf,
+    toggleTrail,
     toggleWorkingShelf,
     projectFoldersEnabled,
     collapsedFolderKeys,
@@ -271,6 +277,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     contentOnlyThreadKeys,
     olderSettledShelf,
   } = useThreadListV2({
+    projects: projects,
     threads: launchingThreads,
     pendingTasks,
     environmentId: options.selectedEnvironmentId,
@@ -293,6 +300,8 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     projectFolders,
     collapsedFolderKeys,
     selectedThreadKey: props.selectedThreadKey ?? null,
+    tide,
+    trailExpanded,
   });
   const listItems: readonly SidebarListItem[] =
     settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0
@@ -418,6 +427,8 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             onNewThreadOnBranch={props.onNewThreadOnBranch}
             thread={thread}
             variant={item.item.variant}
+            cardLine={item.item.cardLine}
+            projectLine={item.item.projectLine}
             hasQueuedMessages={item.hasQueuedMessages}
             snoozed={item.item.snoozed}
             pinned={item.item.pinned}
@@ -509,9 +520,32 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             pane="sidebar"
           />
         );
+      case "v2-section-header": {
+        const clearThreads = item.clearThreads;
+        return (
+          <ThreadListV2SectionHeader
+            title={item.title}
+            count={item.count}
+            disabled={item.disabled}
+            {...(clearThreads === null ? {} : { onClear: () => void settleThreads(clearThreads) })}
+            pane="sidebar"
+          />
+        );
+      }
+      case "v2-trail-more":
+        return (
+          <ThreadListV2TrailMoreRow
+            label={item.label}
+            expanded={item.expanded}
+            disabled={item.disabled}
+            onToggle={toggleTrail}
+            pane="sidebar"
+          />
+        );
       case "v2-snoozed-shelf":
         return (
           <ThreadListV2SnoozedShelfHeader
+            label={item.label}
             count={item.count}
             disabled={item.disabled}
             expanded={item.expanded}
@@ -522,6 +556,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
       case "v2-settled-shelf":
         return (
           <ThreadListV2SettledShelfHeader
+            label={item.label}
             count={item.count}
             disabled={item.disabled}
             expanded={item.expanded}

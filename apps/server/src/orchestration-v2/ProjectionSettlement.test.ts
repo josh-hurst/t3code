@@ -317,7 +317,21 @@ it.effect(
           pendingBackgroundTasks: [{ taskId: "running-task", kind: "subagent" }],
         },
       });
+      // An unanswered question on the stored card keeps an otherwise idle thread listed.
+      const asking = yield* createThread("open-question", {
+        card: {
+          line: "Merge PR 412 now?",
+          topics: [],
+          open: [{ kind: "ask", text: "Merge PR 412 now?" }],
+          messageId: MessageId.make("message:settlement:question"),
+          at: DateTime.formatIso(old),
+          runId: RunId.make("run:settlement:question"),
+          chapters: [],
+        },
+      });
+      yield* createRun(asking);
       const candidates = yield* store.getSettlementCandidates();
+      assert.isTrue(candidates.some((thread) => thread.id === asking));
       const shell = yield* store.getShellSnapshot({ location: "active" });
       const eligible = candidates.filter((thread) =>
         isAutoSettlementCandidate(thread, DateTime.toEpochMillis(now)),

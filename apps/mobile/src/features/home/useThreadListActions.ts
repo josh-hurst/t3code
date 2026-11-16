@@ -213,6 +213,8 @@ export function useThreadListActions(): {
   readonly archiveThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly confirmDeleteThread: (thread: EnvironmentThreadShell) => void;
   readonly settleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  /** Settles each thread this connection can, behind one Undo. */
+  readonly settleThreads: (threads: ReadonlyArray<EnvironmentThreadShell>) => Promise<boolean>;
   readonly snoozeThread: (thread: EnvironmentThreadShell, snoozedUntil: string) => Promise<boolean>;
   readonly unsnoozeThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly unsettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
@@ -247,58 +249,59 @@ export function useThreadListActions(): {
   const titleRegenerationInFlightThreadKeys = useRef(new Set<string>());
 
   const archiveThread = (thread: EnvironmentThreadShell) => executeAction("archive", thread);
+  const runUndo = async (
+    thread: EnvironmentThreadShell,
+    action: "Settled" | "Snoozed" | "Unpinned",
+    plan: ThreadUndo.ThreadUndoPlan,
+  ) => {
+    try {
+      await ThreadUndo.executeThreadUndo(
+        plan,
+        async (step) => {
+          switch (step.action) {
+            case "unsettle":
+              return unsettleThread(thread);
+            case "unsnooze":
+              return unsnoozeThread(thread);
+            case "pin":
+              return pinThread(thread, step.orderKey);
+            case "snooze": {
+              const failureTitle =
+                action === "Unpinned" ? "Could not undo unpin" : "Could not undo settle";
+              if (!checkThreadOperationPermission(thread, failureTitle)) return false;
+              const result = await snoozeMutation({
+                environmentId: thread.environmentId,
+                input: { threadId: thread.id, snoozedUntil: step.snoozedUntil },
+              });
+              if (result._tag === "Failure") {
+                const error = Cause.squash(result.cause);
+                Dialog.alert(
+                  "Could not restore snooze",
+                  error instanceof Error ? error.message : "The thread could not be snoozed.",
+                );
+                return false;
+              }
+              return true;
+            }
+          }
+        },
+        (result) => result,
+      );
+    } catch (error) {
+      Dialog.alert(
+        "Could not undo thread action",
+        error instanceof Error ? error.message : "Try again.",
+      );
+    }
+  };
   const offerUndo = (
     thread: EnvironmentThreadShell,
     action: "Settled" | "Snoozed" | "Unpinned",
     claim: ReturnType<typeof ThreadUndo.begin>,
     plan: ThreadUndo.ThreadUndoPlan,
-  ) =>
-    showThreadUndoNotice({
-      action,
-      claim,
-      undo: async () => {
-        try {
-          await ThreadUndo.executeThreadUndo(
-            plan,
-            async (step) => {
-              switch (step.action) {
-                case "unsettle":
-                  return unsettleThread(thread);
-                case "unsnooze":
-                  return unsnoozeThread(thread);
-                case "pin":
-                  return pinThread(thread, step.orderKey);
-                case "snooze": {
-                  const failureTitle =
-                    action === "Unpinned" ? "Could not undo unpin" : "Could not undo settle";
-                  if (!checkThreadOperationPermission(thread, failureTitle)) return false;
-                  const result = await snoozeMutation({
-                    environmentId: thread.environmentId,
-                    input: { threadId: thread.id, snoozedUntil: step.snoozedUntil },
-                  });
-                  if (result._tag === "Failure") {
-                    const error = Cause.squash(result.cause);
-                    Dialog.alert(
-                      "Could not restore snooze",
-                      error instanceof Error ? error.message : "The thread could not be snoozed.",
-                    );
-                    return false;
-                  }
-                  return true;
-                }
-              }
-            },
-            (result) => result,
-          );
-        } catch (error) {
-          Dialog.alert(
-            "Could not undo thread action",
-            error instanceof Error ? error.message : "Try again.",
-          );
-        }
-      },
-    });
-  const settleThread = async (thread: EnvironmentThreadShell) => {
+  ) => showThreadUndoNotice({ action, claim, undo: () => runUndo(thread, action, plan) });
+  /** Settles without offering Undo; the caller offers it for the claim. */
+  const settleClaimed = async (thread: EnvironmentThreadShell) => {
     const key = scopedThreadKey(thread.environmentId, thread.id);
     const plan = ThreadUndo.planThreadUndo("settle", thread);
     let claim: ReturnType<typeof ThreadUndo.begin> | undefined;
@@ -307,11 +310,45 @@ export function useThreadListActions(): {
       ThreadUndo.invalidate("snooze", key);
       claim = ThreadUndo.begin("settle", key);
     });
-    if (claim) {
-      if (succeeded) offerUndo(thread, "Settled", claim, plan);
-      else claim.finish();
-    }
-    return succeeded;
+    if (claim && !succeeded) claim.finish();
+    return succeeded && claim ? { thread, claim, plan } : null;
+  };
+  const settleThread = async (thread: EnvironmentThreadShell) => {
+    const settled = await settleClaimed(thread);
+    if (settled) offerUndo(thread, "Settled", settled.claim, settled.plan);
+    return settled !== null;
+  };
+  const settleThreads = async (threads: ReadonlyArray<EnvironmentThreadShell>) => {
+    // Checked up front so one batch raises no dialog per thread.
+    const connected = new Set(appAtomRegistry.get(connectedEnvironmentIdsAtom));
+    const settleable = threads.filter(
+      (thread) =>
+        thread.settledOverride !== "settled" &&
+        connected.has(thread.environmentId) &&
+        environmentConfigLoaded(thread.environmentId) &&
+        readEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope),
+    );
+    const settled = (await Promise.all(settleable.map(settleClaimed))).filter(
+      (entry) => entry !== null,
+    );
+    if (settled.length === 0) return false;
+    // Undo restores the threads no later action has claimed.
+    let restorable = settled;
+    showThreadUndoNotice({
+      action: "Settled",
+      count: settled.length,
+      claim: {
+        isCurrent: () => settled.some(({ claim }) => claim.isCurrent()),
+        finish: () => {
+          restorable = settled.filter(({ claim }) => claim.isCurrent());
+          for (const { claim } of settled) claim.finish();
+        },
+      },
+      undo: async () => {
+        await Promise.all(restorable.map(({ thread, plan }) => runUndo(thread, "Settled", plan)));
+      },
+    });
+    return true;
   };
   const snoozeThread = async (thread: EnvironmentThreadShell, snoozedUntil: string) => {
     if (!checkThreadOperationPermission(thread, "Could not snooze thread")) return false;
@@ -744,6 +781,7 @@ export function useThreadListActions(): {
     archiveThread: (thread) => archiveThread(liveThread(thread)),
     confirmDeleteThread: (thread) => confirmDeleteThread(liveThread(thread)),
     settleThread: (thread) => settleThread(liveThread(thread)),
+    settleThreads: (threads) => settleThreads(threads.map(liveThread)),
     snoozeThread: (thread, snoozedUntil) => snoozeThread(liveThread(thread), snoozedUntil),
     unsnoozeThread: (thread) => unsnoozeThread(liveThread(thread)),
     unsettleThread: (thread) => unsettleThread(liveThread(thread)),

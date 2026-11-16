@@ -3948,6 +3948,15 @@ describe("OrchestratorMcpService thread list", () => {
     projectId: ProjectId.make(projectId),
     status: "completed" as const,
     snoozedUntil: snoozed ? DateTime.makeUnsafe("2099-01-01T00:00:00Z") : null,
+    card: waiting
+      ? {
+          line: "Review found two bugs",
+          topics: ["review"],
+          open: [],
+          messageId: MessageId.make("message:b-reply"),
+          at: "2026-10-18T00:00:00.000Z",
+        }
+      : null,
     blockedOnThreadWait: waiting,
     pendingBackgroundTasks: waiting
       ? [
@@ -4030,6 +4039,10 @@ describe("OrchestratorMcpService thread list", () => {
           ["thread:a-snoozed", "project:a"],
           ["thread:b-snoozed", "project:b"],
         ],
+      );
+      assert.deepStrictEqual(
+        listed.threads.map((thread) => thread.summary),
+        [undefined, "Review found two bugs"],
       );
       assert.deepStrictEqual(
         listed.threads.map((thread) => [thread.blockedOnThreadWait, thread.pendingBackgroundTasks]),

@@ -379,6 +379,8 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
   link: Schema.optional(Schema.String),
+  /** One-line outcome of the latest completed run, when thread summaries are on. */
+  summary: Schema.optional(Schema.String),
   createdBy: OrchestrationV2Actor,
   creationSource: OrchestrationV2CreationSource,
   status: OrchestratorMcpThreadStatus,

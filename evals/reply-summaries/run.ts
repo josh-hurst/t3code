@@ -1,6 +1,7 @@
 import * as NodeUtil from "node:util";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CodexSettings, ProviderInstanceId } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -10,9 +11,9 @@ import * as Schema from "effect/Schema";
 import * as ServerConfig from "../../apps/server/src/config.ts";
 import { makeCodexTextGeneration } from "../../apps/server/src/textGeneration/CodexTextGeneration.ts";
 import {
-  buildReplySummaryPrompt,
-  sanitizeReplySummary,
-} from "../../apps/server/src/textGeneration/ReplySummary.ts";
+  buildThreadCardPrompt,
+  parseThreadCard,
+} from "../../apps/server/src/textGeneration/ThreadCard.ts";
 import { cases } from "./cases.ts";
 
 const { values } = NodeUtil.parseArgs({
@@ -39,6 +40,9 @@ const Results = Schema.fromJsonString(
       id: Schema.String,
       sample: Schema.Number,
       summary: Schema.NullOr(Schema.String),
+      // Absent in results written before the summary became a card.
+      topics: Schema.optional(Schema.Array(Schema.String)),
+      open: Schema.optional(Schema.Array(Schema.String)),
     }),
   ),
 );
@@ -57,8 +61,16 @@ await Effect.runPromise(
     const results = [];
     const review = [];
     const key = [];
+    const now = yield* DateTime.now;
     for (const fixture of fixtures) {
-      const prompt = buildReplySummaryPrompt(fixture.reply);
+      const prompt = buildThreadCardPrompt({
+        reply: fixture.reply,
+        userMessage: fixture.userMessage ?? null,
+        previous: fixture.previous ?? null,
+        now: DateTime.formatIsoOffset(
+          DateTime.makeZonedUnsafe(now, { timeZone: DateTime.zoneMakeLocal() }),
+        ),
+      });
       for (let sample = 1; sample <= samples; sample++) {
         const previous = baseline.find((row) => row.id === fixture.id && row.sample === sample);
         if (values.baseline && !previous)
@@ -72,15 +84,29 @@ await Effect.runPromise(
             options: [{ id: "reasoningEffort", value: effort }],
           },
         });
-        const summary = sanitizeReplySummary(transcription);
-        results.push({ id: fixture.id, sample, summary });
+        const card = parseThreadCard(transcription, DateTime.toEpochMillis(now));
+        const row = {
+          summary: card?.line ?? null,
+          topics: card?.topics ?? [],
+          open: (card?.open ?? []).map((item) =>
+            item.dueAt === undefined
+              ? `${item.kind}: ${item.text}`
+              : `${item.kind} ${item.dueAt}: ${item.text}`,
+          ),
+        };
+        results.push({ id: fixture.id, sample, ...row });
         const first = !previous || (yield* Random.nextBoolean);
+        const before = previous && {
+          summary: previous.summary,
+          topics: previous.topics ?? [],
+          open: previous.open ?? [],
+        };
         review.push({
           id: fixture.id,
           rubric: fixture.rubric,
           sample,
-          A: first ? summary : previous?.summary,
-          B: first ? previous?.summary : summary,
+          A: first ? row : before,
+          B: first ? before : row,
         });
         key.push({ id: fixture.id, sample, candidate: first ? "A" : "B" });
       }

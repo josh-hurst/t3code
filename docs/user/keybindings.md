@@ -182,6 +182,16 @@ seconds after the latest action. Right after an action, the shortcut works even
 in a text field such as the composer. Once you type or press another key, the
 field gets its own undo back. Terminals always keep their native shortcut.
 
+Clearing the Trail undoes the same way: one `thread.undo` restores every thread it settled.
+
+`thread.nextNeedsYou` (`mod+shift+u`), `thread.clearTrail` (`mod+alt+s`), and
+`sidebar.focusProject` (`mod+alt+p`) work on the sidebar's sections; see
+[Threads that need you](./thread-sidebar.md#threads-that-need-you),
+[Later and the Trail](./thread-sidebar.md#later-and-the-trail), and
+[Focus on one project](./thread-sidebar.md#focus-on-one-project). They do nothing in the
+classic sidebar. On Linux, `ctrl+shift+u` starts Unicode input in most text fields, so
+rebind `thread.nextNeedsYou` if you want it while typing.
+
 `navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
 through the pages you have visited, like a browser's back and forward buttons.
 

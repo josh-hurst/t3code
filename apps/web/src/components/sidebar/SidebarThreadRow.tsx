@@ -28,6 +28,7 @@ import {
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   AuthOrchestrationOperateScope,
+  threadCardHasOpenAsk,
   type EnvironmentId,
   type EnvironmentMachineKind,
   type ScopedThreadRef,
@@ -75,7 +76,12 @@ import { useNowSecond } from "../../hooks/useNowSecond";
 import { vcsEnvironment, vcsBranchRevalidation } from "../../state/vcs";
 import { useEnvironmentQuery } from "../../state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
-import { formatRelativeTimeLabel, parseTimestampDate } from "../../timestampFormat";
+import {
+  formatRelativeTimeLabel,
+  formatShortTimestamp,
+  parseTimestampDate,
+} from "../../timestampFormat";
+import { resolveTideRowLead, resolveTideRowTime } from "./tideSidebar.logic";
 import type { SidebarThreadSummary } from "../../types";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
@@ -111,7 +117,13 @@ import {
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
-import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
+import { TideOwedLabel, TideProject, TideRowBody, TideStatusLabel } from "./SidebarTideRow";
+import { SearchMatchHintLine, ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
+import type { SearchMatchHint } from "@t3tools/shared/paletteSearch";
+import {
+  threadCardOpenItemLabel,
+  threadLaterLabel,
+} from "@t3tools/client-runtime/state/thread-zones";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelName } from "../chat/providerIconUtils";
@@ -123,7 +135,6 @@ import { Menu, MenuItem, MenuItemDetail, MenuPopup, MenuSeparator, MenuTrigger }
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { useThreadHasUnsentDraft } from "../../composerDraftStore";
-import { useSidebarReplySummary } from "./useSidebarReplySummary";
 
 // The fields thread rows show. Provider status pushes refresh `checkedAt`,
 // status and auth on every provider; leaving those out keeps each
@@ -154,6 +165,13 @@ function RelativeTimeLabel(props: { timestamp: string | null }) {
         formatRelativeTimeLabel(props.timestamp, Date.parse(`${nowMinute}:00.000Z`)),
       );
 }
+
+// An absolute day, so the hover card never needs the clock: "Sun 15 Nov".
+const TIDE_NOTE_DAY_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
 
 function JumpHintBadge(props: { label: string }) {
   return (
@@ -247,6 +265,9 @@ function SidebarThreadTooltip({
   branchMismatch,
   terminalStatus,
   terminalProcessCount,
+  cardText = null,
+  timeNote = null,
+  showCard = false,
 }: {
   thread: SidebarThreadSummary;
   project: ProjectFaviconProject | null;
@@ -264,6 +285,12 @@ function SidebarThreadTooltip({
   } | null;
   terminalStatus: TerminalStatusIndicator | null;
   terminalProcessCount: number;
+  // The row's second line in full, which the row itself may cut off.
+  cardText?: string | null;
+  // What the row's time means, as an absolute time.
+  timeNote?: string | null;
+  // The new layout's rows add the card's outcome and every open item, which rows shorten.
+  showCard?: boolean;
 }) {
   const driverKind = providerEntry?.driverKind ?? null;
   const previousProviderNames = thread.providerInstanceHistory
@@ -282,6 +309,35 @@ function SidebarThreadTooltip({
           ) : null
         }
       >
+        {cardText ? (
+          <div className="min-w-0 wrap-break-word text-foreground/85">{cardText}</div>
+        ) : null}
+        {showCard && thread.card && thread.card.line !== cardText ? (
+          <div className="min-w-0 wrap-break-word text-foreground/75">{thread.card.line}</div>
+        ) : null}
+        {showCard
+          ? thread.card?.open
+              .filter((item) => item.text !== cardText)
+              .map((item) => (
+                <div key={`${item.kind}:${item.text}`} className="flex min-w-0 gap-2">
+                  <span
+                    className={cn(
+                      "shrink-0 font-medium",
+                      item.kind === "ask" ? "text-foreground/85" : "text-foreground",
+                    )}
+                  >
+                    {threadCardOpenItemLabel(item.kind)}
+                  </span>
+                  <span className="min-w-0 wrap-break-word text-foreground/75">{item.text}</span>
+                </div>
+              ))
+          : null}
+        {timeNote ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <ClockIcon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />
+            <div className="min-w-0 text-foreground/75">{timeNote}</div>
+          </div>
+        ) : null}
         {projectDisplayName ? (
           <div className="flex min-w-0 items-center gap-2">
             {project ? <ProjectFavicon project={project} className="size-3 shrink-0" /> : null}
@@ -589,7 +645,21 @@ type SidebarThreadRowProps = {
   project: EnvironmentProject | null;
   projectDisplayName: string | null;
   rowDetail: SidebarRowDetail;
+  // The self-filing layout: the card's line shows under the title whatever `rowDetail` says,
+  // slim rows grow a line, and Needs you cards give the line the full width.
+  tide: boolean;
+  // The time the row is sorted by in that layout: waiting since in Needs you, last touch in the Trail.
+  tideTimeAt: number | null;
+  needsYou: boolean;
   panel: SidebarThreadPanelPosition | null;
+  // A day or project label drawn above a slim row that starts a group.
+  groupLabel?: string | null | undefined;
+  // A rule above the label, where project groups start below the Trail's first rows.
+  groupDivider?: boolean;
+  // The project's name as text on a slim row, or null where the list already says it.
+  projectNameOnRow?: string | null;
+  // Drawn at the end of the Needs you panel's label, on the panel's first row.
+  panelLabelAction?: ReactNode;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
   timestampFormat: TimestampFormat;
   onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
@@ -819,7 +889,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           icon: "done" as const,
                           className: "text-success-foreground",
                         }
-                      : null;
+                      : threadCardHasOpenAsk(thread.card)
+                        ? {
+                            label: "Question",
+                            icon: "input" as const,
+                            className: "text-indigo-600 dark:text-indigo-300",
+                          }
+                        : null;
   const isWokeStatus = topStatus?.icon === "woke";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
@@ -845,12 +921,30 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const isRemote = thread.environmentId !== props.currentEnvironmentId;
   const showsScratchMachine = !checkoutThread.branch && props.scratchMachineLabel !== null;
   const showsBranch = props.rowDetail !== "message";
-  const replySummary = useSidebarReplySummary(thread, props.rowDetail, status);
-  const messagePreview =
-    props.rowDetail === "branch"
-      ? null
-      : sidebarRowMessagePreview(thread.source.latestVisibleMessage, replySummary);
+  const messagePreview = sidebarRowMessagePreview({
+    thread,
+    rowDetail: props.rowDetail,
+    showCardLine: props.tide,
+    needsYou: props.needsYou,
+  });
   const showsBranchDetail = showsBranch && (Boolean(checkoutThread.branch) || showsScratchMachine);
+  // The new layout's last line; Needs you, Working and pinned rows (cards) show status.
+  const tideLead = props.tide
+    ? resolveTideRowLead(
+        { ...thread, lastVisitedAt: lastVisitedAt ?? null },
+        { showsStatus: variant === "card", isWoke },
+      )
+    : null;
+  const tideText = tideLead?.text ?? null;
+  const tideTime = props.tide
+    ? resolveTideRowTime({
+        variantAction,
+        needsYou: props.needsYou,
+        tideTimeAt: props.tideTimeAt,
+        snoozedUntil: thread.snoozedUntil ?? null,
+        settledAt: resolveSettledThreadTimestamp(thread),
+      })
+    : null;
 
   const detailsTooltip = (
     <SidebarThreadTooltip
@@ -867,6 +961,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       branchMismatch={branchMismatch}
       terminalStatus={terminalStatus}
       terminalProcessCount={terminalProcessCount}
+      cardText={tideText}
+      showCard={props.tide}
+      timeNote={
+        tideTime === null
+          ? null
+          : `${tideTime.label} ${formatShortTimestamp(tideTime.at, props.timestampFormat)}, ${TIDE_NOTE_DAY_FORMATTER.format(new Date(tideTime.at))}`
+      }
     />
   );
 
@@ -997,7 +1098,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     variantAction === "unsettle" &&
       !props.isActive &&
-      "[&:not(:hover):not(:focus-within)_*]:text-secondary-label",
+      // History recedes, but in the new layout a project's icon keeps its colour there as in the Trail.
+      (props.tide
+        ? "[&:not(:hover):not(:focus-within)_*:not([data-project-icon],[data-project-icon]_*)]:text-secondary-label"
+        : "[&:not(:hover):not(:focus-within)_*]:text-secondary-label"),
     props.isActive
       ? "bg-sidebar-row-active text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
       : isSelected || props.sweepAction !== null
@@ -1066,26 +1170,33 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       aria-hidden
       className={cn(
         "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none",
-        shouldRecede ? "font-normal" : "font-medium",
-        variant !== "slim"
-          ? cn(
-              "truncate",
-              shouldRecede
-                ? "text-foreground/75 group-hover/sidebar-row:text-foreground group-focus-visible/sidebar-row:text-foreground"
-                : status === "failed" && !isUnread && !isWoke
-                  ? "text-foreground/95"
-                  : "text-foreground",
-            )
-          : cn(
-              "truncate group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
-              shouldRecede
-                ? "text-secondary-label"
-                : props.isActive || isWoke || status === "input" || status === "request"
-                  ? "text-foreground"
-                  : isUnread
-                    ? "text-muted-foreground"
-                    : "text-secondary-label/70",
-            ),
+        // In the new layout every Needs you title is bright; elsewhere titles recede as Trail rows do.
+        props.tide && props.needsYou
+          ? "truncate font-medium text-foreground"
+          : shouldRecede || (props.tide && !props.isActive && !isWoke)
+            ? "font-normal"
+            : "font-medium",
+        props.tide && props.needsYou
+          ? null
+          : variant !== "slim" && !props.tide
+            ? cn(
+                "truncate",
+                shouldRecede
+                  ? "text-foreground/75 group-hover/sidebar-row:text-foreground group-focus-visible/sidebar-row:text-foreground"
+                  : status === "failed" && !isUnread && !isWoke
+                    ? "text-foreground/95"
+                    : "text-foreground",
+              )
+            : cn(
+                "truncate group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
+                shouldRecede
+                  ? "text-secondary-label"
+                  : props.isActive || isWoke || status === "input" || status === "request"
+                    ? "text-foreground"
+                    : isUnread
+                      ? "text-muted-foreground"
+                      : "text-secondary-label/70",
+              ),
         isRegeneratingTitle && "opacity-55",
       )}
       dir={textDirection(thread.title)}
@@ -1272,9 +1383,300 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     panel === "first" || panel === "only" ? (
       <div className="flex h-6 items-center gap-1.5 px-2 text-xs font-medium text-primary">
         <BellDotIcon aria-hidden className="size-3.5 shrink-0" />
-        Needs you
+        <span className="min-w-0 flex-1 truncate">Needs you</span>
+        {props.panelLabelAction}
       </div>
     ) : null;
+
+  if (props.tide) {
+    const isCardRow = variant === "card";
+    const lead = tideLead?.lead ?? null;
+    const isRunning =
+      lead?.kind === "status" && (lead.tone === "working" || lead.tone === "connecting");
+    const label =
+      lead === null ? null : lead.kind === "owed" ? (
+        <TideOwedLabel>{lead.word}</TideOwedLabel>
+      ) : lead.tone === "woke" ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Dismiss Woke notification"
+                onClick={handleAcknowledgeWokeClick}
+                className="cursor-pointer rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              />
+            }
+          >
+            <TideStatusLabel tone="woke">
+              <span role="status">Woke</span>
+            </TideStatusLabel>
+          </TooltipTrigger>
+          <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
+        </Tooltip>
+      ) : (
+        <TideStatusLabel tone={lead.tone}>
+          {lead.word}
+          {isRunning ? (
+            <span aria-hidden className="font-normal">
+              {" "}
+              <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
+            </span>
+          ) : null}
+        </TideStatusLabel>
+      );
+    const timeContent =
+      variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
+        <span className="inline-flex items-center gap-1">
+          {/* The clock tells a wake time from an age at a glance. */}
+          <AlarmClockIcon aria-hidden className="size-3" />
+          {props.snoozeWakeLabelText === "now" ? "now" : `in ${props.snoozeWakeLabelText}`}
+        </span>
+      ) : isRunning ? null : (
+        <RelativeTimeLabel
+          timestamp={
+            variantAction === "unsettle"
+              ? resolveSettledThreadTimestamp(thread)
+              : props.tideTimeAt !== null
+                ? new Date(props.tideTimeAt).toISOString()
+                : resolveThreadActivityTimestamp(thread)
+          }
+        />
+      );
+    const actionClassName =
+      "inline-flex h-full cursor-pointer items-center rounded-md bg-transparent px-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+    const settleButton = props.settlementSupported ? (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Settle thread"
+              onClick={handleSettleClick}
+              onPointerDown={handleActionPointerDown}
+              className={actionClassName}
+            />
+          }
+        >
+          <CheckIcon className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipPopup side="top">Settle thread</TooltipPopup>
+      </Tooltip>
+    ) : null;
+    // The same actions each section had, in the time's place.
+    const rowActions = isCardRow ? (
+      hasUnsentDraft || showSnoozeButton || settleButton !== null ? (
+        <>
+          {hasUnsentDraft ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="Discard draft"
+                    onClick={handleDiscardDraftClick}
+                    className={actionClassName}
+                  />
+                }
+              >
+                <XIcon className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Discard draft</TooltipPopup>
+            </Tooltip>
+          ) : null}
+          {showSnoozeButton ? (
+            <SnoozeMenuButton
+              open={snoozeMenuOpen}
+              onOpenChange={setSnoozeMenuOpen}
+              onSnooze={handleSnoozePreset}
+              timestampFormat={props.timestampFormat}
+              environmentId={thread.environmentId}
+            />
+          ) : null}
+          {settleButton}
+        </>
+      ) : null
+    ) : variantAction === "unsnooze" ? (
+      props.snoozeSupported ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Wake thread now"
+                onClick={handleUnsnoozeClick}
+                onPointerDown={handleActionPointerDown}
+                className={actionClassName}
+              />
+            }
+          >
+            <AlarmClockOffIcon className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="top">Wake thread now</TooltipPopup>
+        </Tooltip>
+      ) : null
+    ) : variantAction === "unsettle" ? (
+      props.settlementSupported ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Un-settle thread"
+                onClick={handleUnsettleClick}
+                onPointerDown={handleActionPointerDown}
+                className={actionClassName}
+              />
+            }
+          >
+            <Undo2Icon className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="top">Un-settle thread</TooltipPopup>
+        </Tooltip>
+      ) : null
+    ) : (
+      settleButton
+    );
+    const timeSlot = sortable?.isDragging ? (
+      dragDestination
+    ) : (
+      <>
+        <span
+          className={cn(
+            "group/tide-slot relative ml-auto -my-0.5 flex h-5 shrink-0 items-center justify-end",
+            props.sweepAction !== null && "hidden",
+            jumpHintLabel && JUMP_HINT_SLOT_CLASS_NAME,
+          )}
+        >
+          <span
+            className={cn(
+              "inline-flex items-center tabular-nums",
+              rowActions !== null &&
+                "group-any-hover/sidebar-row:hidden group-has-[:focus-visible]/tide-slot:hidden",
+              snoozeMenuOpen && "hidden",
+            )}
+          >
+            {timeContent}
+          </span>
+          {rowActions !== null ? (
+            // Mouse clicks leave a button focused, so only keyboard focus keeps the actions shown.
+            <span
+              className={cn(
+                "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100",
+                snoozeMenuOpen && "pointer-events-auto static opacity-100",
+              )}
+            >
+              {rowActions}
+            </span>
+          ) : null}
+          {jumpHintLabel ? <JumpHintBadge label={jumpHintLabel} /> : null}
+        </span>
+        {props.sweepAction !== null ? dragDestination : null}
+      </>
+    );
+    const projectName = props.projectNameOnRow ?? null;
+    const tideAccessibility = resolveSidebarRowAccessibility({
+      title: thread.title,
+      statusLabel: lead?.kind === "status" ? lead.word : null,
+      projectDisplayName: props.projectDisplayName,
+      isActive: props.isActive,
+    });
+    return (
+      <li
+        data-thread-item={threadKey}
+        {...sortableRootProps}
+        {...(fileDropHandlers ?? {})}
+        className={cn(
+          "list-none [content-visibility:auto] [contain-intrinsic-size:auto_--spacing(16)]",
+          panel !== null &&
+            cn(
+              "bg-primary/5 dark:bg-primary/15",
+              (panel === "first" || panel === "only") && "mt-0.5 rounded-t-lg",
+              (panel === "last" || panel === "only") && "rounded-b-lg pb-1",
+            ),
+          sortable?.isDragging && "relative z-20",
+        )}
+      >
+        {panel === "first" || panel === "only" ? (
+          <div className="flex h-6 items-center gap-1.5 px-2.5 text-xs font-medium text-primary">
+            <BellDotIcon aria-hidden className="size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">Needs you</span>
+            {props.panelLabelAction}
+          </div>
+        ) : null}
+        {props.groupLabel ? (
+          <div
+            className={cn(
+              "flex h-6 items-end truncate px-2.5 pb-1 text-2xs font-medium text-sidebar-muted-foreground/80",
+              props.groupDivider && "border-t border-sidebar-border",
+            )}
+          >
+            {props.groupLabel}
+          </div>
+        ) : null}
+        <Tooltip disabled={snoozeMenuOpen || sortable?.isDragging}>
+          <TooltipTrigger
+            render={
+              <div
+                ref={rowRef}
+                role="button"
+                tabIndex={0}
+                data-sidebar-row={threadKey}
+                data-sidebar-parent={props.navigationParent}
+                aria-label={tideAccessibility.label}
+                aria-current={tideAccessibility.current}
+                data-testid={isCardRow ? "sidebar-row-card" : "sidebar-row-slim"}
+                aria-busy={isRegeneratingTitle || undefined}
+                className={cn(
+                  rowSurfaceClassName,
+                  "flex min-h-9 flex-col justify-center px-2.5 py-1.5",
+                )}
+                onClick={handleClick}
+                onDoubleClick={handleDoubleClick}
+                onKeyDown={handleKeyDown}
+                onContextMenu={handleContextMenu}
+              />
+            }
+          >
+            {accessibleTitle}
+            <TideRowBody
+              project={
+                projectName === null ? null : (
+                  <TideProject project={props.project} name={projectName} />
+                )
+              }
+              time={timeSlot}
+              title={title}
+              titleTrailing={
+                <>
+                  {draftIndicator}
+                  {prBadge}
+                  {terminalStatusIcon}
+                  {remoteMachineIcon}
+                  {pinIndicator}
+                </>
+              }
+              label={label}
+              text={
+                // Pinned and working rows without an outcome follow Thread row details.
+                tideText ??
+                (isCardRow && !props.needsYou
+                  ? (messagePreview ?? (showsBranch ? (checkoutThread.branch ?? null) : null))
+                  : null)
+              }
+              maxLines={props.needsYou ? 3 : 2}
+            />
+            {isRegeneratingTitle ? (
+              <span role="status" className="sr-only">
+                Regenerating title
+              </span>
+            ) : null}
+          </TooltipTrigger>
+          {detailsTooltip}
+        </Tooltip>
+      </li>
+    );
+  }
 
   if (variant !== "card") {
     const multiline = variant === "folder-multiline";
@@ -1711,15 +2113,33 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
   searchQuery: string;
   /** The query `searchMatch` was found for, which lags `searchQuery` while a search runs. */
   searchMatchQuery?: string;
+  // The new layout explains every result and keeps its status, as the palette does.
+  tide: boolean;
+  // For a snoozed result's wake time.
+  now: string;
+  // The project's name as text in the new layout, or null where the list already says it.
+  projectNameOnRow: string | null;
+  explain?: (() => SearchMatchHint | undefined) | undefined;
   onHighlight: () => void;
   onSelect: () => void;
   onFileDropThreads: (threadRef: ScopedThreadRef, files: File[]) => void;
 }) {
   const thread =
     useThreadShell(scopeThreadRef(props.thread.environmentId, props.thread.id)) ?? props.thread;
+  // Settled results keep no status, as History rows have none to act on.
+  const tideLead = props.tide
+    ? resolveTideRowLead(thread, { showsStatus: !props.isSettled, isWoke: false })
+    : null;
+  const lead = tideLead?.lead ?? null;
+  const tideLine = tideLead?.text ?? null;
+  const matchHint = props.tide ? props.explain?.() : undefined;
+  const laterLabel =
+    props.tide && !props.isSettled && lead?.kind !== "status"
+      ? threadLaterLabel(thread, { now: props.now })
+      : null;
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
-    statusLabel: null,
+    statusLabel: lead?.kind === "status" ? lead.word : null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isRouteActive,
   });
@@ -1809,7 +2229,9 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               onMouseMove={props.onHighlight}
               onClick={props.onSelect}
               className={cn(
-                "group/sidebar-row group/v2-row flex min-h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1 text-left text-sm outline-none",
+                "group/sidebar-row group/v2-row flex min-h-9 w-full cursor-pointer rounded-md px-2.5 text-left text-sm outline-none",
+                // The new layout stacks the shared row anatomy; the classic row is one line.
+                props.tide ? "flex-col justify-center py-1.5" : "items-center gap-2.5 py-1",
                 props.isHighlighted || props.isRouteActive
                   ? "bg-sidebar-row-active text-sidebar-foreground"
                   : "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
@@ -1819,54 +2241,124 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
             />
           }
         >
-          {props.project ? (
-            <ProjectFavicon
-              project={props.project}
-              className={cn(
-                "size-4 shrink-0 transition-opacity",
-                props.isSettled &&
-                  !props.isRouteActive &&
-                  !props.isHighlighted &&
-                  "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
-              )}
+          {props.tide ? (
+            <TideRowBody
+              project={
+                props.projectNameOnRow === null ? null : (
+                  <TideProject project={props.project} name={props.projectNameOnRow} />
+                )
+              }
+              time={
+                <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums">
+                  {laterLabel !== null ? (
+                    <>
+                      <AlarmClockIcon aria-hidden className="size-3" />
+                      {laterLabel}
+                    </>
+                  ) : (
+                    <RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />
+                  )}
+                </span>
+              }
+              title={
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate",
+                    props.isSettled
+                      ? "font-normal text-secondary-label/70 group-hover/sidebar-row:text-foreground"
+                      : "font-medium text-foreground",
+                    (props.isHighlighted || props.isRouteActive) && "text-foreground",
+                    thread.titleRegeneration != null && "opacity-55",
+                  )}
+                >
+                  {thread.title}
+                </span>
+              }
+              titleTrailing={
+                <span id={`${props.resultId}-pr`} className="contents">
+                  <ThreadSearchPullRequestNumber
+                    thread={thread}
+                    query={props.searchQuery}
+                    enabled={leaseLiveStatus}
+                    settled={props.isSettled}
+                  />
+                </span>
+              }
+              label={
+                lead === null ? null : lead.kind === "status" ? (
+                  <TideStatusLabel tone={lead.tone}>{lead.word}</TideStatusLabel>
+                ) : (
+                  <TideOwedLabel>{lead.word}</TideOwedLabel>
+                )
+              }
+              text={tideLine}
+              maxLines={2}
+              footer={
+                props.searchMatch ? (
+                  <ThreadSearchMatchExcerpt
+                    match={{
+                      source: props.searchMatch.source,
+                      snippet: props.searchMatch.snippet,
+                      query: props.searchMatchQuery ?? props.searchQuery,
+                    }}
+                  />
+                ) : matchHint ? (
+                  <SearchMatchHintLine hint={matchHint} />
+                ) : null
+              }
             />
-          ) : null}
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="flex min-w-0 items-center gap-2.5">
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate",
-                  props.isSettled
-                    ? "font-normal text-secondary-label/70 group-hover/sidebar-row:text-foreground"
-                    : "font-medium text-foreground",
-                  (props.isHighlighted || props.isRouteActive) && "text-foreground",
-                  thread.titleRegeneration != null && "opacity-55",
-                )}
-              >
-                {thread.title}
-              </span>
-              <span id={`${props.resultId}-pr`} className="contents">
-                <ThreadSearchPullRequestNumber
-                  thread={thread}
-                  query={props.searchQuery}
-                  enabled={leaseLiveStatus}
-                  settled={props.isSettled}
+          ) : (
+            <>
+              {props.project ? (
+                <ProjectFavicon
+                  project={props.project}
+                  className={cn(
+                    "size-4 shrink-0 transition-opacity",
+                    props.isSettled &&
+                      !props.isRouteActive &&
+                      !props.isHighlighted &&
+                      "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
+                  )}
                 />
+              ) : null}
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate",
+                      props.isSettled
+                        ? "font-normal text-secondary-label/70 group-hover/sidebar-row:text-foreground"
+                        : "font-medium text-foreground",
+                      (props.isHighlighted || props.isRouteActive) && "text-foreground",
+                      thread.titleRegeneration != null && "opacity-55",
+                    )}
+                  >
+                    {thread.title}
+                  </span>
+                  <span id={`${props.resultId}-pr`} className="contents">
+                    <ThreadSearchPullRequestNumber
+                      thread={thread}
+                      query={props.searchQuery}
+                      enabled={leaseLiveStatus}
+                      settled={props.isSettled}
+                    />
+                  </span>
+                  <span className="w-8 shrink-0 text-right text-xs text-muted-foreground/55 tabular-nums">
+                    <RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />
+                  </span>
+                </span>
+                {props.searchMatch ? (
+                  <ThreadSearchMatchExcerpt
+                    match={{
+                      source: props.searchMatch.source,
+                      snippet: props.searchMatch.snippet,
+                      query: props.searchMatchQuery ?? props.searchQuery,
+                    }}
+                  />
+                ) : null}
               </span>
-              <span className="w-8 shrink-0 text-right text-xs text-muted-foreground/55 tabular-nums">
-                <RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />
-              </span>
-            </span>
-            {props.searchMatch ? (
-              <ThreadSearchMatchExcerpt
-                match={{
-                  source: props.searchMatch.source,
-                  snippet: props.searchMatch.snippet,
-                  query: props.searchMatchQuery ?? props.searchQuery,
-                }}
-              />
-            ) : null}
-          </span>
+            </>
+          )}
         </TooltipTrigger>
         <SidebarThreadTooltip
           thread={checkoutThread}
@@ -1882,6 +2374,8 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
           branchMismatch={branchMismatch}
           terminalStatus={terminalStatus}
           terminalProcessCount={runningTerminalIds.length}
+          cardText={tideLine}
+          showCard={props.tide}
         />
       </Tooltip>
     </li>

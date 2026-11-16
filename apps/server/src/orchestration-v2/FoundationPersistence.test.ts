@@ -3005,7 +3005,8 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
               EffectWorker.OrchestrationEffectExecutorV2,
               EffectWorker.OrchestrationEffectExecutorV2.of({
                 execute: (effect) =>
-                  effect.request.type === "thread-title.generate"
+                  effect.request.type === "thread-title.generate" ||
+                  effect.request.type === "thread-card.generate"
                     ? Deferred.await(releaseTitles)
                     : Deferred.succeed(turnStarted, undefined).pipe(Effect.asVoid),
               }),
@@ -3022,10 +3023,11 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
             id: `effect:foundation-title-starvation:${index}-title`,
             commandId,
             threadId,
-            request: {
-              type: "thread-title.generate" as const,
-              kind: { type: "regenerate" as const },
-            },
+            // The first thread's own card must not hold its turn back either.
+            request:
+              index === 0
+                ? { type: "thread-card.generate" as const, runId: RunId.make("run:earlier") }
+                : { type: "thread-title.generate" as const, kind: { type: "regenerate" as const } },
           })),
           {
             id: "effect:foundation-title-starvation:turn-start",
@@ -3068,7 +3070,12 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
         threadId: ThreadId.make(`thread:foundation-title-cap:${name}`),
         request: { type: "thread-title.generate" as const, kind: { type: "regenerate" as const } },
       });
-      yield* outbox.enqueue([title("first"), title("second")]);
+      // A card counts toward the same cap as a title.
+      const second = {
+        ...title("second"),
+        request: { type: "thread-card.generate" as const, runId: RunId.make("run:title-cap") },
+      };
+      yield* outbox.enqueue([title("first"), second]);
       const first = yield* outbox.claimNext({ workerId: "title-cap-worker", ...cap });
       assert.strictEqual(Option.getOrUndefined(first)?.id, title("first").id);
 
@@ -3082,8 +3089,8 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
       assert.isTrue(Option.isSome(yield* outbox.nextClaimableAt()));
 
       yield* outbox.succeed({ effectId: title("first").id, workerId: "title-cap-worker" });
-      const second = yield* outbox.claimNext({ workerId: "title-cap-worker", ...cap });
-      assert.strictEqual(Option.getOrUndefined(second)?.id, title("second").id);
+      const claimed = yield* outbox.claimNext({ workerId: "title-cap-worker", ...cap });
+      assert.strictEqual(Option.getOrUndefined(claimed)?.id, second.id);
       yield* outbox.succeed({ effectId: title("second").id, workerId: "title-cap-worker" });
     }),
   );

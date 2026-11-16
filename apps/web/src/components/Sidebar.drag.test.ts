@@ -34,12 +34,15 @@ function layout(
   over: string,
   scale = 1,
   cardHeight = 82,
+  // Measured heights by thread key, for rows that differ from their section's default.
+  heights: Readonly<Record<string, number>> = {},
 ) {
   let top = 100;
   const rects = items.map((item) => {
     const height =
       item.kind === "thread"
-        ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
+        ? (heights[item.key] ??
+            (item.section === "pinned" || item.section === "active" ? cardHeight : 36)) * scale
         : item.marker === "pinned-header" || item.marker === "pinned-divider"
           ? 0
           : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
@@ -62,9 +65,10 @@ function preview(
   active: string,
   over: string,
   scale = 1,
+  heights: Readonly<Record<string, number>> = {},
 ) {
   const strategy = createSidebarSortingStrategy(input);
-  const args = layout(input.items, active, over, scale);
+  const args = layout(input.items, active, over, scale, 82, heights);
   return new Map(
     input.items.map((item, index) => [sidebarListItemId(item), strategy({ ...args, index })]),
   );
@@ -681,6 +685,172 @@ describe("sidebar drag projection", () => {
     );
     expect(result.get(sidebarMarkerId("snoozed-header"))).toEqual({ ...stationary, y: 83 });
     expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(46);
+  });
+});
+
+describe("sidebar drag projection with a Trail", () => {
+  const items = [
+    pinnedHeader,
+    divider,
+    thread("n1", "active"),
+    marker("working-header"),
+    thread("w1", "working"),
+    marker("trail-header"),
+    marker("active-placeholder"),
+    thread("t1", "active"),
+    thread("t2", "active"),
+    marker("trail-more"),
+    settledHeader,
+    thread("s1", "settled"),
+  ];
+  const base = { items, settledOrder: [], settledExpanded: true };
+  const y = (result: ReturnType<typeof preview>, id: string) => result.get(id)?.y;
+
+  it("lands a settled row in the Trail, below the shelves", () => {
+    const result = preview(
+      {
+        ...base,
+        activeOrder: ["n1", "t1", "s1", "t2"],
+        activeZones: { needsYou: ["n1"], trail: ["t1", "s1", "t2"] },
+      },
+      "s1",
+      "t2",
+    );
+    expect(y(result, "n1")).toBe(0);
+    expect(y(result, sidebarMarkerId("working-header"))).toBe(0);
+    expect(y(result, sidebarMarkerId("trail-header"))).toBe(0);
+    // The zero-height placeholder gives up its one-pixel gap.
+    expect(y(result, "t1")).toBe(-1);
+    const slot = y(result, "t2")!;
+    expect(slot).toBeGreaterThan(0);
+    expect(y(result, sidebarMarkerId("trail-more"))).toBe(slot);
+    expect(y(result, sidebarMarkerId("settled-header"))).toBe(slot);
+  });
+
+  it("lands a row that needs you above the shelves", () => {
+    const result = preview(
+      {
+        ...base,
+        activeOrder: ["n1", "s1", "t1", "t2"],
+        activeZones: { needsYou: ["n1", "s1"], trail: ["t1", "t2"] },
+      },
+      "s1",
+      "t2",
+    );
+    expect(y(result, "n1")).toBe(0);
+    // Every row shares one anatomy, so the settled row keeps its own height above the shelves.
+    expect(y(result, sidebarMarkerId("working-header"))).toBe(37);
+    expect(y(result, "t1")).toBe(36);
+    expect(y(result, "t2")).toBe(36);
+  });
+
+  it("opens no slot for a row that lands past the Trail's cap, and drops the row it pushes out", () => {
+    const hidden = preview(
+      {
+        ...base,
+        activeOrder: ["n1", "t1", "t2", "s1"],
+        activeZones: { needsYou: ["n1"], trail: ["t1", "t2"] },
+      },
+      "s1",
+      "t2",
+    );
+    expect(y(hidden, "t2")).toBe(-1);
+    expect(y(hidden, sidebarMarkerId("settled-header"))).toBe(-1);
+
+    const pushed = preview(
+      {
+        ...base,
+        activeOrder: ["n1", "s1", "t1", "t2"],
+        activeZones: { needsYou: ["n1"], trail: ["s1", "t1"] },
+      },
+      "s1",
+      "t1",
+    );
+    expect(pushed.get("t2")?.scaleY).toBe(0);
+  });
+
+  it.each([
+    ["a two-line row", { s1: 50 }, false, 50],
+    ["a four-line row", { s1: 82 }, false, 82],
+    ["a row under a day label", { s1: 74 }, true, 50],
+  ] as const)("sizes %s landing in the Trail by its own height", (_name, own, labelled, slot) => {
+    const result = preview(
+      {
+        ...base,
+        activeOrder: ["n1", "t1", "s1", "t2"],
+        activeZones: { needsYou: ["n1"], trail: ["t1", "s1", "t2"] },
+        rowHasLabel: (key) => labelled && key === "s1",
+      },
+      "s1",
+      "t2",
+      1,
+      { t1: 66, t2: 66, ...own },
+    );
+    expect(y(result, "t1")).toBe(-1);
+    expect(y(result, "t2")).toBe(slot);
+    expect(y(result, sidebarMarkerId("settled-header"))).toBe(slot);
+  });
+
+  it("keeps the pinned label at the shelves' scale whatever the rows' heights", () => {
+    const pinnedLabelOffset = (rowHeight: number) =>
+      y(
+        preview(
+          {
+            ...base,
+            boundaryLabelHeight: 24,
+            activeOrder: ["n1", "t1", "s1", "t2"],
+            activeZones: { needsYou: ["n1"], trail: ["t1", "s1", "t2"] },
+          },
+          "s1",
+          "t2",
+          1,
+          { s1: rowHeight, t1: rowHeight, t2: rowHeight },
+        ),
+        "n1",
+      );
+    expect(pinnedLabelOffset(82)).toBe(pinnedLabelOffset(50));
+  });
+
+  it("leaves the Needs you label behind when the first Needs you row moves to the Trail", () => {
+    const result = preview(
+      {
+        ...base,
+        activeOrder: ["t1", "n1", "t2"],
+        activeZones: { needsYou: [], trail: ["t1", "n1", "t2"] },
+        rowHasLabel: (key) => key === "n1",
+      },
+      "n1",
+      "t2",
+      1,
+      { n1: 106 },
+    );
+    // The row's own 82 px and the gap, not its 24 px label.
+    expect(y(result, "t2")! - y(result, "t1")!).toBe(83);
+  });
+
+  it("keeps the rows on their sides of the shelves when no order is given", () => {
+    const result = preview(base, "t2", sidebarMarkerId("settled-header"));
+    expect(y(result, "n1")).toBe(0);
+    expect(y(result, sidebarMarkerId("working-header"))).toBe(0);
+    expect(y(result, "t1")).toBe(-1);
+  });
+
+  it("gives the gap above a bottom-anchored History to History alone", () => {
+    const strategy = createSidebarSortingStrategy({
+      ...base,
+      activeOrder: ["n1", "t1", "t2"],
+      activeZones: { needsYou: ["n1"], trail: ["t1", "t2"] },
+    });
+    const args = layout(items, "t1", "t2");
+    const historyIndex = items.indexOf(settledHeader);
+    const rects = args.rects.map((rect, index) =>
+      index < historyIndex ? rect : { ...rect, top: rect.top + 200, bottom: rect.bottom + 200 },
+    );
+    const at = (item: SidebarListItem) =>
+      strategy({ ...args, rects, index: items.indexOf(item) })?.y;
+    expect(at(items[3]!)).toBe(0);
+    expect(at(items[5]!)).toBe(0);
+    expect(at(settledHeader)).toBe(0);
   });
 });
 

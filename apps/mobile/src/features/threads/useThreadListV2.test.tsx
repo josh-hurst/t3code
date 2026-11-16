@@ -62,6 +62,9 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
     projectFolders: null,
     collapsedFolderKeys: new Set(),
     selectedThreadKey: null,
+    tide: false,
+    trailExpanded: false,
+    projects: [],
   };
   const seen: Array<ReturnType<typeof useThreadListV2>> = [];
   function Probe(props: { input: typeof input; tab: string }) {

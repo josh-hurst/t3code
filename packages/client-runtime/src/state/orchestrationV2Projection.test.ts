@@ -173,6 +173,26 @@ describe("applyOrchestrationV2ProjectionEvent", () => {
     expect(next?.providerTurns[0]?.tokenUsage).toEqual(running.tokenUsage);
   });
 
+  it("applies a card without counting it as activity", () => {
+    const card = {
+      line: "Fixed flaky login test",
+      topics: ["login test"],
+      open: [],
+      messageId: MessageId.make("message-card"),
+      at: "2026-06-20T01:00:00.000Z",
+      runId,
+      chapters: [],
+    };
+    const next = applyOrchestrationV2ProjectionEvent(emptyProjection, {
+      id: "event-card" as OrchestrationV2DomainEvent["id"],
+      type: "thread.card-updated",
+      threadId,
+      occurredAt: DateTime.makeUnsafe("2026-06-20T01:00:00.000Z"),
+      payload: { card },
+    });
+    expect(next).toEqual({ ...emptyProjection, thread: { ...emptyProjection.thread, card } });
+  });
+
   it("applies thread lifecycle payloads instead of leaving stale metadata", () => {
     const archivedAt = DateTime.makeUnsafe("2026-06-20T01:00:00.000Z");
     const event = {

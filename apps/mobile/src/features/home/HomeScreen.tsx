@@ -73,9 +73,11 @@ import {
   ThreadListV2FolderHeader,
   ThreadListV2PendingRow,
   ThreadListV2Row,
+  ThreadListV2SectionHeader,
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
+  ThreadListV2TrailMoreRow,
   ThreadListV2WorkingShelfHeader,
 } from "../threads/thread-list-v2-items";
 import { useThreadRowProviderInstanceResolver } from "../threads/thread-provider-instance";
@@ -129,6 +131,7 @@ interface HomeScreenProps {
   readonly onArchiveThread: (thread: EnvironmentThreadShell) => void;
   readonly onDeleteThread: (thread: EnvironmentThreadShell) => void;
   readonly onSettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  readonly onSettleThreads: (threads: ReadonlyArray<EnvironmentThreadShell>) => Promise<boolean>;
   readonly onSnoozeThread: (
     thread: EnvironmentThreadShell,
     snoozedUntil: string,
@@ -358,6 +361,7 @@ export function HomeScreen(props: HomeScreenProps) {
     ),
   );
   const handleSettleThread = props.onSettleThread;
+  const handleSettleThreads = props.onSettleThreads;
   const handleSnoozeThread = props.onSnoozeThread;
   const handleUnsnoozeThread = props.onUnsnoozeThread;
   const handlePinThread = props.onPinThread;
@@ -381,12 +385,15 @@ export function HomeScreen(props: HomeScreenProps) {
     setSettledVisibleCount((count) => count + THREAD_LIST_V2_SETTLED_PAGE_COUNT);
   const {
     loaded: shelfPreferencesLoaded,
+    tide,
     settledShelfExpanded,
     snoozedShelfExpanded,
+    trailExpanded,
     workingShelfEnabled,
     workingShelfExpanded,
     toggleSettledShelf,
     toggleSnoozedShelf,
+    toggleTrail,
     toggleWorkingShelf,
     projectFoldersEnabled,
     collapsedFolderKeys,
@@ -419,6 +426,7 @@ export function HomeScreen(props: HomeScreenProps) {
     contentOnlyThreadKeys,
     olderSettledShelf,
   } = useThreadListV2({
+    projects: props.projects,
     threads: props.threads,
     pendingTasks: props.pendingTasks,
     environmentId: props.selectedEnvironmentId,
@@ -441,6 +449,8 @@ export function HomeScreen(props: HomeScreenProps) {
     projectFolders,
     collapsedFolderKeys,
     selectedThreadKey,
+    tide,
+    trailExpanded,
   });
   // Called as `props.onSelectThread(...)`, the compiler would cache this handler on the whole
   // props object, which is new on every render of Home's parent.
@@ -522,9 +532,33 @@ export function HomeScreen(props: HomeScreenProps) {
         />
       );
     }
+    if (item.type === "v2-section-header") {
+      const clearThreads = item.clearThreads;
+      return (
+        <ThreadListV2SectionHeader
+          title={item.title}
+          count={item.count}
+          disabled={item.disabled}
+          {...(clearThreads === null
+            ? {}
+            : { onClear: () => void handleSettleThreads(clearThreads) })}
+        />
+      );
+    }
+    if (item.type === "v2-trail-more") {
+      return (
+        <ThreadListV2TrailMoreRow
+          label={item.label}
+          expanded={item.expanded}
+          disabled={item.disabled}
+          onToggle={toggleTrail}
+        />
+      );
+    }
     if (item.type === "v2-snoozed-shelf") {
       return (
         <ThreadListV2SnoozedShelfHeader
+          label={item.label}
           count={item.count}
           disabled={item.disabled}
           expanded={item.expanded}
@@ -535,6 +569,7 @@ export function HomeScreen(props: HomeScreenProps) {
     if (item.type === "v2-settled-shelf") {
       return (
         <ThreadListV2SettledShelfHeader
+          label={item.label}
           count={item.count}
           disabled={item.disabled}
           expanded={item.expanded}
@@ -551,6 +586,8 @@ export function HomeScreen(props: HomeScreenProps) {
         onNewThreadOnBranch={props.onNewThreadOnBranch}
         thread={thread}
         variant={item.item.variant}
+        cardLine={item.item.cardLine}
+        projectLine={item.item.projectLine}
         hasQueuedMessages={item.hasQueuedMessages}
         snoozed={item.item.snoozed}
         pinned={item.item.pinned}

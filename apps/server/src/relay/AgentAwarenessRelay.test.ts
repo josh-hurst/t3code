@@ -708,6 +708,7 @@ describe("AgentAwarenessRelay", () => {
           settledOverride: "settled" as const,
           settledAt: now,
           lastVisitedAt: null,
+          card: null,
         };
         yield* Ref.set(currentShell, settled);
         yield* Queue.offer(events, {

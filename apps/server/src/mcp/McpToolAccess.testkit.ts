@@ -76,6 +76,7 @@ export const idleThreadProjection = (
     hasActionableProposedPlan: _hasActionableProposedPlan,
     itemCount: _itemCount,
     visibleItemCount: _visibleItemCount,
+    card: _card,
     lastVisitedAt,
     ...thread
   } = shell;

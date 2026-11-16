@@ -2296,7 +2296,7 @@ describe("storage cleanup reports and local file policies", () => {
             type: "thread.deleted",
             threadId: ThreadId.make("thread-1"),
             occurredAt: at(0),
-            payload: { ...shell({ deletedAt: at(0) }), lastVisitedAt: null },
+            payload: { ...shell({ deletedAt: at(0) }), lastVisitedAt: null, card: null },
           });
           expect(fixture.snapshotReads()).toBe(startupReads + 3 * Number(worktreeOnDelete));
           expect(fixture.sessionLiveChecks()).toBe(worktreeOnDelete ? 6 : 0);

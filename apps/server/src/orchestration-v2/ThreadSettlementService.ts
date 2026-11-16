@@ -8,6 +8,7 @@ import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import {
   CommandId,
   isOrchestrationV2WorkActive,
+  threadCardHasOpenAsk,
   type ThreadId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
@@ -160,6 +161,8 @@ export function isAutoSettlementCandidate(
   // Settling ends a watch, which would silently drop a reviewer's later comments.
   if (pendingTasks.some(isPullRequestWatchTask)) return false;
   if (threadHasQueuedTurnStart(thread, nowMs)) return false;
+  // An unanswered question keeps the thread in Needs you; settling would bury it.
+  if (threadCardHasOpenAsk(thread.card)) return false;
   // Interrupted runs must keep the same snooze protection the sidebar shows.
   return !isSnoozed(thread, nowMs);
 }

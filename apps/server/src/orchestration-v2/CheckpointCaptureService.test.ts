@@ -265,6 +265,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         );
 
         const committed = yield* Ref.make<ReadonlyArray<OrchestrationV2DomainEvent>>([]);
+        const enqueued = yield* Ref.make<ReadonlyArray<unknown>>([]);
         const layerCapture = CheckpointCaptureService.layer.pipe(
           Layer.provide(
             Layer.mergeAll(
@@ -302,6 +303,12 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
               Layer.mock(EventSink.EventSinkV2)({
                 commitCommand: (input) =>
                   Ref.set(committed, input.events).pipe(
+                    Effect.andThen(
+                      Ref.set(
+                        enqueued,
+                        input.effects.map((effect) => effect.request),
+                      ),
+                    ),
                     Effect.as({
                       commandId: input.commandId,
                       committed: true,
@@ -323,6 +330,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
           assert.instanceOf(incomplete, CheckpointCaptureService.CheckpointCaptureExecutionError);
           yield* service.execute({ threadId, runId, scopeId });
 
+          assert.deepEqual(yield* Ref.get(enqueued), [{ type: "thread-card.generate", runId }]);
           const events = yield* Ref.get(committed);
           const runUpdated = events.find((event) => event.type === "run.updated");
           assert.isDefined(runUpdated);
@@ -866,6 +874,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         capturedAt: cancelledAt,
       };
       const commits = yield* Ref.make(0);
+      const enqueued = yield* Ref.make<ReadonlyArray<unknown>>([]);
       const layerCapture = CheckpointCaptureService.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
@@ -879,6 +888,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
               commitCommand: (input) =>
                 Effect.forEach(input.events, (event) => projectionStore.apply(event)).pipe(
                   Effect.andThen(Ref.update(commits, (count) => count + 1)),
+                  Effect.andThen(Ref.set(enqueued, input.effects)),
                   Effect.as({ committed: true } as never),
                   Effect.orDie,
                 ),
@@ -902,6 +912,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
       }).pipe(Effect.provide(layerCapture));
 
       assert.equal(yield* Ref.get(commits), 1);
+      assert.deepEqual(yield* Ref.get(enqueued), [], "a stopped run has no reply to card");
       const projected = yield* projectionStore.getCheckpointCaptureContext(cancelledThreadId, {
         runId: cancelledRunId,
         scopeId: cancelledScopeId,
@@ -946,6 +957,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
       const sideChatProviderThreadId = ProviderThreadId.make(
         "provider-thread:checkpoint-capture-side-chat",
       );
+      const enqueued = yield* Ref.make<ReadonlyArray<unknown>>([]);
       const event = { threadId: sideChatThreadId, occurredAt: now };
       const events: ReadonlyArray<OrchestrationV2DomainEvent> = [
         {
@@ -1095,6 +1107,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
             Layer.mock(EventSink.EventSinkV2)({
               commitCommand: (input) =>
                 Effect.forEach(input.events, (committed) => projectionStore.apply(committed)).pipe(
+                  Effect.andThen(Ref.set(enqueued, input.effects)),
                   Effect.as({ committed: true } as never),
                   Effect.orDie,
                 ),
@@ -1118,6 +1131,31 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
       assert.equal(runs[0]?.status, "completed");
       const checkpoint = checkpoints.find((candidate) => candidate.id === runs[0]?.checkpointId);
       assert.equal(checkpoint?.status, "missing");
+      assert.deepEqual(yield* Ref.get(enqueued), [], "side chats are not listed, so get no card");
+
+      const sideChatThread = events[0];
+      if (sideChatThread?.type !== "thread.created") return;
+      const subagentThreadId = ThreadId.make("thread:checkpoint-capture-subagent");
+      yield* projectionStore.apply({
+        ...sideChatThread,
+        id: EventId.make("event:checkpoint-capture-subagent:thread"),
+        threadId: subagentThreadId,
+        payload: {
+          ...sideChatThread.payload,
+          id: subagentThreadId,
+          lineage: {
+            parentThreadId: threadId,
+            relationshipToParent: "subagent",
+            rootThreadId: threadId,
+          },
+        },
+      });
+      const listed = (id: ThreadId) =>
+        projectionStore
+          .getCheckpointCaptureContext(id, { runId: sideChatRunId, scopeId: sideChatScopeId })
+          .pipe(Effect.map((context) => context.listed));
+      assert.isFalse(yield* listed(subagentThreadId));
+      assert.isFalse(yield* listed(sideChatThreadId));
     }),
   );
 });

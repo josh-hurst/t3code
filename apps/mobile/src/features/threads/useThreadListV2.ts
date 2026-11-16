@@ -1,6 +1,11 @@
 import type { OlderSettledScope } from "@t3tools/client-runtime/state/threads";
+import {
+  createOpenThreadPlacementHold,
+  createOpenThreadTouchHold,
+} from "@t3tools/client-runtime/state/thread-zones";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../../state/olderSettledShelf";
@@ -67,8 +72,23 @@ export function useThreadListV2(input: {
   readonly projectFolders: LayoutInput["projectFolders"];
   readonly collapsedFolderKeys: ReadonlySet<string>;
   readonly selectedThreadKey: string | null;
+  /** The self-filing list; false restores the classic list. */
+  readonly tide: boolean;
+  /** For the project names on the self-filing list's slim rows. */
+  readonly projects: ReadonlyArray<Pick<EnvironmentProject, "environmentId" | "id" | "title">>;
+  readonly trailExpanded: boolean;
 }) {
   const { threads, workingShelfEnabled } = input;
+  // Per list: the home screen and the sidebar can have different threads open.
+  const [openThreadHolds] = useState(() => ({
+    placement: createOpenThreadPlacementHold(),
+    touch: createOpenThreadTouchHold(),
+  }));
+  const tideDay = useMemo(() => {
+    const day = new Date(input.now);
+    day.setHours(0, 0, 0, 0);
+    return day.getTime();
+  }, [input.now]);
   // Neighbors in the active order can sit in other folders, so rows do not move there.
   const activeRowsMove = !workingShelfEnabled && input.projectFolders == null;
   const layoutTime = useMemo(
@@ -135,68 +155,95 @@ export function useThreadListV2(input: {
     visibleCount: input.searchQuery.trim().length === 0 ? input.settledLimit : 0,
   });
   const { isListed, unloadedCount } = olderSettledShelf;
-  const layout = useMemo(
-    () =>
-      buildThreadListV2Items({
-        pendingOrder: input.pendingOrder,
-        threads: threads.filter((thread) => thread.archivedAt === null),
-        environmentId: input.environmentId,
-        projectRefs: input.projectRefs,
-        searchQuery: input.searchQuery,
-        matchedThreadKeys: new Set(input.searchMatches.keys()),
-        settlementEnvironmentIds: input.settlementEnvironmentIds,
-        snoozeEnvironmentIds: input.snoozeEnvironmentIds,
-        queuedThreadKeys: input.queuedThreadKeys,
-        settledLimit: input.settledLimit,
-        now: layoutTime,
-        workingShelfEnabled,
-        workingShelfExpanded: input.workingShelfExpanded,
-        inboxReturnAt: inbox.returnedAt,
-        isWorking: inbox.isWorking,
-        snoozedShelfExpanded: input.snoozedShelfExpanded,
-        settledShelfExpanded: input.settledShelfExpanded,
-        projectFolders: input.projectFolders,
-        collapsedFolderKeys: input.collapsedFolderKeys,
-        selectedThreadKey: input.selectedThreadKey,
-        isListedSettled: isListed,
-        unloadedSettledCount: unloadedCount(
-          threads.filter(
-            (thread) =>
-              thread.archivedAt === null &&
-              scopes.some(
-                (scope) =>
-                  scope.environmentId === thread.environmentId &&
-                  (scope.projectIds === null || scope.projectIds.includes(thread.projectId)),
-              ),
+  const layout = useMemo(() => {
+    const selectedThreadKey = input.selectedThreadKey;
+    const tide = input.tide
+      ? {
+          trailExpanded: input.trailExpanded,
+          day: tideDay,
+          holdNeedsYou: openThreadHolds.placement(selectedThreadKey),
+          heldTouch: openThreadHolds.touch(
+            selectedThreadKey === null
+              ? undefined
+              : threads.find(
+                  (thread) => `${thread.environmentId}:${thread.id}` === selectedThreadKey,
+                ),
           ),
-        ),
-      }),
-    [
-      input.pendingOrder,
-      threads,
-      input.environmentId,
-      input.projectRefs,
-      input.searchQuery,
-      input.searchMatches,
-      input.settlementEnvironmentIds,
-      input.snoozeEnvironmentIds,
-      input.queuedThreadKeys,
-      input.settledLimit,
-      layoutTime,
+        }
+      : undefined;
+    const projectTitleByKey = new Map(
+      input.projects.map((project) => [
+        scopedProjectKey(project.environmentId, project.id),
+        project.title,
+      ]),
+    );
+    return buildThreadListV2Items({
+      projectTitleOf: (thread) =>
+        projectTitleByKey.get(scopedProjectKey(thread.environmentId, thread.projectId)) ?? null,
+      pendingOrder: input.pendingOrder,
+      threads: threads.filter((thread) => thread.archivedAt === null),
+      environmentId: input.environmentId,
+      projectRefs: input.projectRefs,
+      searchQuery: input.searchQuery,
+      matchedThreadKeys: new Set(input.searchMatches.keys()),
+      settlementEnvironmentIds: input.settlementEnvironmentIds,
+      snoozeEnvironmentIds: input.snoozeEnvironmentIds,
+      queuedThreadKeys: input.queuedThreadKeys,
+      settledLimit: input.settledLimit,
+      now: layoutTime,
       workingShelfEnabled,
-      input.workingShelfExpanded,
-      inbox.returnedAt,
-      inbox.isWorking,
-      input.snoozedShelfExpanded,
-      input.settledShelfExpanded,
-      input.projectFolders,
-      input.collapsedFolderKeys,
-      input.selectedThreadKey,
-      isListed,
-      unloadedCount,
-      scopes,
-    ],
-  );
+      workingShelfExpanded: input.workingShelfExpanded,
+      inboxReturnAt: inbox.returnedAt,
+      isWorking: inbox.isWorking,
+      snoozedShelfExpanded: input.snoozedShelfExpanded,
+      settledShelfExpanded: input.settledShelfExpanded,
+      projectFolders: input.projectFolders,
+      collapsedFolderKeys: input.collapsedFolderKeys,
+      selectedThreadKey: input.selectedThreadKey,
+      isListedSettled: isListed,
+      unloadedSettledCount: unloadedCount(
+        threads.filter(
+          (thread) =>
+            thread.archivedAt === null &&
+            scopes.some(
+              (scope) =>
+                scope.environmentId === thread.environmentId &&
+                (scope.projectIds === null || scope.projectIds.includes(thread.projectId)),
+            ),
+        ),
+      ),
+      ...(tide === undefined ? {} : { tide }),
+    });
+  }, [
+    input.projects,
+    input.pendingOrder,
+    threads,
+    input.environmentId,
+    input.projectRefs,
+    input.searchQuery,
+    input.searchMatches,
+    input.settlementEnvironmentIds,
+    input.snoozeEnvironmentIds,
+    input.queuedThreadKeys,
+    input.settledLimit,
+    layoutTime,
+    workingShelfEnabled,
+    input.workingShelfExpanded,
+    inbox.returnedAt,
+    inbox.isWorking,
+    input.snoozedShelfExpanded,
+    input.settledShelfExpanded,
+    input.projectFolders,
+    input.collapsedFolderKeys,
+    input.selectedThreadKey,
+    isListed,
+    unloadedCount,
+    scopes,
+    input.tide,
+    input.trailExpanded,
+    tideDay,
+    openThreadHolds,
+  ]);
   useOlderSettledShelfGrowth(olderSettledShelf, layout.listedSettledThreads);
   const contentOnlyThreadKeys = useKeySet([...layout.contentOnlyThreadKeys].sort().join("\n"));
   const pendingTasks = useMemo(() => {
@@ -232,6 +279,7 @@ export function useThreadListV2(input: {
         settledCount: layout.settledCount,
         settledShelfExpanded: input.settledShelfExpanded,
         settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
+        ...(input.tide ? { tide: { ...layout, trailExpanded: input.trailExpanded } } : {}),
         snoozeLabelNow: `${input.now.slice(0, 16)}:00.000Z`,
         snoozeEnvironmentIds: input.snoozeEnvironmentIds,
         queuedThreadKeys: input.queuedThreadKeys,
@@ -249,6 +297,8 @@ export function useThreadListV2(input: {
       input.queuedThreadKeys,
       moveAvailability,
       input.shelfPreferencesLoaded,
+      input.tide,
+      input.trailExpanded,
     ],
   );
   return { layout, items, contentOnlyThreadKeys, olderSettledShelf };

@@ -198,23 +198,33 @@ export function AutoSettleSettingsRows(props: {
 export function WorkingSectionSettings() {
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const preferences = useAtomValue(mobilePreferencesAtom);
-  const workingShelfEnabled =
-    AsyncResult.isSuccess(preferences) && preferences.value.workingShelfEnabled !== false;
+  const loaded = AsyncResult.isSuccess(preferences);
+  const classic = loaded && preferences.value.classicThreadList === true;
+  const workingShelfEnabled = loaded && preferences.value.workingShelfEnabled !== false;
 
   return (
     <View className="gap-3">
       <SettingsSection title="Sidebar">
         <SettingsSwitchRow
-          icon="bolt.circle"
-          label="Working section"
-          value={workingShelfEnabled}
-          onValueChange={(value) => savePreferences({ workingShelfEnabled: value })}
+          icon="line.3.horizontal"
+          label="Classic thread list"
+          value={classic}
+          disabled={!loaded}
+          onValueChange={(value) => savePreferences({ classicThreadList: value })}
         />
+        {classic ? (
+          <SettingsSwitchRow
+            icon="bolt.circle"
+            label="Working section"
+            value={workingShelfEnabled}
+            onValueChange={(value) => savePreferences({ workingShelfEnabled: value })}
+          />
+        ) : null}
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
-        Fold working and monitoring threads into a Working section. They return to the top of the
-        list when they need you. While this is on, active threads are ordered by time and cannot be
-        moved.
+        {classic
+          ? "Order active threads by hand. Fold working and monitoring threads into a Working section; they return to the top of the list when they need you. While Working is on, active threads are ordered by time and cannot be moved."
+          : "Threads file themselves: Needs you, Working, Later, then the Trail of threads you opened or wrote to most recently. Turn on Classic thread list to order active threads by hand."}
       </Text>
     </View>
   );
@@ -242,8 +252,10 @@ export function NewThreadSettingsSection() {
 function ProjectFoldersSettingsSection() {
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const preferences = useAtomValue(mobilePreferencesAtom);
-  const projectFoldersEnabled =
-    AsyncResult.isSuccess(preferences) && preferences.value.projectFoldersEnabled === true;
+  const loaded = AsyncResult.isSuccess(preferences);
+  const projectFoldersEnabled = loaded && preferences.value.projectFoldersEnabled === true;
+  // Folders belong to the classic list.
+  if (!loaded || preferences.value.classicThreadList !== true) return null;
 
   return (
     <View className="gap-3">

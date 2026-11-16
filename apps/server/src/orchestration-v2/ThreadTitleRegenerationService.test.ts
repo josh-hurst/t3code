@@ -290,7 +290,10 @@ describe("ThreadTitleRegenerationService", () => {
     () =>
       Effect.gen(function* () {
         for (const prefix of ["", "Ultrathink:\n"]) {
-          const harness = makeHarness();
+          const harness = makeHarness({
+            generateTitle: () =>
+              Effect.succeed({ title: "Generated title", needsRefinement: true }),
+          });
           yield* Effect.gen(function* () {
             const threads = yield* ThreadManagement.ThreadManagementService;
             const service = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
@@ -318,6 +321,13 @@ describe("ThreadTitleRegenerationService", () => {
             const projection = yield* threads.getThreadProjection(threadId);
             assert.equal(projection.messages[0]?.text, text);
             assert.equal(projection.thread.title, "Generated title");
+            // A first title that guessed is marked; a later one had the conversation to read.
+            assert.isTrue(projection.thread.titleNeedsRefinement);
+            const again = yield* armRegeneration({ command: "image:retitle", threadId });
+            yield* service.execute({ threadId, requestId: again, kind: { type: "regenerate" } });
+            assert.isFalse(
+              (yield* threads.getThreadProjection(threadId)).thread.titleNeedsRefinement,
+            );
           }).pipe(Effect.provide(harness.layer));
         }
       }),
@@ -361,6 +371,10 @@ describe("ThreadTitleRegenerationService", () => {
         const renamed = yield* threads.getThreadProjection(threadId);
         assert.equal(renamed.thread.title, "Manual title");
         assert.isNotOk(renamed.thread.titleRegeneration);
+        // A name given by hand is kept until someone asks for a generated one again.
+        assert.isString(renamed.thread.titleEditedAt);
+        yield* armRegeneration({ command: "command:title:arm:3", threadId });
+        assert.isNull((yield* threads.getThreadProjection(threadId)).thread.titleEditedAt);
       }).pipe(Effect.provide(harness.layer));
     }),
   );

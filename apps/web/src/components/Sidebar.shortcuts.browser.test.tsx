@@ -2,6 +2,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import type * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
@@ -41,13 +42,25 @@ vi.mock(import("~/state/server"), async (original) => {
   const keybindings = compileResolvedKeybindingsConfig([
     { key: "mod+shift+]", command: "thread.next", when: "!previewFocus && !previewOpen" },
     { key: "mod+1", command: "thread.jump.1", when: "!previewFocus" },
+    { key: "mod+2", command: "thread.jump.2", when: "!previewFocus" },
   ]);
   return { ...actual, primaryServerKeybindingsAtom: Atom.make(keybindings) };
 });
 
+// Both tests list the same threads: the fake socket's later snapshot does not replace the first.
+// The list draws `failed` first because it needs you, then `first` because it was opened last.
+const first = {
+  ...threadWithHistory("thread-b", 1),
+  shell: { lastVisitedAt: DateTime.makeUnsafe("2026-06-01T00:00:00.000Z") },
+};
+const second = threadWithHistory("thread-a", 1);
+const failed = {
+  ...threadWithHistory("thread-z", 1),
+  shell: { status: "failed" as const, lastVisitedAt: null },
+};
+
 it("leaves thread shortcuts and their hints to the preview when their rules exclude it", async () => {
-  const [first, second] = [threadWithHistory("thread-a", 1), threadWithHistory("thread-b", 1)];
-  using _environment = installFakeEnvironment([first, second]);
+  using _environment = installFakeEnvironment([first, second, failed]);
   using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
@@ -100,4 +113,32 @@ it("leaves thread shortcuts and their hints to the preview when their rules excl
     expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${second.id}`),
   );
   await whileHoldingControl(() => expect(jumpHint()).not.toBeNull());
+});
+
+it("jumps by the drawn order: what needs you, then the Trail by last touch", async () => {
+  using _environment = installFakeEnvironment([first, second, failed]);
+  using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  await page.viewport(1400, 900);
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${second.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  await expect.element(page.getByText(`Thread ${failed.id}`).first()).toBeVisible();
+
+  await userEvent.keyboard("{Control>}2{/Control}");
+  await vi.waitFor(() =>
+    expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${first.id}`),
+  );
+  await userEvent.keyboard("{Control>}1{/Control}");
+  await vi.waitFor(() =>
+    expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${failed.id}`),
+  );
 });

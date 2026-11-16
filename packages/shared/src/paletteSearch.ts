@@ -818,6 +818,9 @@ export interface ThreadSearchSubject {
     /** Values such as URLs, matched only by the whole query. */
     readonly references?: ReadonlyArray<string>;
   }>;
+  /** What the thread's latest finished run did, from its card. */
+  readonly cardLine?: string | null;
+  readonly topics?: ReadonlyArray<string>;
   /** Latest user activity, in epoch ms. */
   readonly activityAt: number | null;
   readonly opens?: ThreadOpenStats | null;
@@ -958,6 +961,8 @@ function matchHint(
       text: `#${pullRequest.number}${pullRequest.title ? ` ${pullRequest.title}` : ""}`,
     })),
     { label: "Branch", text: searchableBranch(thread.branch) },
+    { label: "Summary", text: thread.cardLine },
+    { label: "Topic", text: thread.topics?.join(", ") },
     { label: "Project", text: thread.projectTitle },
     { label: "Environment", text: thread.environmentLabel },
   ];
@@ -995,6 +1000,9 @@ function threadSearchFields(thread: ThreadSearchSubject): ReadonlyArray<Weighted
   }
   const branch = searchableBranch(thread.branch);
   if (branch) fields.push({ value: branch, weight: 0.6 });
+  // Below the title, so a thread named for the query still ranks first.
+  if (thread.cardLine) fields.push({ value: thread.cardLine, weight: 0.5 });
+  for (const topic of thread.topics ?? []) fields.push({ value: topic, weight: 0.6 });
   if (thread.projectTitle) {
     fields.push({ value: thread.projectTitle, weight: 0.25, context: true });
   }

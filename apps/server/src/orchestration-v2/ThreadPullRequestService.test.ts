@@ -800,7 +800,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
                   type: "thread.created",
                   threadId: thread.id,
                   occurredAt: NOW,
-                  payload: { ...thread, lastVisitedAt: thread.lastVisitedAt ?? null },
+                  payload: { ...thread, lastVisitedAt: thread.lastVisitedAt ?? null, card: null },
                 });
                 const sql = yield* SqlClient.SqlClient;
                 yield* sql`INSERT INTO orchestration_events (

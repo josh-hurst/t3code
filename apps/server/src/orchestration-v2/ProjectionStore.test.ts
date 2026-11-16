@@ -7829,6 +7829,47 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           });
         }
       }
+      // The request's card says what it asks, on one line and cut short, on both paths.
+      const question = `Ship it\n  now?${" Or wait for the next build to finish first.".repeat(4)}`;
+      yield* projectionStore.apply({
+        id: EventId.make("event:projection-shell-question:item"),
+        type: "turn-item.updated",
+        threadId,
+        nodeId: rootNodeId,
+        occurredAt: now,
+        payload: {
+          id: TurnItemId.make("item:projection-shell-question"),
+          type: "user_input_request",
+          threadId,
+          runId,
+          nodeId: rootNodeId,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: 1,
+          status: "waiting",
+          title: null,
+          startedAt: now,
+          completedAt: null,
+          updatedAt: now,
+          requestId,
+          questions: [{ id: "ship", header: "Ship", question, options: [] }],
+        },
+      });
+      const describedProjection = yield* projectionStore.getThreadProjection(threadId);
+      const describedShell = (yield* projectionStore.getShellSnapshot()).threads.find(
+        (row) => row.id === threadId,
+      )!;
+      for (const questionShell of [
+        describedShell,
+        ProjectionStore.threadShellFromProjection(describedProjection),
+      ]) {
+        const description = questionShell.pendingRuntimeRequest?.description ?? "";
+        assert.isTrue(description.startsWith("Ship it now? Or wait"));
+        assert.lengthOf(description, 140);
+        assert.isTrue(description.endsWith("…"));
+      }
 
       yield* projectionStore.apply({
         id: EventId.make("event:projection-shell-interruptible:waiting"),
@@ -9101,6 +9142,8 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         assert.equal(shell?.pendingRuntimeRequest?.id, "secret:b");
         assert.isTrue(shell?.pendingRuntimeRequest?.blocking);
         assert.isTrue(shell?.pendingRuntimeRequest?.userOnly);
+        // A secret card never describes itself on the shell.
+        assert.isUndefined(shell?.pendingRuntimeRequest?.description);
       }
 
       const requestId = RuntimeRequestId.make(`request:${suffix}:async`);

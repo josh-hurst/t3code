@@ -19,6 +19,7 @@ import * as CheckpointService from "./CheckpointService.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import { threadCardGenerationEffect } from "./ThreadCard.ts";
 
 export class CheckpointCaptureExecutionError extends Schema.TaggedError<CheckpointCaptureExecutionError>()(
   "CheckpointCaptureExecutionError",
@@ -65,8 +66,15 @@ export const layer: Layer.Layer<
       readonly runId: RunId;
       readonly scopeId: CheckpointScopeId;
     }) {
-      const { run, rootNode, scope, providerThread, preservedCheckpointOrdinals, sideChat } =
-        yield* projections.getCheckpointCaptureContext(input.threadId, input);
+      const {
+        run,
+        rootNode,
+        scope,
+        providerThread,
+        preservedCheckpointOrdinals,
+        sideChat,
+        listed,
+      } = yield* projections.getCheckpointCaptureContext(input.threadId, input);
       // Stopped runs remain terminal; their checkpoint is the next message's rollback point.
       const stopped = run?.status === "interrupted" || run?.status === "cancelled";
 
@@ -135,7 +143,11 @@ export const layer: Layer.Layer<
         threadId: input.threadId,
         commandType: "checkpoint.capture",
         acceptedAt: capturedAt,
-        effects: [],
+        // Only a finished run on a thread the user lists has a reply worth a card.
+        effects:
+          stopped || !listed
+            ? []
+            : [threadCardGenerationEffect({ commandId, threadId: input.threadId, runId: run.id })],
         events: [
           ...(threadStartCheckpoint === null
             ? []

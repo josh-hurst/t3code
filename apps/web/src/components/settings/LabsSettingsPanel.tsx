@@ -15,10 +15,11 @@ import { firstManagedDenial, usePrimaryManagedPolicy } from "~/state/managedPoli
 
 /** Features still settling in. */
 export function LabsSettingsPanel() {
+  const settings = useScopedSettings();
   return (
     <SettingsPageContainer>
       <SettingsSection id="beta" title="Beta">
-        <BoringSidebarRow />
+        {settings.sidebarClassicEnabled ? <BoringSidebarRow /> : null}
         {/* Clerk is only mounted when this build has T3 Connect. */}
         {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
         <LinkedEnvironmentsRow />

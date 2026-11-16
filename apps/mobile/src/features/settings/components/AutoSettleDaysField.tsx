@@ -17,7 +17,9 @@ export function AutoSettleDaysField(props: AutoSettleDaysFieldProps) {
       min={MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
       max={MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
       label="Days before auto-settle"
-      formatValue={(value) => `${value} ${value === 1 ? "day" : "days"}`}
+      formatValue={(value) =>
+        Number.isInteger(value) ? `${value} ${value === 1 ? "day" : "days"}` : `${value * 24} hours`
+      }
     />
   );
 }

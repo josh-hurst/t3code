@@ -95,6 +95,9 @@ const ThreadOpensRow = Schema.Struct({
 const decodeThreadOpens = Schema.decodeUnknownOption(
   Schema.fromJsonString(OrchestrationV2ThreadOpens),
 );
+const decodeCardTopics = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Array(Schema.String)),
+);
 
 const SNIPPET_LENGTH = 240;
 // The newest hits read per query. A common word stops here instead of reading
@@ -318,6 +321,9 @@ const OlderSettledTitleRow = Schema.Struct({
   linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
   branchPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
   opens: Schema.NullOr(Schema.String),
+  // Read raw and checked per row: a card this build cannot read must not fail the search.
+  cardLine: Schema.Unknown,
+  cardTopics: Schema.Unknown,
   createdAt: IsoDateTime,
   projectTitle: Schema.String,
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
@@ -382,6 +388,8 @@ export const make = Effect.gen(function* () {
         json_extract(threads.payload_json, '$.linkedPullRequest') AS "linkedPullRequest",
         json_extract(threads.payload_json, '$.branchPullRequest') AS "branchPullRequest",
         json_extract(threads.payload_json, '$.opens') AS opens,
+        json_extract(threads.payload_json, '$.card.line') AS "cardLine",
+        json_extract(threads.payload_json, '$.card.topics') AS "cardTopics",
         json_extract(threads.payload_json, '$.createdAt') AS "createdAt",
         projects.title AS "projectTitle",
         ${latestUserMessageAt(sql)} AS "latestUserMessageAt"
@@ -560,6 +568,8 @@ export const make = Effect.gen(function* () {
           branch: row.thread.branch,
           projectTitle: row.projectTitle,
           pullRequests: threadSearchPullRequests(row.thread),
+          cardLine: row.thread.card?.line ?? null,
+          topics: row.thread.card?.topics ?? [],
           // Like the clients: what the user last wrote, else when the thread began.
           activityAt: Date.parse(
             row.latestUserMessageAt ?? DateTime.formatIso(row.thread.createdAt),
@@ -623,6 +633,8 @@ export const make = Effect.gen(function* () {
         linkedPullRequest: row.linkedPullRequest,
         branchPullRequest: row.branchPullRequest,
       }),
+      cardLine: typeof row.cardLine === "string" ? row.cardLine : null,
+      topics: Option.getOrElse(decodeCardTopics(row.cardTopics), () => []),
       // Like the clients: what the user last wrote, else when the thread began.
       activityAt: Date.parse(row.latestUserMessageAt ?? row.createdAt),
       opens: Option.getOrNull(decodeThreadOpens(row.opens)),

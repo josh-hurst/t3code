@@ -69,7 +69,7 @@ export function ReplySummarySettings() {
         serverScoped
         settingKeys={["threadReplySummariesEnabled"]}
         {...searchableSetting("reply-summaries")}
-        description="Rows that show the latest message show a few-word summary of the agent's reply instead. Each new reply costs one short generation."
+        description="After each run, write a one-line outcome, topics and open items. The outcome shows under the title, all three are searchable, and an open question keeps the thread in Needs you. One call per run."
         control={
           <ScopedSwitch
             settingKeys={["threadReplySummariesEnabled"]}
@@ -86,7 +86,7 @@ export function ReplySummarySettings() {
           serverScoped
           settingKeys={["threadReplySummaryModelSelection"]}
           {...searchableSetting("reply-summary-model")}
-          description="Model that writes reply summaries. A fast, cheap model is enough."
+          description="Model that writes thread summaries. A fast, cheap model is enough."
           resetAction={
             isModelDirty ? (
               <SettingResetButton

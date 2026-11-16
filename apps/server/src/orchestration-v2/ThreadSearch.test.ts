@@ -5,8 +5,10 @@ import {
   MessageId,
   ProjectId,
   ProviderInstanceId,
+  RunId,
   ThreadId,
   type OrchestrationV2DomainEvent,
+  type ThreadCard,
   type ThreadLinkedPullRequest,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -74,6 +76,7 @@ const thread = (
     readonly settledAt?: DateTime.Utc;
     readonly linkedPullRequest?: ThreadLinkedPullRequest;
     readonly branchPullRequest?: ThreadLinkedPullRequest;
+    readonly card?: Pick<ThreadCard, "line" | "topics">;
   } = {},
 ): OrchestrationV2DomainEvent => ({
   id: EventId.make(`created:${threadId}`),
@@ -118,6 +121,18 @@ const thread = (
     settledAt: overrides.settledAt ?? null,
     lastVisitedAt: null,
     deletedAt: overrides.deletedAt ?? null,
+    ...(overrides.card
+      ? {
+          card: {
+            ...overrides.card,
+            open: [],
+            messageId: MessageId.make(`message:${threadId}:card`),
+            at: DateTime.formatIso(at(0)),
+            runId: RunId.make(`run:${threadId}:card`),
+            chapters: [],
+          },
+        }
+      : {}),
   },
 });
 
@@ -1081,6 +1096,31 @@ it.layer(layerTest)("ThreadSearch.searchOlderSettled", (it) => {
       assert.deepEqual(yield* find("acme/heron#4202"), [linked]);
     }),
   );
+
+  it.effect("matches what a thread did, from its card", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const project = ProjectId.make("project:egret");
+      yield* createProject(project);
+      const carded = ThreadId.make("thread:egret-card");
+      yield* projections.apply(
+        thread(carded, project, {
+          title: "Weekly notes",
+          settledAt: at(10),
+          card: { line: "Fixed flaky login test", topics: ["session cookie"] },
+        }),
+      );
+      const find = (query: string) =>
+        search.searchOlderSettled({
+          query,
+          before: DateTime.formatIso(at(30)),
+          messageThreadIds: [],
+        });
+      assert.deepEqual(yield* find("flaky login"), [carded]);
+      assert.deepEqual(yield* find("cookie"), [carded]);
+    }),
+  );
 });
 
 it.layer(layerTest)("ThreadSearch.searchThreadsWithOlderSettledRows", (it) => {
@@ -1262,6 +1302,20 @@ it.layer(layerTest)("ThreadSearch.searchThreads", (it) => {
           (match) => match.threadId,
         ),
         [wordStart],
+      );
+      // What a thread did, from its card, matches below its title.
+      const carded = ThreadId.make("thread:titles-card");
+      yield* projections.apply(
+        thread(carded, project, {
+          title: "Weekly notes",
+          card: { line: "Rotated the auth signing keys", topics: ["key rotation"] },
+        }),
+      );
+      assert.deepEqual(
+        (yield* search.searchThreads({ query: "rotation", projectId: project })).matches.map(
+          (match) => [match.threadId, match.source],
+        ),
+        [[carded, "title"]],
       );
       // Exact matching finds nothing, so one typo is forgiven.
       assert.deepEqual(

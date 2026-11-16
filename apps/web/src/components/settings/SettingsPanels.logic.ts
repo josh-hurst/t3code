@@ -337,7 +337,7 @@ export function commitAutoSettleDaysField(field: AutoSettleDaysField): {
   const current = field.pending ?? field.saved;
   const days = field.draft.trim() === "" ? Number.NaN : Number(field.draft);
   if (
-    !Number.isInteger(days) ||
+    !Number.isInteger(days * 2) ||
     days < MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS ||
     days > MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS
   ) {

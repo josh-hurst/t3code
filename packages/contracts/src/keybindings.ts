@@ -45,6 +45,8 @@ const THREAD_KEYBINDING_COMMANDS = [
   "thread.pin",
   "thread.regenerateTitle",
   "thread.undo",
+  "thread.nextNeedsYou",
+  "thread.clearTrail",
   ...THREAD_JUMP_KEYBINDING_COMMANDS,
 ] as const;
 
@@ -59,6 +61,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "workspace.focusNext",
   "workspace.focusPrevious",
   "sidebar.toggle",
+  "sidebar.focusProject",
   "navigation.back",
   "navigation.forward",
   "terminal.toggle",

@@ -12,6 +12,21 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models";
 import {
+  hasUnseenCompletion as threadHasUnseenCompletion,
+  sortNeedsYouThreads,
+  sortTrailThreads,
+  splitTrail,
+  threadCardOwedLabel,
+  threadCardRowLine,
+  threadRowLineText,
+  threadRowProjectName,
+  threadLastTouchAt,
+  threadNeedsYou,
+  trailMoreLabel,
+  withHeldThreadTouch,
+  type createOpenThreadTouchHold,
+} from "@t3tools/client-runtime/state/thread-zones";
+import {
   threadSearchMatchKey,
   threadSearchSubject,
 } from "@t3tools/client-runtime/state/thread-search";
@@ -113,7 +128,7 @@ export function resolveThreadListV2SnoozeMenuSelection(input: {
 }
 
 export function resolveThreadListV2SwipeActions(input: {
-  readonly variant: "card" | "slim";
+  readonly settled: boolean;
   readonly settlementSupported: boolean;
   readonly snoozeSupported: boolean;
   readonly snoozable: boolean;
@@ -125,11 +140,7 @@ export function resolveThreadListV2SwipeActions(input: {
   if (input.snoozed === true) {
     return { primary: "unsnooze", secondary: null };
   }
-  const primary = input.settlementSupported
-    ? input.variant === "slim"
-      ? "unsettle"
-      : "settle"
-    : "archive";
+  const primary = input.settlementSupported ? (input.settled ? "unsettle" : "settle") : "archive";
   return {
     primary,
     secondary: input.snoozeSupported && input.snoozable ? "snooze" : null,
@@ -227,21 +238,19 @@ export function threadListV2LayoutTime(input: {
   return new Date(previousWakeAt ?? (nextWakeAt === undefined ? 0 : nextWakeAt - 1)).toISOString();
 }
 
+const EMPTY_TIDE_LAYOUT = {
+  needsYouHeaderIndex: null,
+  needsYouCount: 0,
+  trailHeaderIndex: null,
+  trailCount: 0,
+  trailMore: null,
+  trailClearThreads: [],
+} satisfies Partial<ThreadListV2Layout>;
+
 export const THREAD_LIST_V2_SETTLED_INITIAL_COUNT = 10;
 export const THREAD_LIST_V2_SETTLED_PAGE_COUNT = 25;
 
-export function threadHasUnseenCompletion(
-  thread: Pick<EnvironmentThreadShell, "latestRun" | "lastVisitedAt">,
-): boolean {
-  const completedAt = thread.latestRun?.completedAt;
-  if (!completedAt) return false;
-  const completedAtMs = Date.parse(completedAt);
-  if (Number.isNaN(completedAtMs)) return false;
-  if (!thread.lastVisitedAt) return false;
-  const lastVisitedAtMs = Date.parse(thread.lastVisitedAt);
-  if (Number.isNaN(lastVisitedAtMs)) return true;
-  return completedAtMs > lastVisitedAtMs;
-}
+export { threadHasUnseenCompletion };
 
 export function resolveThreadListV2WokeAt(
   thread: EnvironmentThreadShell,
@@ -357,6 +366,10 @@ export interface ThreadListV2Item {
   readonly snoozed: boolean;
   readonly pinned: boolean;
   readonly wokeAt: string | null;
+  /** The card's line, or its open question in Needs you; only in the new layout. */
+  readonly cardLine: string | null;
+  /** The project's name on its own line above a slim row's title; only in the new layout. */
+  readonly projectLine: string | null;
   readonly isLast: boolean;
 }
 
@@ -382,6 +395,14 @@ export interface ThreadListV2Layout {
   readonly snoozedShelfHeaderIndex: number | null;
   readonly settledCount: number;
   readonly settledShelfHeaderIndex: number | null;
+  readonly needsYouHeaderIndex: number | null;
+  readonly needsYouCount: number;
+  readonly trailHeaderIndex: number | null;
+  readonly trailCount: number;
+  /** The Trail rows past the first eight; null while there are none. */
+  readonly trailMore: { readonly moreToday: number; readonly earlier: number } | null;
+  /** Every Trail thread, folded or not, except the open one. */
+  readonly trailClearThreads: ReadonlyArray<EnvironmentThreadShell>;
   /** Arm a timeout here to repartition at snooze expiry rather than the next minute tick. */
   readonly nextSnoozeWakeAt: string | null;
   /** Threads listed only because their messages match the search. */
@@ -431,6 +452,7 @@ export interface ThreadListV2FolderListItem {
 export interface ThreadListV2SnoozedShelfListItem {
   readonly type: "v2-snoozed-shelf";
   readonly key: "v2-snoozed-shelf";
+  readonly label: "Snoozed" | "Later";
   readonly count: number;
   readonly expanded: boolean;
   /** Include disabled state in item equality; recycled cells ignore render-closure updates. */
@@ -440,7 +462,26 @@ export interface ThreadListV2SnoozedShelfListItem {
 export interface ThreadListV2SettledShelfListItem {
   readonly type: "v2-settled-shelf";
   readonly key: "v2-settled-shelf";
+  readonly label: "Settled" | "History";
   readonly count: number;
+  readonly expanded: boolean;
+  readonly disabled: boolean;
+}
+
+export interface ThreadListV2SectionHeaderListItem {
+  readonly type: "v2-section-header";
+  readonly key: "v2-needs-you-header" | "v2-trail-header";
+  readonly title: "Needs you" | "Trail";
+  readonly count: number;
+  /** What the header's Clear settles; on the item so a recycled cell never settles an old set. */
+  readonly clearThreads: ReadonlyArray<EnvironmentThreadShell> | null;
+  readonly disabled: boolean;
+}
+
+export interface ThreadListV2TrailMoreListItem {
+  readonly type: "v2-trail-more";
+  readonly key: "v2-trail-more";
+  readonly label: string;
   readonly expanded: boolean;
   readonly disabled: boolean;
 }
@@ -451,7 +492,9 @@ export type ThreadListV2ListItem =
   | ThreadListV2WorkingShelfListItem
   | ThreadListV2FolderListItem
   | ThreadListV2SnoozedShelfListItem
-  | ThreadListV2SettledShelfListItem;
+  | ThreadListV2SettledShelfListItem
+  | ThreadListV2SectionHeaderListItem
+  | ThreadListV2TrailMoreListItem;
 
 export function isThreadListV2ListItem(value: {
   readonly type: string;
@@ -462,7 +505,9 @@ export function isThreadListV2ListItem(value: {
     value.type === "v2-working-shelf" ||
     value.type === "v2-folder" ||
     value.type === "v2-snoozed-shelf" ||
-    value.type === "v2-settled-shelf"
+    value.type === "v2-settled-shelf" ||
+    value.type === "v2-section-header" ||
+    value.type === "v2-trail-more"
   );
 }
 
@@ -481,6 +526,8 @@ export function threadListV2ListItemsAreEqual(
         previous.item.snoozed === item.item.snoozed &&
         previous.item.pinned === item.item.pinned &&
         previous.item.wokeAt === item.item.wokeAt &&
+        previous.item.cardLine === item.item.cardLine &&
+        previous.item.projectLine === item.item.projectLine &&
         previous.snoozeWakeLabelText === item.snoozeWakeLabelText &&
         previous.timeLabel === item.timeLabel &&
         previous.snoozePresetMinute === item.snoozePresetMinute &&
@@ -516,6 +563,7 @@ export function threadListV2ListItemsAreEqual(
     case "v2-snoozed-shelf":
       return (
         previous.type === "v2-snoozed-shelf" &&
+        previous.label === item.label &&
         previous.count === item.count &&
         previous.expanded === item.expanded &&
         previous.disabled === item.disabled
@@ -523,19 +571,52 @@ export function threadListV2ListItemsAreEqual(
     case "v2-settled-shelf":
       return (
         previous.type === "v2-settled-shelf" &&
+        previous.label === item.label &&
         previous.count === item.count &&
+        previous.expanded === item.expanded &&
+        previous.disabled === item.disabled
+      );
+    case "v2-section-header":
+      return (
+        previous.type === "v2-section-header" &&
+        previous.key === item.key &&
+        previous.count === item.count &&
+        previous.disabled === item.disabled &&
+        sameThreadKeys(previous.clearThreads, item.clearThreads)
+      );
+    case "v2-trail-more":
+      return (
+        previous.type === "v2-trail-more" &&
+        previous.label === item.label &&
         previous.expanded === item.expanded &&
         previous.disabled === item.disabled
       );
   }
 }
 
+function sameThreadKeys(
+  left: ReadonlyArray<EnvironmentThreadShell> | null,
+  right: ReadonlyArray<EnvironmentThreadShell> | null,
+): boolean {
+  if (left === null || right === null) return left === right;
+  return (
+    left.length === right.length &&
+    left.every(
+      (thread, index) =>
+        thread.id === right[index]!.id && thread.environmentId === right[index]!.environmentId,
+    )
+  );
+}
+
 function resolveThreadListV2ItemTimeLabel(
   item: ThreadListV2Item,
   showSnoozeWakeLabel: boolean,
+  inTrail: boolean,
 ): string {
   const { thread, variant, snoozed } = item;
   if (showSnoozeWakeLabel) return "";
+  // The Trail is ordered by your last touch, so its rows show that time and read in order.
+  if (inTrail) return relativeTime(new Date(threadLastTouchAt(thread)).toISOString());
   if (
     variant === "card" &&
     (resolveThreadListV2Status(thread) !== "ready" ||
@@ -544,7 +625,9 @@ function resolveThreadListV2ItemTimeLabel(
   )
     return "";
   const settledTimestamp =
-    variant === "slim" && !snoozed ? resolveSettledThreadTimestamp(thread) : null;
+    variant === "slim" && !snoozed && thread.settledOverride === "settled"
+      ? resolveSettledThreadTimestamp(thread)
+      : null;
   return relativeTime(
     settledTimestamp ?? resolveThreadActivityTimestamp(thread) ?? thread.createdAt,
   );
@@ -563,6 +646,16 @@ export function buildThreadListV2ListItems(input: {
   readonly settledCount?: number;
   readonly settledShelfExpanded?: boolean;
   readonly settledShelfHeaderIndex?: number | null;
+  /** The self-filing list's sections, from `buildThreadListV2Items` with `tide` set. */
+  readonly tide?: Pick<
+    ThreadListV2Layout,
+    | "needsYouHeaderIndex"
+    | "needsYouCount"
+    | "trailHeaderIndex"
+    | "trailCount"
+    | "trailMore"
+    | "trailClearThreads"
+  > & { readonly trailExpanded: boolean };
   readonly snoozeLabelNow?: string;
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly queuedThreadKeys?: ReadonlySet<string>;
@@ -570,7 +663,9 @@ export function buildThreadListV2ListItems(input: {
   readonly shelfPreferencesLoading?: boolean;
 }): ThreadListV2ListItem[] {
   const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
-  const threadItems = input.items.map((item): ThreadListV2ListItem => {
+  const trailStart = input.tide?.trailHeaderIndex ?? null;
+  const trailStop = input.settledShelfHeaderIndex ?? input.items.length;
+  const threadItems = input.items.map((item, index): ThreadListV2ListItem => {
     const snoozeWakeLabelText =
       item.snoozed && item.thread.snoozedUntil != null && input.snoozeLabelNow !== undefined
         ? snoozeWakeLabel(item.thread.snoozedUntil, { now: input.snoozeLabelNow })
@@ -592,7 +687,11 @@ export function buildThreadListV2ListItems(input: {
       key: `v2-thread:${item.thread.environmentId}:${item.thread.id}`,
       item,
       snoozeWakeLabelText,
-      timeLabel: resolveThreadListV2ItemTimeLabel(item, snoozeWakeLabelText !== undefined),
+      timeLabel: resolveThreadListV2ItemTimeLabel(
+        item,
+        snoozeWakeLabelText !== undefined,
+        trailStart !== null && index >= trailStart && index < trailStop,
+      ),
       snoozePresetMinute,
       showTrailingDivider: false,
       hasQueuedMessages:
@@ -614,7 +713,10 @@ export function buildThreadListV2ListItems(input: {
   const snoozedShelfHeaderIndex = input.snoozedShelfHeaderIndex ?? null;
   const settledCount = input.settledCount ?? 0;
   const settledShelfHeaderIndex = input.settledShelfHeaderIndex ?? null;
-  const snoozedEnd = settledShelfHeaderIndex ?? threadItems.length;
+  const tide = input.tide ?? null;
+  const trailHeaderIndex = tide?.trailHeaderIndex ?? null;
+  const trailEnd = settledShelfHeaderIndex ?? threadItems.length;
+  const snoozedEnd = trailHeaderIndex ?? trailEnd;
   const workingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
   const activeEnd = workingShelfHeaderIndex ?? workingEnd;
   const shelfDisabled = input.shelfPreferencesLoading === true;
@@ -639,6 +741,16 @@ export function buildThreadListV2ListItems(input: {
   };
   for (let index = 0; index < activeEnd; index += 1) {
     pushFoldersAt(index);
+    if (tide !== null && index === tide.needsYouHeaderIndex) {
+      result.push({
+        type: "v2-section-header",
+        key: "v2-needs-you-header",
+        title: "Needs you",
+        count: tide.needsYouCount,
+        clearThreads: null,
+        disabled: shelfDisabled,
+      });
+    }
     result.push(threadItems[index]!);
   }
   pushFoldersAt(activeEnd);
@@ -656,16 +768,38 @@ export function buildThreadListV2ListItems(input: {
     result.push({
       type: "v2-snoozed-shelf",
       key: "v2-snoozed-shelf",
+      label: tide === null ? "Snoozed" : "Later",
       count: snoozedCount,
       expanded: input.snoozedShelfExpanded === true,
       disabled: shelfDisabled,
     });
     result.push(...threadItems.slice(snoozedShelfHeaderIndex, snoozedEnd));
   }
+  if (tide !== null && trailHeaderIndex !== null && tide.trailCount > 0) {
+    result.push({
+      type: "v2-section-header",
+      key: "v2-trail-header",
+      title: "Trail",
+      count: tide.trailCount,
+      clearThreads: tide.trailClearThreads.length > 0 ? tide.trailClearThreads : null,
+      disabled: shelfDisabled,
+    });
+    result.push(...threadItems.slice(trailHeaderIndex, trailEnd));
+    if (tide.trailMore !== null) {
+      result.push({
+        type: "v2-trail-more",
+        key: "v2-trail-more",
+        label: tide.trailExpanded ? "Show less" : trailMoreLabel(tide.trailMore),
+        expanded: tide.trailExpanded,
+        disabled: shelfDisabled,
+      });
+    }
+  }
   if (settledShelfHeaderIndex !== null && settledCount > 0) {
     result.push({
       type: "v2-settled-shelf",
       key: "v2-settled-shelf",
+      label: tide === null ? "Settled" : "History",
       count: settledCount,
       expanded: input.settledShelfExpanded !== false,
       disabled: shelfDisabled,
@@ -681,6 +815,66 @@ export function buildThreadListV2ListItems(input: {
       ? entry
       : { ...entry, showTrailingDivider };
   });
+}
+
+type ThreadListV2TideInput = {
+  readonly trailExpanded: boolean;
+  /** Any time on the local day whose threads the Trail's expander counts as today. */
+  readonly day: number;
+  /** From `createOpenThreadPlacementHold`, called with `selectedThreadKey`. */
+  readonly holdNeedsYou?: (key: string, needsYou: boolean, sentAt: string | null) => boolean;
+  /** From `createOpenThreadTouchHold`, called with the selected thread. */
+  readonly heldTouch?: ReturnType<ReturnType<typeof createOpenThreadTouchHold>>;
+};
+
+/** Splits the active threads into Needs you (longest wait first) and the Trail (latest touch first). */
+function arrangeThreadListV2Tide(
+  active: ReadonlyArray<EnvironmentThreadShell>,
+  tide: ThreadListV2TideInput,
+  selectedThreadKey: string | null,
+) {
+  const keyOf = (thread: EnvironmentThreadShell) => `${thread.environmentId}:${thread.id}`;
+  const needsYou: EnvironmentThreadShell[] = [];
+  const rest: EnvironmentThreadShell[] = [];
+  for (const thread of active) {
+    const needs = threadNeedsYou(thread, { includeCompleted: true });
+    const sentAt =
+      (thread.latestUserAuthoredMessageAt === undefined
+        ? thread.latestRun?.requestedAt
+        : thread.latestUserAuthoredMessageAt) ?? null;
+    ((tide.holdNeedsYou?.(keyOf(thread), needs, sentAt) ?? needs) ? needsYou : rest).push(thread);
+  }
+  // The held copy only sorts; rows keep the shells passed in, which row equality compares.
+  const held = tide.heldTouch ?? null;
+  const original = new Map<EnvironmentThreadShell, EnvironmentThreadShell>();
+  const sorted = sortTrailThreads(
+    rest.map((thread) => {
+      const copy = withHeldThreadTouch(thread, held);
+      if (copy !== thread) original.set(copy, thread);
+      return copy;
+    }),
+  );
+  const restore = (threads: ReadonlyArray<EnvironmentThreadShell>) =>
+    threads.map((thread) => original.get(thread) ?? thread);
+  const split = splitTrail(sorted, { now: tide.day });
+  const trail = restore(sorted);
+  const folded = restore([...split.moreToday, ...split.earlier]);
+  return {
+    needsYou: sortNeedsYouThreads(needsYou),
+    trail,
+    // The open thread stays listed, as it does in a collapsed shelf.
+    visibleTrail:
+      tide.trailExpanded || folded.length === 0
+        ? trail
+        : [
+            ...restore(split.head),
+            ...folded.filter((thread) => keyOf(thread) === selectedThreadKey),
+          ],
+    trailMore:
+      folded.length === 0
+        ? null
+        : { moreToday: split.moreToday.length, earlier: split.earlier.length },
+  };
 }
 
 // Immutable shells and field-only sorting make element-identical inputs produce identical output.
@@ -703,6 +897,25 @@ function sortSettledThreadsReusingLast(
   lastSettledInput = settled;
   lastSettledOutput = sortSettledThreads(settled);
   return lastSettledOutput;
+}
+
+/** A slim row in the self-filing list: what is still to do, then the outcome. */
+function slimRowLine(thread: EnvironmentThreadShell): string | null {
+  return threadRowLineText({
+    owed: threadCardOwedLabel(thread.card),
+    line: threadCardRowLine(thread.card, { needsYou: false }),
+  });
+}
+
+/** The project a slim row names above its title, unless the list is scoped to one. */
+function slimRowProject(
+  thread: EnvironmentThreadShell,
+  input: Pick<Parameters<typeof buildThreadListV2Items>[0], "projectTitleOf" | "projectRefs">,
+): string | null {
+  return threadRowProjectName(input.projectTitleOf?.(thread), {
+    singleProject: input.projectRefs != null,
+    underProjectLabel: false,
+  });
 }
 
 export function buildThreadListV2Items(input: {
@@ -744,6 +957,10 @@ export function buildThreadListV2Items(input: {
   readonly isListedSettled?: (thread: EnvironmentThreadShell) => boolean;
   /** Settled threads in scope that are not local (older settled threads not loaded). */
   readonly unloadedSettledCount?: number;
+  /** The self-filing list: Needs you, Working, Later, then the Trail. Ignores project folders. */
+  readonly tide?: ThreadListV2TideInput;
+  /** Names a slim row's project in the self-filing list. */
+  readonly projectTitleOf?: (thread: EnvironmentThreadShell) => string | null;
 }): ThreadListV2Layout {
   const now = input.now;
   const pending =
@@ -763,7 +980,8 @@ export function buildThreadListV2Items(input: {
     ? new Set(input.projectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`))
     : null;
 
-  const workingShelfEnabled = input.workingShelfEnabled === true;
+  const tide = input.tide ?? null;
+  const workingShelfEnabled = input.workingShelfEnabled === true || tide !== null;
   const pinned: EnvironmentThreadShell[] = [];
   const active: EnvironmentThreadShell[] = [];
   const working: EnvironmentThreadShell[] = [];
@@ -853,6 +1071,14 @@ export function buildThreadListV2Items(input: {
         snoozed: snoozedThreads.has(thread),
         pinned: pinnedThreads.has(thread),
         wokeAt: slim.has(thread) ? null : resolveThreadListV2WokeAt(thread, { now }),
+        // A search can match the card, so its line says why the row is listed.
+        cardLine:
+          tide === null
+            ? null
+            : slim.has(thread)
+              ? slimRowLine(thread)
+              : threadCardRowLine(thread.card, { needsYou: false }),
+        projectLine: tide !== null && slim.has(thread) ? slimRowProject(thread, input) : null,
         isLast: index === results.length - 1,
       })),
       folders: [],
@@ -864,23 +1090,27 @@ export function buildThreadListV2Items(input: {
       snoozedShelfHeaderIndex: null,
       settledCount: 0,
       settledShelfHeaderIndex: null,
+      ...EMPTY_TIDE_LAYOUT,
       nextSnoozeWakeAt,
       contentOnlyThreadKeys,
     };
   }
 
-  const projectFolders = input.projectFolders ?? null;
+  const projectFolders = tide === null ? (input.projectFolders ?? null) : null;
+  const selectedThreadKey = input.selectedThreadKey ?? null;
+  const tideZones = tide === null ? null : arrangeThreadListV2Tide(active, tide, selectedThreadKey);
   // Folders keep the hand order, not the inbox's return order.
   const orderedActive =
-    workingShelfEnabled && projectFolders === null
-      ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
-      : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
+    tideZones !== null
+      ? tideZones.needsYou
+      : workingShelfEnabled && projectFolders === null
+        ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
+        : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
   const orderedWorking = sortWorkingThreadsBySend(working);
   const orderedSnoozed = [...snoozed].sort(
     (left, right) =>
       parseTimestampMs(left.snoozedUntil ?? "") - parseTimestampMs(right.snoozedUntil ?? ""),
   );
-  const selectedThreadKey = input.selectedThreadKey ?? null;
   const visibleWorking =
     input.workingShelfExpanded === true
       ? orderedWorking
@@ -919,6 +1149,18 @@ export function buildThreadListV2Items(input: {
         );
 
   const items: ThreadListV2Item[] = [];
+  // In the new layout, active rows are the Needs you section, so they show its open question.
+  const cardLineOf = (thread: EnvironmentThreadShell, needsYou: boolean) =>
+    tideZones === null
+      ? null
+      : threadCardRowLine(thread.card, {
+          needsYou,
+          request: thread.source.pendingRuntimeRequest,
+        });
+  const slimLineOf = (thread: EnvironmentThreadShell) =>
+    tideZones === null ? null : slimRowLine(thread);
+  const slimProjectOf = (thread: EnvironmentThreadShell) =>
+    tideZones === null ? null : slimRowProject(thread, input);
   for (const thread of applyPendingThreadOrder(
     sortPinnedThreadsByOrderKey(pinned),
     "pinned",
@@ -930,6 +1172,8 @@ export function buildThreadListV2Items(input: {
       snoozed: false,
       pinned: true,
       wokeAt: resolveThreadListV2WokeAt(thread, { now }),
+      cardLine: cardLineOf(thread, false),
+      projectLine: null,
       isLast: false,
     });
   }
@@ -940,9 +1184,12 @@ export function buildThreadListV2Items(input: {
       snoozed: false,
       pinned: false,
       wokeAt: resolveThreadListV2WokeAt(thread, { now }),
+      cardLine: cardLineOf(thread, true),
+      projectLine: null,
       isLast: false,
     });
   const folders: ThreadListV2Folder[] = [];
+  const needsYouHeaderIndex = tideZones !== null && orderedActive.length > 0 ? items.length : null;
   if (projectFolders === null) {
     for (const thread of orderedActive) pushActive(thread);
   } else {
@@ -983,6 +1230,8 @@ export function buildThreadListV2Items(input: {
       snoozed: false,
       pinned: false,
       wokeAt: resolveThreadListV2WokeAt(thread, { now }),
+      cardLine: cardLineOf(thread, false),
+      projectLine: null,
       isLast: false,
     });
   }
@@ -994,6 +1243,21 @@ export function buildThreadListV2Items(input: {
       snoozed: true,
       pinned: false,
       wokeAt: null,
+      cardLine: slimLineOf(thread),
+      projectLine: slimProjectOf(thread),
+      isLast: false,
+    });
+  }
+  const trailHeaderIndex = tideZones !== null && tideZones.trail.length > 0 ? items.length : null;
+  for (const thread of tideZones?.visibleTrail ?? []) {
+    items.push({
+      thread,
+      variant: "slim",
+      snoozed: false,
+      pinned: false,
+      wokeAt: null,
+      cardLine: slimLineOf(thread),
+      projectLine: slimProjectOf(thread),
       isLast: false,
     });
   }
@@ -1005,6 +1269,8 @@ export function buildThreadListV2Items(input: {
       snoozed: false,
       pinned: false,
       wokeAt: null,
+      cardLine: slimLineOf(thread),
+      projectLine: slimProjectOf(thread),
       isLast: false,
     });
   }
@@ -1023,6 +1289,15 @@ export function buildThreadListV2Items(input: {
     snoozedShelfHeaderIndex,
     settledCount: settledTotal,
     settledShelfHeaderIndex,
+    needsYouHeaderIndex,
+    needsYouCount: tideZones?.needsYou.length ?? 0,
+    trailHeaderIndex,
+    trailCount: tideZones?.trail.length ?? 0,
+    trailMore: tideZones?.trailMore ?? null,
+    trailClearThreads:
+      tideZones?.trail.filter(
+        (thread) => `${thread.environmentId}:${thread.id}` !== selectedThreadKey,
+      ) ?? [],
     nextSnoozeWakeAt,
     contentOnlyThreadKeys,
   };

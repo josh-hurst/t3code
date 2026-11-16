@@ -25,7 +25,11 @@ import {
   formatWorkingDurationLabel,
   resolveThreadWorkingStartedAt,
 } from "@t3tools/client-runtime/state/models";
-import { AuthOrchestrationOperateScope, type EnvironmentMachineKind } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  threadCardHasOpenAsk,
+  type EnvironmentMachineKind,
+} from "@t3tools/contracts";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
@@ -144,6 +148,13 @@ const DONE_STATUS_LABEL: StatusLabel = {
   className: "text-adaptive-emerald-700-300",
   iconTintClassName: "accent-adaptive-emerald-700-300",
 };
+// A seen thread that its card's open question keeps in Needs you.
+const QUESTION_STATUS_LABEL: StatusLabel = {
+  label: "Question",
+  icon: "questionmark.bubble",
+  className: "text-adaptive-indigo-600-300",
+  iconTintClassName: "accent-adaptive-indigo-600-300",
+};
 
 // DM Sans has no tabular figures, so a ticking timer in it reflows the row every second.
 const TABULAR_DURATION_STYLE = {
@@ -200,6 +211,12 @@ function ThreadListV2Section(props: {
     readonly accessibilityLabel: string;
     readonly accessibilityHint: string;
   };
+  readonly action?: {
+    readonly label: string;
+    readonly accessibilityLabel: string;
+    readonly disabled?: boolean;
+    readonly onPress: () => void;
+  };
 }) {
   const snoozed = props.tone === "snoozed";
   const sidebarPane = props.pane === "sidebar";
@@ -245,6 +262,33 @@ function ThreadListV2Section(props: {
     </>
   );
 
+  if (props.action) {
+    const action = props.action;
+    return (
+      <View className={className}>
+        {content}
+        <Pressable
+          accessibilityLabel={action.accessibilityLabel}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: action.disabled }}
+          disabled={action.disabled}
+          hitSlop={8}
+          onPress={action.onPress}
+          style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+        >
+          <Text
+            className={cn(
+              "text-xs font-t3-medium",
+              sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-secondary",
+            )}
+          >
+            {action.label}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   return props.disclosure ? (
     <Pressable
       accessibilityHint={props.disclosure.accessibilityHint}
@@ -274,6 +318,8 @@ const ThreadListV2SectionDivider = memo(function ThreadListV2SectionDivider(prop
 });
 
 type ThreadListV2ShelfHeaderProps = {
+  /** Replaces the shelf's own name, such as "Later" for the snoozed shelf. */
+  readonly label?: string;
   readonly count: number;
   readonly disabled?: boolean;
   readonly expanded: boolean;
@@ -286,7 +332,7 @@ const SHELF_LABEL = { working: "Working", snoozed: "Snoozed", settled: "Settled"
 function ThreadListV2ShelfHeader(
   props: ThreadListV2ShelfHeaderProps & { readonly kind: keyof typeof SHELF_LABEL },
 ) {
-  const label = SHELF_LABEL[props.kind];
+  const label = props.label ?? SHELF_LABEL[props.kind];
   return (
     <ThreadListV2Section
       label={props.expanded ? label : `${label} (${props.count})`}
@@ -319,6 +365,72 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
   props: ThreadListV2ShelfHeaderProps,
 ) {
   return <ThreadListV2ShelfHeader {...props} kind="settled" />;
+});
+
+/** A section that does not fold, such as Needs you, with an optional Clear. */
+export const ThreadListV2SectionHeader = memo(function ThreadListV2SectionHeader(props: {
+  readonly title: string;
+  readonly count: number;
+  readonly disabled?: boolean;
+  readonly onClear?: () => void;
+  readonly pane?: "screen" | "sidebar";
+}) {
+  const onClear = props.onClear;
+  return (
+    <ThreadListV2Section
+      label={props.title}
+      pane={props.pane}
+      {...(onClear === undefined
+        ? {}
+        : {
+            action: {
+              label: "Clear",
+              accessibilityLabel: `Clear ${props.title}, settling its threads except the open one`,
+              disabled: props.disabled,
+              onPress: onClear,
+            },
+          })}
+    />
+  );
+});
+
+export const ThreadListV2TrailMoreRow = memo(function ThreadListV2TrailMoreRow(props: {
+  readonly label: string;
+  readonly expanded: boolean;
+  readonly disabled?: boolean;
+  readonly onToggle: () => void;
+  readonly pane?: "screen" | "sidebar";
+}) {
+  const sidebarPane = props.pane === "sidebar";
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={props.label}
+      accessibilityState={{ disabled: props.disabled, expanded: props.expanded }}
+      disabled={props.disabled}
+      onPress={props.onToggle}
+      className={cn("flex-row items-center gap-2 py-2.5", sidebarPane ? "px-3" : "px-5")}
+      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+    >
+      <SymbolView
+        name="chevron.down"
+        size={10}
+        tintColorClassName={
+          sidebarPane ? "accent-drawer-foreground-muted" : "accent-foreground-muted"
+        }
+        type="monochrome"
+        style={{ transform: [{ rotate: props.expanded ? "180deg" : "0deg" }] }}
+      />
+      <Text
+        className={cn(
+          "text-sm",
+          sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-muted",
+        )}
+      >
+        {props.label}
+      </Text>
+    </Pressable>
+  );
 });
 
 export const ThreadListV2FolderHeader = memo(function ThreadListV2FolderHeader(props: {
@@ -671,6 +783,10 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
 export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly thread: EnvironmentThreadShell;
   readonly variant: "card" | "slim";
+  /** Shown under the title; null keeps the row as it is without a card. */
+  readonly cardLine?: string | null;
+  /** A slim row's project, on its own line above the title. */
+  readonly projectLine?: string | null;
   readonly hasQueuedMessages?: boolean;
   readonly snoozed?: boolean;
   readonly pinned?: boolean;
@@ -756,6 +872,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   } = props;
   const snoozedRow = props.snoozed === true;
   const pinnedRow = props.pinned === true;
+  const cardLine = props.cardLine ?? null;
+  const projectLine = props.projectLine ?? null;
   const dormant = useSwipeRowDormant(props.activationKey);
 
   const selectThread = () => onSelectThread(thread);
@@ -798,7 +916,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const statusLabel =
     (status === "working" && workingLabel !== undefined && thread.goal?.status === "active"
       ? { ...workingLabel, label: "Goal" }
-      : workingLabel) ?? (isUnread ? DONE_STATUS_LABEL : undefined);
+      : workingLabel) ??
+    (isUnread
+      ? DONE_STATUS_LABEL
+      : status === "ready" && threadCardHasOpenAsk(thread.card)
+        ? QUESTION_STATUS_LABEL
+        : undefined);
   const recede = shouldRecedeThreadRow({ status, selected });
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const rowAccessibilityLabel = `${thread.title}${providerNameLabel ? `, ${providerNameLabel}` : ""}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
@@ -853,7 +976,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleMoveDown = useCallback(() => onMoveThread?.(thread, "down"), [onMoveThread, thread]);
   const handleArchive = useCallback(() => onArchiveThread(thread), [onArchiveThread, thread]);
 
-  const canUnsettle = variant === "slim";
+  // Trail rows are slim too, but only settled ones un-settle.
+  const canUnsettle = variant === "slim" && thread.settledOverride === "settled";
   // The gate's only time-dependent edge is the queued-turn grace window, so its
   // expiry is known without a clock: evaluate at the message's own timestamp.
   // A gate held by runtime status has no expiry, and no clock tick opens it.
@@ -864,7 +988,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const snoozeGateNowMs = useNowAfter(snoozeGateExpiryMs === null ? null : snoozeGateExpiryMs + 1);
   const snoozeGateNow = new Date(snoozeGateNowMs).toISOString();
   const swipeActions = resolveThreadListV2SwipeActions({
-    variant,
+    settled: canUnsettle,
     settlementSupported: props.settlementSupported,
     snoozeSupported: props.snoozeSupported,
     snoozable: canSnooze(thread, { now: snoozeGateNow }),
@@ -1304,6 +1428,20 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           )}
         </View>
       </View>
+      {cardLine ? (
+        <Text
+          className={cn(
+            "mt-0.5 text-sm",
+            selected
+              ? selectedThreadRowColors.mutedForegroundClassName
+              : rowAppearance.mutedForegroundClassName,
+          )}
+          numberOfLines={1}
+          style={{ paddingLeft: titleTextInset }}
+        >
+          {cardLine}
+        </Text>
+      ) : null}
       {props.searchMatch ? (
         <View className="mt-1" style={{ paddingLeft: titleTextInset }}>
           <ThreadSearchMatchExcerpt
@@ -1514,6 +1652,19 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </View>
           ) : null}
           <View className="min-w-0 flex-1">
+            {projectLine ? (
+              <Text
+                className={cn(
+                  "text-xs",
+                  selected
+                    ? selectedThreadRowColors.mutedForegroundClassName
+                    : rowAppearance.tertiaryForegroundClassName,
+                )}
+                numberOfLines={1}
+              >
+                {projectLine}
+              </Text>
+            ) : null}
             <Text
               className={cn(
                 "text-base",
@@ -1526,7 +1677,20 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             >
               {thread.title}
             </Text>
-            {providerNameLabel ? (
+            {cardLine ? (
+              // Takes the provider line's place.
+              <Text
+                className={cn(
+                  "text-xs",
+                  selected
+                    ? selectedThreadRowColors.mutedForegroundClassName
+                    : rowAppearance.tertiaryForegroundClassName,
+                )}
+                numberOfLines={1}
+              >
+                {cardLine}
+              </Text>
+            ) : providerNameLabel ? (
               <Text
                 className={cn(
                   "text-xs",

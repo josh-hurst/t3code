@@ -227,6 +227,8 @@ export interface FakeThread {
   readonly providerThreads?: ReadonlyArray<OrchestrationV2ProviderThread>;
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
+  /** Shell fields the list reads, such as a failed status or a later visit. */
+  readonly shell?: Partial<OrchestrationV2ThreadShell>;
 }
 
 /** A thread of `turns` user prompts, each answered in markdown with a list and inline code. */
@@ -296,6 +298,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     settledAt: thread.olderSettled ? AT : null,
     lastVisitedAt: AT,
     deletedAt: null,
+    ...thread.shell,
   };
 }
 

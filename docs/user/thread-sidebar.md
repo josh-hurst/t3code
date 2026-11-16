@@ -62,6 +62,17 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 
 Pin a thread from its menu to keep it above your active work.
 
+On web and desktop, the rest of the sidebar files itself. Below your pins come
+**Needs you**, **Working**, **Later**, the **Trail**, and **History**, and each section
+keeps its own order, so there is nothing to arrange by hand. Dragging still pins, unpins,
+settles, un-settles, and wakes a thread; a thread you drop below the pins goes to Needs
+you or the Trail, wherever it belongs; an older thread can land under the Trail's
+**more** row. The drag labels use these names, so the settled section reads **History**
+and the snoozed one **Later**. To order active threads yourself, turn on
+[the classic sidebar](#use-the-classic-sidebar). The mobile app files its list the same
+way, and **Clear** on its Trail header settles the Trail behind one **Undo**; for the
+hand-ordered list there, turn on **Settings → General → Classic thread list**.
+
 On web and desktop, unpinning, settling, snoozing, and archiving a thread each show
 a notification with **Undo** for five seconds. Undo restores the thread's previous
 state, including its pinned position, and reopens an archived thread you were
@@ -77,7 +88,7 @@ files directly; see [Attach files](./composer.md#attach-files).
 On web and desktop, pinning or unpinning a thread keeps the sidebar at your current
 scroll position instead of following the thread to its new place in the list.
 
-Pinning does not prevent automatic settlement. Settling a thread removes its pin.
+A pinned thread is not settled automatically. Settling a thread removes its pin.
 
 On web and desktop, drag a thread between sections to change its state. Drag a thread up into
 the pinned section to pin it at the spot you drop it; drag a pinned thread down into the active
@@ -95,9 +106,11 @@ edge to pin a thread. Section labels stay readable for the whole drag, and the s
 thread is over takes the accent color. Section labels also
 identify empty sections and a collapsed settled shelf.
 
-Drag within the pinned or active section to change its order. Other rows slide aside to show the
-spot where the thread will land. Drops into either section keep the position you choose. On
-mobile, open a thread's menu and choose **Arrange threads**. Drag a handle within or between
+Drag within the pinned section to change its order. Other rows slide aside to show the
+spot where the thread will land, and the drop keeps the position you choose. The active
+section works the same way in the classic sidebar. On
+mobile, open a pinned thread's menu and choose **Arrange threads**; with **Classic thread list**
+on and its Working section off, every active thread's menu has it too. Drag a handle within or between
 **Pinned** and **Active** to reorder, pin, or unpin. Drop onto the **Settled** divider to
 settle a thread. The dragged card shows the action before you release it. Expand **Snoozed**
 or **Settled** to drag a parked thread back into either live section. Each drop saves; close the sheet to return to the thread list.
@@ -109,7 +122,7 @@ On web and desktop, the list also animates section changes made with thread acti
 preference. While dragging, rows follow the insertion gap without replaying a second transition
 after the drop.
 
-New threads appear above the active threads you have arranged. Settling clears a thread's active
+In the classic sidebar and on mobile, new threads appear above the active threads you have arranged. Settling clears a thread's active
 position, so using **Un-settle** returns it to the top. Pinning and snoozing preserve its active
 position until you move it again. Thread activity does not change the order. The settled shelf
 continues to use settlement time.
@@ -131,35 +144,69 @@ rename a thread, regenerate its title, or link and unlink a pull request. These 
 appear on web, desktop, and mobile without requiring the originating browser to remain
 open.
 
-### Fold working threads (beta)
+### Threads that are working
 
-Threads that are working or waiting on work they will resume from move into a collapsed
-**Working** section below the active list.
-That includes subagents, watched pull requests with checks still running, and background commands or monitors the agent
-says it is waiting on. A dev server or other process an agent leaves running does not keep a thread
-there. A thread returns to the top of the active list when it finishes, fails, or needs an approval or
-answer. The Working section lists the thread you last sent work to first. Pinned threads stay in
-the pinned section.
+Threads that are working or waiting on work they will resume from sit in the **Working**
+section. That includes subagents, watched pull requests with checks still running, and
+background commands or monitors the agent says it is waiting on. A dev server or other
+process an agent leaves running does not keep a thread there. A thread moves to Needs you
+when it finishes, fails, or needs an approval or answer. Working lists the thread you last
+sent work to first. Pinned threads stay in the pinned section.
 
-This is on by default. Turn it off with **Settings → General → Working section** on web and desktop,
-or **Settings → General → Working section** on iOS and Android. Each device keeps its own
-choice.
+In the classic sidebar the section starts collapsed, and **Settings → General → Working
+section** turns it off. On iOS and Android, the same switch appears under **Settings → General**
+once **Classic thread list** is on. While it is on there, the active list is ordered by when each thread
+last came back to you, so you cannot drag or move threads within it. Each device keeps its
+own choice.
 
-While this is on, the active list is ordered by when each thread last came back to you, so you
-cannot drag or move threads within it. Your saved order returns when you turn it off.
+### Threads that need you
 
-### Collect threads that need you
+**Needs you** gathers threads waiting on an approval, an answer, or a
+guest, with a plan ready, with a question you have not answered, or with a finished or
+failed run you haven't opened. The thread that has waited longest comes first. Pinned
+threads stay pinned and working threads stay in Working.
 
-Set **Settings → General → Needs you section** on web and desktop to gather threads waiting on an
-approval, an answer, or a guest, with a plan ready, or with a finished or failed run you haven't
-opened. **Above all projects** collects them in one **Needs you** section at the top of the active
-list, or above the project folders in the boring sidebar. **In each project** puts one at the top
-of each boring-sidebar folder, and a closed folder still lists them; without the boring sidebar it
-works like **Above all projects**. Pinned threads stay pinned and working threads stay in the
-Working section. The thread you have open stays where it was until you leave it, and leaves Needs
-you once you send it a message. Turn off **Finished threads in Needs you** to leave threads with a
-finished run where they are. With the Working section off, threads below Needs you keep your order
-and can still be dragged; the Needs you rows hold their place. Each device keeps its own choice.
+A thread leaves Needs you when you open it, answer it, or settle it. The thread you have
+open stays where it was until you leave it, and moves once you send it a message.
+
+**Next** on the Needs you header, or `thread.nextNeedsYou` (`mod+shift+u`), opens the next
+thread that needs you, starting again from the top after the last one. Pinned threads that
+need you come after the section's own. It is also in the command palette.
+
+In the classic sidebar, **Settings → General → Needs you section** chooses where the
+section goes: **Above all projects**, **In each project** folder, or off. **Finished
+threads in Needs you** decides whether a finished run you haven't opened counts. With the
+Working section off, threads below Needs you keep your order and can still be dragged; the
+Needs you rows hold their place.
+
+### Later and the Trail
+
+**Later** holds [snoozed threads](#snooze-until-later) with their wake times, soonest
+first.
+
+The **Trail** holds every other unsettled thread, ordered by when you last opened it or
+sent it a message, most recent first. An agent working in a thread never reorders it, and
+the thread you have open keeps its place until you leave it or send it a message.
+Reopening a thread within ten minutes counts as the same visit. It shows the eight most recent
+threads. Click the row below them, such as **5 more today, 3 earlier**, to see the rest:
+today's first, then earlier days under a date. While those rows or History are open, **By day**
+in the Trail's header switches them to **By project**, and back; the first eight always stay in
+the order you touched them. A Trail row's time is when you last
+opened or wrote to it, so the times read in order; hover a row to see the exact time, or in
+Needs you, how long it has waited.
+
+**Clear** in the Trail's header, or `thread.clearTrail` (`mod+alt+s`), settles every thread
+in the Trail except the one you have open, including the ones under **more**. One **Undo** brings them all back. It leaves
+Needs you, Working, Later, and your pins alone, and is also in the command palette.
+
+### Focus on one project
+
+`sidebar.focusProject` (`mod+alt+p`) limits the sidebar to the open thread's project, the
+same as picking that project in the sidebar's project filter. Press it again to return to
+all projects. While the sidebar is limited this way, a row under the search field names the
+project, with an **×** to show all projects again and, when threads in other projects need
+you, a count such as **3 elsewhere**. Going to the next thread that needs you leaves
+the project when nothing in it is waiting.
 
 ### Hide projects
 
@@ -172,7 +219,9 @@ again. Each device keeps its own hidden projects.
 
 ### Group threads by project (beta)
 
-Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
+Project folders belong to [the classic sidebar](#use-the-classic-sidebar); otherwise, use
+**By day** on the [Trail](#later-and-the-trail). With the classic sidebar on, turn
+on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
 threads in a folder for each project. Pinned projects come first. A project with no active
 threads has no folder unless it is pinned or you pick it in the project filter. An archived
 project's folder comes last and shows only while it has active threads. Click a folder to open or
@@ -184,27 +233,41 @@ within its folder to reorder it, or drag a folder to reorder the folders, which 
 folder, or drag a thread onto it to mention the thread. Threads cannot be dragged into another
 folder, or pinned and settled by dragging, in this mode. Each device keeps its own choice.
 
-On mobile, turn on **Settings → Labs → Group by project**. Folders follow the project filter's
+On mobile, turn on **Classic thread list** in **Settings → General**, then **Settings → Labs →
+Group by project**. Folders follow the project filter's
 order, and a project with no active threads has no folder. Tap a folder to open or close it; a
 closed folder shows how many threads it holds. Move up and Move down are off in this mode;
 **Arrange threads…** in a thread's menu still reorders them.
 
 ### Choose what shows under a thread's title
 
-**Settings → General → Thread row details** sets the line under each thread's title on web and
-desktop: its **Branch**, the start of its **Latest message**, or **Both**. It also applies to
-two-line folder rows in the boring sidebar. A thread started in your project's own checkout
-without picking a branch has no branch to show. While a run is going, the preview updates when
-the run ends.
+Turn on **Settings → Threads → Text generation → Summarize latest reply** to give each thread a
+one-line summary of what its latest finished run did, such as "Fixed flaky login test; 2 retries
+removed". It shows under the thread's title on web, desktop, and mobile. Each row names its
+project above the title (left out when the sidebar shows one project or the rows are grouped by
+project). On Trail, Later, and History rows the summary follows what is still to do, such as
+**Check**, **Commit**, **Publish**, or **Follow up**; hover a row for the full summary and each
+item. In Needs you, the summary follows why the thread is there, such as **Approval** or
+**Question**: an approval shows the command or change it asks to make, and a thread with an open
+question shows that question instead, keeping a **Question** label after you have seen it. The environment writes the
+summary once per finished run with the **Reply summary model** chosen there, so each run costs one
+short generation on that provider. A thread with no summary yet looks as before, and the
+mobile **Classic thread list** does not show summaries.
 
-To see a few-word summary of the agent's latest reply instead, such as "Fixed flaky login
-test; 2 retries removed", turn on **Settings → Threads → Text generation → Summarize latest
-reply**. The environment writes each summary once, after the run ends, with the **Reply summary
-model** chosen there, so every new reply costs one short generation on that provider. Your own
-messages, and replies whose summary is not ready or could not be written, show the start of the
-message as before.
+**Settings → General → Thread row details** sets the line under the title for threads without
+a summary on web and desktop: its **Branch**, the start of its **Latest message**, or **Both**.
+In [the classic sidebar](#use-the-classic-sidebar) it decides for every row, and the summary
+shows in place of the latest reply when the setting includes the latest message. It also
+applies to two-line folder rows in the boring sidebar. A thread started in your project's own
+checkout without picking a branch has no branch to show. While a run is going, the preview
+updates when the run ends.
 
 ## Settle finished work
+
+Settling is optional on web and desktop: a thread you leave alone drops down the
+[Trail](#later-and-the-trail) and settles itself. Settled threads are listed under
+**History**, grouped by the day they were settled. History starts collapsed and loads
+older threads as you ask for more.
 
 Choose **Settle thread** from its menu to move finished work out of the active list
 without deleting the conversation. **Un-settle thread** restores it to active work
@@ -230,11 +293,12 @@ settle every thread in that section between it and the one you release on.
 The **Un-settle** and **Wake** buttons work the same way in their sections.
 Press `Escape` while dragging to cancel.
 
-By default, environments settle inactive threads after seven days and settle
-threads whose pull request merged. A closed pull request can also settle an idle
+By default, environments settle inactive threads after 36 hours and settle
+threads whose pull request merged. The setting counts in days and accepts half days,
+so 36 hours is `1.5`. An environment that already has a value keeps it. A closed pull request can also settle an idle
 thread. An empty thread's inactivity counts from when it was created.
-Work in progress, pending questions or approvals, and background work the agent
-is waiting on prevent automatic settlement. An open pull request does not prevent inactivity
+Work in progress, pending questions or approvals, background work the agent
+is waiting on, a snooze, and a pin prevent automatic settlement. An open pull request does not prevent inactivity
 settlement unless you turn on **Keep threads with a PR** in **Settings → Threads**,
 but an old closed or merged pull request does not settle work you
 resumed after it closed. Only your own messages count as resuming. A turn that
@@ -268,7 +332,8 @@ The linked pull request participates in automatic settlement.
 ## Find and reference work
 
 On web and desktop, open the command palette with `Cmd/Ctrl+K` to search threads
-across connected environments by title, branch, pull request, or project.
+across connected environments by title, branch, pull request, or project, and by
+what a thread did when [thread summaries](#choose-what-shows-under-a-threads-title) are on.
 Threads you open often or recently rank higher, and for three weeks the thread
 you last picked for a query ranks higher when you type that query again.
 Threads whose messages contain all your words appear below, under **In
@@ -368,6 +433,9 @@ answer its questions.
 
 ## Snooze until later
 
+Snoozed threads are listed under **Later**, soonest wake time first; the classic sidebar
+and the mobile app's classic thread list call the section **Snoozed**.
+
 To change the choices in the snooze menu, open **Settings → Threads → Snooze options**.
 Each option is a duration, such as 3 hours, or a time on a day, such as 9:00 PM
 tomorrow. A weekday means the next one after today. Menus list the options soonest
@@ -383,3 +451,11 @@ A snoozed thread keeps working and stays hidden until its wake time, even while
 its agent wakes itself for background work. It comes back early for an approval,
 a new question, a failed run, or a message or answer you send. You can snooze an existing
 question and answer when the thread wakes; the question stays unanswered.
+
+## Use the classic sidebar
+
+Turn on **Settings → General → Classic sidebar** on web and desktop to get the earlier
+layout back: an active list you order by hand, then Working, Snoozed, and Settled at the
+bottom. It also brings back the options that only apply to that layout: **Working
+section**, **Needs you section**, **Finished threads in Needs you**, and the boring
+sidebar in Labs. Each device keeps its own choice.

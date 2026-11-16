@@ -45,6 +45,7 @@ import { AuthMcpClientAccess } from "./auth.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
+import { ThreadCard, ThreadCardSummary } from "./threadCard.ts";
 import { ThreadTitleRegenerationOutcome } from "./threadTitle.ts";
 import {
   OrchestrationSearchThreadsInput,
@@ -173,8 +174,9 @@ export const OrchestrationV2AppThreadLineage = Schema.Struct({
 export type OrchestrationV2AppThreadLineage = typeof OrchestrationV2AppThreadLineage.Type;
 
 /** Subagents and side chats live inside their parent's view, never in thread lists. */
-export const isListedThreadLineage = (lineage: OrchestrationV2AppThreadLineage): boolean =>
-  lineage.relationshipToParent !== "subagent" && lineage.sideChat !== true;
+export const isListedThreadLineage = (
+  lineage: Pick<OrchestrationV2AppThreadLineage, "relationshipToParent" | "sideChat">,
+): boolean => lineage.relationshipToParent !== "subagent" && lineage.sideChat !== true;
 
 export const OrchestrationV2ContextTransferType = Schema.Literals([
   "fork",
@@ -457,6 +459,14 @@ const LenientThreadOpens = Schema.NullOr(OrchestrationV2ThreadOpens).pipe(
   Schema.catchDecoding(() => Effect.succeedSome(null)),
 );
 
+// A card only describes the thread, so one this build cannot read becomes null.
+const LenientThreadCard = Schema.NullOr(ThreadCard).pipe(
+  Schema.catchDecoding(() => Effect.succeedSome(null)),
+);
+const LenientThreadCardSummary = Schema.NullOr(ThreadCardSummary).pipe(
+  Schema.catchDecoding(() => Effect.succeedSome(null)),
+);
+
 const OrchestrationV2LastTitleRegeneration = Schema.Struct({
   ...ThreadTitleRegenerationOutcome.fields,
   requestId: CommandId,
@@ -518,11 +528,18 @@ export const OrchestrationV2AppThread = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   opens: Schema.optional(LenientThreadOpens),
+  card: Schema.optional(LenientThreadCard),
+  /** Set when the user or an agent names the thread; automatic retitles then leave it alone. */
+  titleEditedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  /** The first generated title could not name the subject; retitle once the first run ends. */
+  titleNeedsRefinement: Schema.optional(Schema.Boolean),
   titleRegeneration: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
         requestId: CommandId,
         startedAt: Schema.DateTimeUtc,
+        /** Started by a thread card, not a person, so it must not count as activity. */
+        automatic: Schema.optional(Schema.Boolean),
       }),
     ),
   ),
@@ -1954,6 +1971,17 @@ const OrchestrationV2EventBase = Schema.Struct({
   occurredAt: Schema.DateTimeUtc,
 });
 
+/** A card changes what the thread says about itself, never its activity. */
+export const OrchestrationV2ThreadCardUpdate = Schema.Struct({ card: LenientThreadCard });
+export type OrchestrationV2ThreadCardUpdate = typeof OrchestrationV2ThreadCardUpdate.Type;
+
+export function applyOrchestrationV2ThreadCard<Thread extends OrchestrationV2AppThread>(
+  thread: Thread,
+  update: OrchestrationV2ThreadCardUpdate,
+): Thread {
+  return { ...thread, card: update.card };
+}
+
 export const OrchestrationV2DomainEvent = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2EventBase.fields,
@@ -1997,6 +2025,11 @@ export const OrchestrationV2DomainEvent = Schema.Union([
     ...OrchestrationV2EventBase.fields,
     type: Schema.Literal("thread.visit-recorded"),
     payload: OrchestrationV2ThreadVisit,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2EventBase.fields,
+    type: Schema.Literal("thread.card-updated"),
+    payload: OrchestrationV2ThreadCardUpdate,
   }),
   Schema.Struct({
     ...OrchestrationV2EventBase.fields,
@@ -2156,6 +2189,8 @@ export const OrchestrationV2PendingRuntimeRequestSummary = Schema.Struct({
   blocking: Schema.optional(Schema.Boolean),
   /** Secret and link cards: only the user can answer them, never a coordinating agent. */
   userOnly: Schema.optional(Schema.Boolean),
+  /** One line saying what is asked: an approval's command or target, or a question. Absent from older servers. */
+  description: Schema.optional(Schema.String),
 });
 export type OrchestrationV2PendingRuntimeRequestSummary =
   typeof OrchestrationV2PendingRuntimeRequestSummary.Type;
@@ -2241,6 +2276,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   tags: Schema.optional(StoredThreadTags),
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   opens: Schema.optional(LenientThreadOpens),
+  card: Schema.optional(LenientThreadCardSummary),
   titleRegeneration: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
@@ -2416,6 +2452,7 @@ export const OrchestrationV2AppThreadJson = OrchestrationV2AppThread.mapFields((
       Schema.Struct({
         requestId: CommandId,
         startedAt: Schema.DateTimeUtcFromString,
+        automatic: Schema.optional(Schema.Boolean),
       }),
     ),
   ),
@@ -2943,6 +2980,11 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
   }),
   Schema.Struct({
     ...OrchestrationV2JsonEventBaseFields,
+    type: Schema.Literal("thread.card-updated"),
+    payload: OrchestrationV2ThreadCardUpdate,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2JsonEventBaseFields,
     type: Schema.Literal("run.created"),
     payload: OrchestrationV2RunJson,
   }),
@@ -3278,6 +3320,7 @@ export const OrchestrationV2Command = Schema.Union([
     requestId: CommandId,
     title: Schema.optional(TrimmedNonEmptyString),
     outcome: Schema.optional(ThreadTitleRegenerationOutcome),
+    needsRefinement: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.runtime-mode.set"),
@@ -3581,6 +3624,19 @@ const OrchestrationV2InternalCommand = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
   }),
+  /** What a completed run left behind, written by the server after it reads the reply. */
+  Schema.Struct({
+    type: Schema.Literal("thread.card.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+    messageId: MessageId,
+    /** When the reply finished; a message the user wrote after it has answered its questions. */
+    repliedAt: IsoDateTime,
+    line: ThreadCardSummary.fields.line,
+    topics: ThreadCardSummary.fields.topics,
+    open: ThreadCardSummary.fields.open,
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request-watch.sync"),
     commandId: CommandId,
@@ -3789,7 +3845,6 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   forceStopThread: "orchestration.forceStopThread",
   getTurnItem: "orchestration.getTurnItem",
   getThreadUsage: "orchestration.getThreadUsage",
-  getReplySummary: "orchestration.getReplySummary",
   launchThread: "orchestration.launchThread",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
@@ -4361,18 +4416,6 @@ export const OrchestrationV2GetThreadUsageInput = Schema.Struct({
 });
 export type OrchestrationV2GetThreadUsageInput = typeof OrchestrationV2GetThreadUsageInput.Type;
 
-export const OrchestrationV2GetReplySummaryInput = Schema.Struct({
-  threadId: ThreadId,
-  messageId: MessageId,
-});
-export type OrchestrationV2GetReplySummaryInput = typeof OrchestrationV2GetReplySummaryInput.Type;
-
-/** Null when summaries are off, the message is not a finished reply, or generation failed. */
-export const OrchestrationV2ReplySummary = Schema.Struct({
-  summary: Schema.NullOr(Schema.String),
-});
-export type OrchestrationV2ReplySummary = typeof OrchestrationV2ReplySummary.Type;
-
 /**
  * Totals over every provider turn the thread has run. Input excludes cache reads and writes,
  * unlike a turn's own usage. `costUsd` is null when no turn has a cost, and `partial` marks
@@ -4543,10 +4586,6 @@ export const OrchestrationV2RpcSchemas = {
   getThreadUsage: {
     input: OrchestrationV2GetThreadUsageInput,
     output: OrchestrationV2ThreadUsage,
-  },
-  getReplySummary: {
-    input: OrchestrationV2GetReplySummaryInput,
-    output: OrchestrationV2ReplySummary,
   },
   launchThread: {
     input: OrchestrationV2ThreadLaunchInput,

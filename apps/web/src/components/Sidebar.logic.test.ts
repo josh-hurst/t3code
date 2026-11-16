@@ -37,7 +37,6 @@ import {
   resolveSidebarFolderDot,
   sidebarFolderExpansionKeys,
   sidebarMessagePreview,
-  sidebarReplySummaryMessageId,
   sidebarRowMessagePreview,
   resolveSidebarVisibleProjectKeys,
   sidebarThreadNeedsYou,
@@ -56,6 +55,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   RunId,
+  RuntimeRequestId,
   ThreadId,
 } from "@t3tools/contracts";
 
@@ -94,37 +94,65 @@ describe("sidebarMessagePreview", () => {
     expect(sidebarMessagePreview(null)).toBeNull();
   });
 
-  it("shows a ready reply summary and otherwise the plain preview", () => {
+  it("shows the card's line for the reply it describes, and otherwise the plain preview", () => {
     const reply = message("assistant", "I fixed the **flaky** login test.");
-    expect(sidebarRowMessagePreview(reply, "Fixed flaky login test")).toBe(
+    const card = {
+      line: "Fixed flaky login test",
+      topics: [],
+      open: [{ kind: "ask" as const, text: "Merge it now?" }],
+      messageId: reply.id,
+      at: "2026-10-25T00:00:00.000Z",
+    };
+    const row = (
+      latestVisibleMessage: ReturnType<typeof message> | null,
+      change: Partial<Parameters<typeof sidebarRowMessagePreview>[0]> = {},
+    ) =>
+      sidebarRowMessagePreview({
+        thread: { card, source: { latestVisibleMessage, pendingRuntimeRequest: null } },
+        rowDetail: "both",
+        showCardLine: false,
+        needsYou: false,
+        ...change,
+      });
+    expect(row(reply)).toBe("Fixed flaky login test");
+    expect(row(reply, { needsYou: true })).toBe("Merge it now?");
+    expect(
+      row(reply, {
+        thread: {
+          card: null,
+          source: { latestVisibleMessage: reply, pendingRuntimeRequest: null },
+        },
+      }),
+    ).toBe("I fixed the flaky login test.");
+    // A newer message, such as an interim reply mid-run, is not what the card describes.
+    const interim = {
+      ...message("assistant", "Running the tests"),
+      id: MessageId.make("message:interim"),
+    };
+    expect(row(interim)).toBe("Running the tests");
+    expect(row(message("user", "Fix it"))).toBe("You: Fix it");
+    expect(row(reply, { rowDetail: "branch" })).toBeNull();
+    // Shown whatever the row detail says, and through a newer message, when the row asks for it.
+    expect(row(interim, { rowDetail: "branch", showCardLine: true })).toBe(
       "Fixed flaky login test",
     );
-    expect(sidebarRowMessagePreview(reply, null)).toBe("I fixed the flaky login test.");
-    expect(sidebarRowMessagePreview(message("user", "Fix it"), "Stale summary")).toBe(
-      "You: Fix it",
-    );
-  });
-
-  it("asks for a summary only for a settled agent reply shown with message detail", () => {
-    const reply = message("assistant", "Done");
-    const request = {
-      rowDetail: "both" as const,
-      summariesEnabled: true,
-      status: "ready" as const,
-      message: reply,
+    // What an approval asks leads the new layout's Needs you row; the classic row ignores it.
+    const approving = {
+      card,
+      source: {
+        latestVisibleMessage: reply,
+        pendingRuntimeRequest: {
+          id: RuntimeRequestId.make("request"),
+          kind: "command" as const,
+          createdAt: DateTime.makeUnsafe("2026-10-25T00:00:00.000Z"),
+          description: "Run: npm publish",
+        },
+      },
     };
-    expect(sidebarReplySummaryMessageId(request)).toBe(reply.id);
-    expect(sidebarReplySummaryMessageId({ ...request, status: "input" })).toBe(reply.id);
-    for (const change of [
-      { summariesEnabled: false },
-      { rowDetail: "branch" as const },
-      { status: "working" as const },
-      { status: "preparing" as const },
-      { message: message("user", "Fix it") },
-      { message: null },
-    ]) {
-      expect(sidebarReplySummaryMessageId({ ...request, ...change })).toBeNull();
-    }
+    expect(row(reply, { thread: approving, showCardLine: true, needsYou: true })).toBe(
+      "Run: npm publish",
+    );
+    expect(row(reply, { thread: approving, needsYou: true })).toBe("Merge it now?");
   });
 });
 
@@ -230,6 +258,21 @@ describe("Needs you", () => {
       ),
     ).toBe(true);
     expect(sidebarThreadNeedsYou({ ...idle, hasPendingApprovals: true }, options)).toBe(true);
+
+    // A seen thread whose card still asks you something stays, and says why.
+    const asking = {
+      ...idle,
+      latestRun: run("completed", "2026-03-09T09:00:00.000Z"),
+      card: {
+        line: "Asked which branch to use",
+        topics: [],
+        open: [{ kind: "ask" as const, text: "Which branch?" }],
+        messageId: MessageId.make("message:ask"),
+        at: "2026-03-09T09:00:00.000Z",
+      },
+    };
+    expect(sidebarThreadNeedsYou(asking, options)).toBe(true);
+    expect(resolveThreadStatusPill({ thread: asking })?.label).toBe("Question");
   });
 });
 
@@ -530,12 +573,36 @@ describe("searchSidebarThreads", () => {
     );
 
   it("ranks word matches by recent use, then lists message matches once", () => {
-    expect(searchSidebarThreads(threads, "work", contentKeys("thread-1", "thread-2"), now)).toEqual(
-      {
-        titleMatches: [threads[0], threads[2], threads[3]],
-        contentMatches: [threads[1]],
-      },
+    const { titleMatches, contentMatches } = searchSidebarThreads(
+      threads,
+      "work",
+      contentKeys("thread-1", "thread-2"),
+      now,
     );
+    expect({ titleMatches, contentMatches }).toEqual({
+      titleMatches: [threads[0], threads[2], threads[3]],
+      contentMatches: [threads[1]],
+    });
+  });
+
+  it("explains a match its title does not show", () => {
+    const topical = {
+      ...searchThread("thread-5", "Why is nobody buying anything?", "2026-10-22T00:00:00.000Z"),
+      card: {
+        line: "Offer timing unclear",
+        topics: ["pricing", "monetization"],
+        open: [],
+        messageId: MessageId.make("message-5"),
+        at: "2026-10-22T00:00:00.000Z",
+      },
+    };
+    const result = searchSidebarThreads([...threads, topical], "monetization", undefined, now);
+    expect(result.titleMatches).toEqual([topical]);
+    expect(result.explainByThread.get(topical)?.()).toMatchObject({
+      label: "Topic",
+      text: "pricing, monetization",
+    });
+    expect(searchSidebarThreads(threads, "work", undefined, now).explainByThread.size).toBe(0);
   });
 });
 
@@ -1325,6 +1392,41 @@ describe("Working shelf (beta)", () => {
         activeOrder: ["a1", "a2", "p1"],
       });
       expect(resolveSidebarDropVerb("active", "working")).toBeNull();
+    });
+
+    it("keeps the Trail below the shelves active, and orders active rows on both sides", () => {
+      const trailItems: readonly SidebarListItem[] = [
+        marker("pinned-header"),
+        row("p1", "pinned"),
+        marker("pinned-divider"),
+        row("n1", "active"),
+        marker("working-header"),
+        row("w1", "working"),
+        marker("snoozed-header"),
+        row("z1", "snoozed"),
+        marker("trail-header"),
+        marker("active-placeholder"),
+        row("t1", "active"),
+        row("t2", "active"),
+        marker("trail-more"),
+        marker("settled-header"),
+        row("s1", "settled"),
+      ];
+      expect(resolveSidebarDropTarget(trailItems, "s1", "t2")).toEqual({
+        section: "active",
+        pinnedOrder: ["p1"],
+        activeOrder: ["n1", "t1", "s1", "t2"],
+      });
+      // From below, the placeholder is the Trail's first slot; the header's own slot is Snoozed's.
+      expect(
+        resolveSidebarDropTarget(trailItems, "s1", "sidebar-marker-active-placeholder"),
+      ).toEqual({ section: "active", pinnedOrder: ["p1"], activeOrder: ["n1", "s1", "t1", "t2"] });
+      expect(resolveSidebarDropTarget(trailItems, "s1", "sidebar-marker-trail-header")).toBeNull();
+      expect(
+        resolveSidebarDropTarget(trailItems, "p1", "sidebar-marker-trail-header")?.section,
+      ).toBe("active");
+      expect(resolveSidebarDropTarget(trailItems, "t1", "z1")).toBeNull();
+      expect(resolveSidebarDropTarget(trailItems, "t1", "s1")?.section).toBe("settled");
     });
 
     it.each([

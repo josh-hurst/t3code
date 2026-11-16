@@ -72,6 +72,8 @@ export interface SettingsSearchItem {
   readonly peerLinksOnly?: boolean;
   readonly fastWorktreeCheckoutOnly?: boolean;
   readonly textGeneratorsOnly?: boolean;
+  /** Rows that only apply to, and only show with, the classic sidebar. */
+  readonly classicSidebarOnly?: boolean;
   readonly secondary?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
 }
@@ -90,6 +92,7 @@ export interface SettingsSearchAvailability {
   /** An environment without a provider allow-list, which hides text generators. */
   readonly hasTextGeneratorsEnvironment?: boolean;
   readonly hasPrimaryEnvironment?: boolean;
+  readonly sidebarClassicEnabled?: boolean;
 }
 
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
@@ -482,10 +485,17 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset recover continue"],
   },
   {
+    id: "classic-sidebar",
+    title: "Classic sidebar",
+    to: "/settings/general",
+    searchTerms: ["old previous layout hand order manual inbox trail needs you working folders"],
+  },
+  {
     id: "working-shelf",
     title: msg("Working section"),
     to: "/settings/general",
     searchTerms: ["hide fold running monitoring threads inbox sidebar shelf"],
+    classicSidebarOnly: true,
   },
   {
     id: "sidebar-row-detail",
@@ -498,18 +508,21 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Needs you section",
     to: "/settings/general",
     searchTerms: ["sidebar attention approval question inbox waiting on me top project"],
+    classicSidebarOnly: true,
   },
   {
     id: "needs-you-finished-threads",
     title: "Finished threads in Needs you",
     to: "/settings/general",
     searchTerms: ["sidebar completed done unread unseen runs needs you"],
+    classicSidebarOnly: true,
   },
   {
     id: "boring-sidebar",
     title: "Boring sidebar (group by project)",
     to: "/settings/labs",
     searchTerms: ["beta folders project tree classic sidebar"],
+    classicSidebarOnly: true,
   },
   {
     id: "boring-sidebar-multiline",
@@ -518,6 +531,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     // Shown inside the boring sidebar row only while it is on, so search lands on the parent.
     targetId: "boring-sidebar",
     searchTerms: ["beta boring sidebar folder rows multiline branch pull request details"],
+    classicSidebarOnly: true,
   },
   {
     id: "tool-call-visibility",
@@ -918,7 +932,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Summarize latest reply",
     to: "/settings/threads",
     scope: "environment-defaults",
-    searchTerms: ["sidebar row latest message preview generated summary ai"],
+    searchTerms: [
+      "sidebar row latest message preview generated summary outcome topics open question ai",
+    ],
   },
   {
     id: "reply-summary-model",
@@ -927,7 +943,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     // Hidden until summaries are on, so a search lands on the switch that shows it.
     targetId: "reply-summaries",
     scope: "environment-defaults",
-    searchTerms: ["sidebar latest message summary generation provider"],
+    searchTerms: ["sidebar latest message thread summary topics generation provider"],
   },
   {
     id: "app-version",
@@ -1578,7 +1594,8 @@ export function filterAvailableSettingsSearchItems(
       (!item.peerLinksOnly || availability.hasPeerLinkHost === true) &&
       (!item.fastWorktreeCheckoutOnly ||
         availability.hasFastWorktreeCheckoutEnvironment === true) &&
-      (!item.textGeneratorsOnly || availability.hasTextGeneratorsEnvironment === true),
+      (!item.textGeneratorsOnly || availability.hasTextGeneratorsEnvironment === true) &&
+      (!item.classicSidebarOnly || availability.sidebarClassicEnabled === true),
   );
 }
 

@@ -16,6 +16,10 @@ import {
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
 import {
+  createOpenThreadPlacementHold,
+  createOpenThreadTouchHold,
+} from "@t3tools/client-runtime/state/thread-zones";
+import {
   CommandId,
   EnvironmentId,
   MessageId,
@@ -28,6 +32,7 @@ import {
 } from "@t3tools/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { relativeTime } from "../../lib/time";
 
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { makeRawThreadShell, makeThreadShellFixture } from "../../test-fixtures";
@@ -44,6 +49,7 @@ import {
   resolveThreadListV2WokeAt,
   threadListV2ListItemsAreEqual,
   threadHasUnseenCompletion,
+  type ThreadListV2Layout,
   type ThreadListV2ListItem,
 } from "./threadListV2";
 
@@ -223,7 +229,7 @@ describe("resolveThreadListV2SwipeActions", () => {
     expect(thread.pendingUserInputAt).toBe(NOW);
     expect(
       resolveThreadListV2SwipeActions({
-        variant: "card",
+        settled: false,
         settlementSupported: true,
         snoozeSupported: true,
         snoozable: canSnooze(thread, { now: NOW }),
@@ -1859,6 +1865,280 @@ describe("Working section beta", () => {
       "v2-settled-shelf",
       "settled",
     ]);
+  });
+});
+
+describe("self-filing list", () => {
+  const day = new Date(2026, 5, 2, 12).getTime();
+  const localIso = (hour: number, dayOffset = 0) =>
+    new Date(2026, 5, 2 + dayOffset, hour).toISOString();
+  const touched = (id: string, at: string) =>
+    makeThread({
+      id: ThreadId.make(id),
+      title: id,
+      createdAt: localIso(0, -7),
+      lastVisitedAt: at,
+    });
+  const finishedUnseen = (id: string, completedHour: number) =>
+    makeThread({
+      id: ThreadId.make(id),
+      title: id,
+      createdAt: localIso(0, -7),
+      lastVisitedAt: localIso(0, -1),
+      latestRun: {
+        runId: RunId.make(`run-${id}`),
+        status: "completed",
+        requestedAt: localIso(completedHour - 1),
+        startedAt: localIso(completedHour - 1),
+        completedAt: localIso(completedHour),
+        assistantMessageId: null,
+      },
+    });
+  const build = (
+    threads: ReadonlyArray<EnvironmentThreadShell>,
+    input: Partial<Parameters<typeof buildThreadListV2Items>[0]> = {},
+    trailExpanded = false,
+  ) => {
+    const layout = buildThreadListV2Items({
+      threads,
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      workingShelfExpanded: true,
+      snoozedShelfExpanded: true,
+      settledShelfExpanded: true,
+      tide: { trailExpanded, day },
+      ...input,
+    });
+    const items = buildThreadListV2ListItems({
+      items: layout.items,
+      pendingTasks: [],
+      workingCount: layout.workingCount,
+      workingShelfExpanded: true,
+      workingShelfHeaderIndex: layout.workingShelfHeaderIndex,
+      snoozedCount: layout.snoozedCount,
+      snoozedShelfExpanded: true,
+      snoozedShelfHeaderIndex: layout.snoozedShelfHeaderIndex,
+      settledCount: layout.settledCount,
+      settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
+      tide: { ...layout, trailExpanded },
+    });
+    return { layout, items };
+  };
+  const names = (items: ReadonlyArray<ThreadListV2ListItem>) =>
+    items.map((item) =>
+      item.type === "v2-thread"
+        ? item.item.thread.id
+        : item.type === "v2-section-header" || item.type === "v2-trail-more"
+          ? `[${item.type === "v2-section-header" ? item.title : item.label}]`
+          : item.type === "v2-snoozed-shelf" || item.type === "v2-settled-shelf"
+            ? `[${item.label}]`
+            : `[${item.type}]`,
+    );
+
+  it("files Pinned, Needs you, Working, Later, the Trail, then History", () => {
+    const card = (line: string, ask?: string) => ({
+      line,
+      topics: [],
+      open: ask === undefined ? [] : [{ kind: "ask" as const, text: ask }],
+      messageId: MessageId.make(`message:${line}`),
+      at: localIso(8),
+    });
+    const threads = [
+      touched("trail-older", localIso(9)),
+      {
+        ...finishedUnseen("waited-less", 10),
+        card: card("Asked about the branch", "Which branch?"),
+      },
+      makeThread({
+        id: ThreadId.make("pinned"),
+        title: "pinned",
+        pinnedAt: localIso(1),
+      }),
+      makeThread({
+        id: ThreadId.make("working"),
+        title: "working",
+        runtime: {
+          status: "running",
+          activeRunId: null,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          providerName: "Codex",
+          lastError: null,
+          updatedAt: NOW,
+        },
+      }),
+      finishedUnseen("waited-longest", 8),
+      makeThread({
+        id: ThreadId.make("snoozed"),
+        title: "snoozed",
+        snoozedAt: localIso(1),
+        snoozedUntil: "2099-01-01T00:00:00.000Z",
+      }),
+      {
+        ...touched("trail-newer", localIso(11)),
+        updatedAt: localIso(11, 1),
+        card: {
+          ...card("Fixed the login test"),
+          open: [{ kind: "ship" as const, text: "Waiting on your publish" }],
+        },
+      },
+      makeThread({
+        id: ThreadId.make("settled"),
+        title: "settled",
+        settledOverride: "settled",
+        settledAt: NOW,
+      }),
+    ];
+    const folders = [{ key: "folder", title: "Folder", projectRefs: [] }];
+    const { layout, items } = build(threads, { projectFolders: folders });
+    expect(names(items)).toEqual([
+      "pinned",
+      "[Needs you]",
+      "waited-longest",
+      "waited-less",
+      "[v2-working-shelf]",
+      "working",
+      "[Later]",
+      "snoozed",
+      "[Trail]",
+      "trail-newer",
+      "trail-older",
+      "[History]",
+      "settled",
+    ]);
+    expect(layout.folders).toEqual([]);
+    expect(items.find((item) => item.key === "v2-thread:environment-1:trail-newer")).toMatchObject({
+      // What is still to do leads, so truncation keeps it.
+      item: { variant: "slim", cardLine: "Publish · Fixed the login test" },
+      // The Trail's time is the last touch it is ordered by, not the latest activity.
+      timeLabel: relativeTime(localIso(11)),
+    });
+    // In Needs you the open question says more than the outcome.
+    expect(layout.items.map((item) => [item.thread.id, item.cardLine])).toEqual(
+      expect.arrayContaining([
+        ["waited-less", "Which branch?"],
+        ["waited-longest", null],
+      ]),
+    );
+
+    const classic = buildThreadListV2ListItems({
+      items: buildThreadListV2Items({
+        threads,
+        environmentId: null,
+        searchQuery: "",
+        now: NOW,
+        snoozedShelfExpanded: true,
+      }).items,
+      pendingTasks: [],
+      snoozedCount: 1,
+      snoozedShelfExpanded: true,
+      snoozedShelfHeaderIndex: 6,
+      settledCount: 1,
+      settledShelfHeaderIndex: 7,
+    });
+    expect(names(classic).filter((name) => name.startsWith("["))).toEqual([
+      "[Snoozed]",
+      "[Settled]",
+    ]);
+    expect(
+      classic.flatMap((item) => (item.type === "v2-thread" ? [item.item.cardLine] : [])),
+    ).not.toContain("Publish · Fixed the login test");
+
+    // The project gets its own line above the title, unless the list is scoped to one.
+    const projectTitleOf = () => "block-warfare";
+    const rowOf = (scoped: boolean) =>
+      build(threads, {
+        projectTitleOf,
+        ...(scoped ? { projectRefs: [{ environmentId, projectId: threads[0]!.projectId }] } : {}),
+      }).layout.items.find((item) => item.thread.id === "trail-newer");
+    expect(rowOf(false)).toMatchObject({
+      projectLine: "block-warfare",
+      cardLine: "Publish · Fixed the login test",
+    });
+    expect(rowOf(true)).toMatchObject({ projectLine: null });
+    // A slim search result names its project too; a card result names it in its header.
+    expect(
+      build(threads, { projectTitleOf, searchQuery: "snoozed" }).layout.items.find(
+        (item) => item.thread.id === "snoozed",
+      ),
+    ).toMatchObject({ variant: "slim", projectLine: "block-warfare", cardLine: null });
+  });
+
+  it("shows eight Trail rows, folds the rest behind an expander, and clears all but the open one", () => {
+    const trail = [
+      ...Array.from({ length: 10 }, (_, index) => touched(`today-${index}`, localIso(11 - index))),
+      touched("yesterday-0", localIso(20, -1)),
+      touched("yesterday-1", localIso(19, -1)),
+    ];
+    const selectedThreadKey = `${environmentId}:yesterday-1`;
+    const collapsed = build(trail, { selectedThreadKey });
+    expect(names(collapsed.items)).toEqual([
+      "[Trail]",
+      ...trail.slice(0, 8).map((thread) => thread.id),
+      "yesterday-1",
+      "[2 more today, 2 earlier]",
+    ]);
+    expect(collapsed.layout.trailCount).toBe(12);
+    const header = collapsed.items[0];
+    expect(
+      header?.type === "v2-section-header" && header.clearThreads?.map(({ id }) => id),
+    ).toEqual(trail.slice(0, 11).map(({ id }) => id));
+
+    const expanded = build(trail, { selectedThreadKey }, true);
+    expect(names(expanded.items)).toEqual([
+      "[Trail]",
+      ...trail.map((thread) => thread.id),
+      "[Show less]",
+    ]);
+    expect(threadListV2ListItemsAreEqual(collapsed.items.at(-1)!, expanded.items.at(-1)!)).toBe(
+      false,
+    );
+  });
+
+  it("keeps the open thread in place until it is left", () => {
+    const touchHold = createOpenThreadTouchHold();
+    const placementHold = createOpenThreadPlacementHold();
+    const layoutWith = (threads: EnvironmentThreadShell[], openId: string | null) => {
+      const key = openId === null ? null : `${environmentId}:${openId}`;
+      return build(threads, {
+        selectedThreadKey: key,
+        tide: {
+          trailExpanded: false,
+          day,
+          holdNeedsYou: placementHold(key),
+          heldTouch: touchHold(threads.find((thread) => thread.id === openId)),
+        },
+      }).layout;
+    };
+    const visit = (thread: EnvironmentThreadShell) => ({
+      ...thread,
+      lastVisitedAt: localIso(11),
+      opens: { openedAt: Date.parse(localIso(11)), score: 1, picks: [] },
+    });
+    const ids = (layout: ThreadListV2Layout) => layout.items.map((item) => item.thread.id);
+
+    const finished = finishedUnseen("finished", 9);
+    const other = touched("other", localIso(10));
+    expect(layoutWith([finished, other], "finished").needsYouCount).toBe(1);
+    expect(layoutWith([visit(finished), other], "finished").needsYouCount).toBe(1);
+    expect(layoutWith([visit(finished), other], null).needsYouCount).toBe(0);
+
+    const old = touched("old", localIso(8));
+    expect(ids(layoutWith([old, other], "old"))).toEqual(["other", "old"]);
+    const visited = visit(old);
+    const held = layoutWith([visited, other], "old");
+    expect(ids(held)).toEqual(["other", "old"]);
+    expect(held.items[1]?.thread).toBe(visited);
+    expect(ids(layoutWith([visited, other], null))).toEqual(["old", "other"]);
+  });
+
+  it("compares section headers by the threads Clear would settle", () => {
+    const first = build([touched("a", localIso(10)), touched("b", localIso(9))]).items[0]!;
+    const same = build([touched("a", localIso(10)), touched("b", localIso(9))]).items[0]!;
+    const changed = build([touched("a", localIso(10)), touched("c", localIso(9))]).items[0]!;
+    expect(first.type).toBe("v2-section-header");
+    expect(threadListV2ListItemsAreEqual(first, same)).toBe(true);
+    expect(threadListV2ListItemsAreEqual(first, changed)).toBe(false);
   });
 });
 

@@ -27,6 +27,7 @@ import {
   type GuestMessageId,
   isCompactionCommandMessage,
   isOrchestrationV2WorkActive,
+  threadCardHasOpenAsk,
   isProviderNativeSubagentThread,
   MessageId,
   type NodeId,
@@ -150,6 +151,7 @@ import {
 import * as EffectOutbox from "./EffectOutbox.ts";
 import { withCommandMetrics } from "../observability/Metrics.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
+import { cardCallsForRetitle, nextThreadCard, threadCardWithoutAsks } from "./ThreadCard.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import {
@@ -633,6 +635,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.active.reorder":
     case "thread.tag.set":
     case "thread.visit":
+    case "thread.card.record":
     case "thread.mark-unread":
     case "thread.metadata.update":
     case "thread.pull-request.link":
@@ -3799,6 +3802,69 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     });
   });
 
+  const dispatchThreadCard = Effect.fn("orchestrationV2.dispatch.threadCard")(function* (
+    command: Extract<OrchestrationV2ServerCommand, { readonly type: "thread.card.record" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const thread = yield* projectionStore
+      .getThread(command.threadId)
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    if (thread.deletedAt !== null) return;
+    const shell = yield* projectionStore
+      .getThreadShell(command.threadId)
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    const repliedAtMs = Date.parse(command.repliedAt);
+    const lastWroteAt = shell?.latestUserAuthoredMessageAt ?? null;
+    const occurredAt = yield* DateTime.now;
+    const card = nextThreadCard({
+      previous: thread.card ?? null,
+      runId: command.runId,
+      messageId: command.messageId,
+      line: command.line,
+      topics: command.topics,
+      open: command.open,
+      at: DateTime.formatIso(occurredAt),
+      // A wake starts a newer run without answering anything, so runs are not compared.
+      answered: lastWroteAt !== null && DateTime.toEpochMillis(lastWroteAt) > repliedAtMs,
+    });
+    const event = {
+      threadId: command.threadId,
+      providerInstanceId: thread.providerInstanceId,
+      occurredAt,
+    };
+    // Like a visit, a card must not bump updatedAt, which auto-settle and alerts read as activity.
+    yield* emit(events, command)({ ...event, type: "thread.card-updated", payload: { card } });
+    if (!cardCallsForRetitle(thread, command.topics)) return;
+    // The retitle a card asks for is no more activity than the card, so it keeps updatedAt too.
+    yield* emit(
+      events,
+      command,
+    )({
+      ...event,
+      type: "thread.tags-updated",
+      payload: {
+        ...thread,
+        card,
+        titleRegeneration: { requestId: command.commandId, startedAt: occurredAt, automatic: true },
+      },
+    });
+    yield* Ref.update(effects, (existing) => [
+      ...existing,
+      pendingThreadTitleGenerationEffect(command.commandId, command.threadId, {
+        type: "regenerate",
+      }),
+    ]);
+  });
+
   // Recheck under the lock after reading the host. Record the watch first so wake events carry it.
   const dispatchPullRequestWatchSync = Effect.fn("orchestrationV2.dispatch.pullRequestWatchSync")(
     function* (
@@ -4746,6 +4812,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : command.regenerateTitle === false || command.title !== undefined
                 ? { titleRegeneration: null }
                 : {}),
+            // Naming a thread stops automatic retitles; asking for a new title allows them again.
+            ...(command.title !== undefined
+              ? { titleEditedAt: DateTime.formatIso(now) }
+              : command.regenerateTitle === true && thread.titleEditedAt != null
+                ? { titleEditedAt: null }
+                : {}),
             updatedAt: now,
           };
         }
@@ -5003,7 +5075,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                       },
                     }),
                 titleRegeneration: null,
-                updatedAt: now,
+                ...(command.needsRefinement === true
+                  ? { titleNeedsRefinement: true }
+                  : thread.titleNeedsRefinement === undefined
+                    ? {}
+                    : { titleNeedsRefinement: false }),
+                updatedAt: thread.titleRegeneration.automatic === true ? thread.updatedAt : now,
               }
             : thread;
         case "thread.runtime-mode.set":
@@ -6849,6 +6926,28 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         providerInstanceId: thread.providerInstanceId,
         occurredAt: now,
         payload: thread,
+      });
+      projection = applyToProjection(projection, event);
+    }
+    // The same rule for an open question: only the user writing back answers it.
+    const card = projection.thread.card;
+    if (
+      card != null &&
+      threadCardHasOpenAsk(card) &&
+      !automaticWake &&
+      command.createdBy === "user" &&
+      command.scheduledTaskId === undefined &&
+      !isNativeMaintenanceCommand(command)
+    ) {
+      const event = yield* emit(
+        events,
+        command,
+      )({
+        type: "thread.card-updated",
+        threadId: command.threadId,
+        providerInstanceId: projection.thread.providerInstanceId,
+        occurredAt: yield* DateTime.now,
+        payload: { card: threadCardWithoutAsks(card) },
       });
       projection = applyToProjection(projection, event);
     }
@@ -14649,6 +14748,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.visit":
         yield* dispatchThreadVisit(command, events);
         break;
+      case "thread.card.record":
+        yield* dispatchThreadCard(command, events, effects);
+        break;
       case "thread.auto-settle": {
         // Recheck live state; changes and explicit overrides take precedence over the sweep snapshot.
         const thread = yield* projectionStore
@@ -15124,6 +15226,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.type === "thread.background-work.settle" ||
           // A stale visit changes no read state.
           command.type === "thread.visit" ||
+          // A card for a thread deleted while the model ran has nowhere to go.
+          command.type === "thread.card.record" ||
           // A read can answer a watch again before a push's reopen lands; nothing is left to clear.
           command.type === "thread.pull-request-watch.checks-reopen" ||
           command.type === "thread.interrupt.unresponsive" ||

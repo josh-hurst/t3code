@@ -2,7 +2,13 @@ import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
-import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+import {
+  hasUnseenCompletion,
+  threadCardRowLine,
+  threadStatusKind,
+  type ThreadStatusInput,
+  type ThreadStatusKind,
+} from "@t3tools/client-runtime/state/thread-zones";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import * as React from "react";
 import {
@@ -15,12 +21,16 @@ import {
   threadSearchSubject,
   type ThreadSearchShell,
 } from "@t3tools/client-runtime/state/thread-search";
-import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@t3tools/shared/paletteSearch";
+import {
+  foldSearchQuery,
+  rankSearchItems,
+  scoreThreadSearch,
+  type SearchMatchHint,
+} from "@t3tools/shared/paletteSearch";
 import {
   isListedThreadLineage,
   type ContextMenuItem,
   type EnvironmentId,
-  type MessageId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
@@ -44,7 +54,6 @@ import {
 } from "@t3tools/client-runtime/state/thread-sort";
 import type { SidebarThreadSummary, Thread } from "../types";
 import { normalizeSearchText } from "../lib/utils";
-import { isLatestRunSettled } from "../session-logic";
 import { THREAD_STATUS_TEXT } from "@t3tools/client-runtime/state/thread-activity-announcement";
 import { observeIntersection } from "../lib/observeIntersection";
 import { deadlineAfter, deadlineStore, type ClockStore } from "@t3tools/client-runtime/clock";
@@ -216,6 +225,8 @@ export type SidebarListMarker =
   | "pinned-divider"
   | "working-header"
   | "snoozed-header"
+  | "trail-header"
+  | "trail-more"
   | "settled-header";
 
 export function sidebarMarkerId(marker: SidebarListMarker): string {
@@ -230,15 +241,23 @@ export function sidebarListItemId(item: SidebarListItem): string {
   return item.kind === "thread" ? item.key : sidebarMarkerId(item.marker);
 }
 
+// The Trail lists active rows below the Working and Snoozed shelves.
+function sectionBelowSidebarMarker(
+  section: SidebarSection,
+  marker: SidebarListMarker,
+): SidebarSection {
+  if (marker === "pinned-divider" || marker === "trail-header") return "active";
+  if (marker === "working-header") return "working";
+  if (marker === "snoozed-header") return "snoozed";
+  if (marker === "settled-header") return "settled";
+  return section;
+}
+
 function sectionAtSidebarSlot(items: readonly SidebarListItem[], index: number): SidebarSection {
   let section: SidebarSection = "pinned";
   for (let i = 0; i < index && i < items.length; i += 1) {
     const item = items[i]!;
-    if (item.kind !== "marker") continue;
-    if (item.marker === "pinned-divider") section = "active";
-    else if (item.marker === "working-header") section = "working";
-    else if (item.marker === "snoozed-header") section = "snoozed";
-    else if (item.marker === "settled-header") section = "settled";
+    if (item.kind === "marker") section = sectionBelowSidebarMarker(section, item.marker);
   }
   return section;
 }
@@ -286,15 +305,9 @@ export function resolveSidebarDropTarget(
   let currentSection: SidebarSection = "pinned";
   for (const item of moved) {
     if (item.kind === "marker") {
-      if (item.marker === "pinned-divider") currentSection = "active";
-      else if (
-        item.marker === "working-header" ||
-        item.marker === "snoozed-header" ||
-        item.marker === "settled-header"
-      )
-        break;
+      currentSection = sectionBelowSidebarMarker(currentSection, item.marker);
     } else if (currentSection === "pinned") pinnedOrder.push(item.key);
-    else activeOrder.push(item.key);
+    else if (currentSection === "active") activeOrder.push(item.key);
   }
   return { section, pinnedOrder, activeOrder };
 }
@@ -637,32 +650,34 @@ export function sidebarMessagePreview(
   return message.role === "user" ? `You: ${text}` : text;
 }
 
-/** The reply to summarize for a row, or null when the row shows the plain preview. */
-export function sidebarReplySummaryMessageId(input: {
+/**
+ * A row's second line. With `showCardLine` the card's line shows whatever the row detail says;
+ * otherwise it stands in for the latest message only while that message is the reply it describes.
+ */
+export function sidebarRowMessagePreview(input: {
+  readonly thread: Pick<SidebarThreadSummary, "card"> & {
+    readonly source: Pick<
+      SidebarThreadSummary["source"],
+      "latestVisibleMessage" | "pendingRuntimeRequest"
+    >;
+  };
   readonly rowDetail: SidebarRowDetail;
-  readonly summariesEnabled: boolean;
-  readonly status: SidebarThreadStatus;
-  readonly message: SidebarThreadSummary["source"]["latestVisibleMessage"];
-}): MessageId | null {
-  // Mid-turn replies are interim; summarizing each would spend a run per step.
-  if (
-    !input.summariesEnabled ||
-    input.rowDetail === "branch" ||
-    input.status === "preparing" ||
-    input.status === "working" ||
-    input.message?.role !== "assistant"
-  ) {
-    return null;
+  readonly showCardLine: boolean;
+  readonly needsYou: boolean;
+}): string | null {
+  const { card, source } = input.thread;
+  if (input.showCardLine) {
+    const line = threadCardRowLine(card, {
+      needsYou: input.needsYou,
+      request: source.pendingRuntimeRequest,
+    });
+    if (line !== null) return line;
   }
-  return input.message.id;
-}
-
-export function sidebarRowMessagePreview(
-  message: SidebarThreadSummary["source"]["latestVisibleMessage"],
-  replySummary: string | null,
-): string | null {
-  return message?.role === "assistant" && replySummary
-    ? replySummary
+  const cardLine = threadCardRowLine(card, { needsYou: input.needsYou });
+  if (input.rowDetail === "branch") return null;
+  const message = source.latestVisibleMessage;
+  return message?.role === "assistant" && cardLine !== null && card?.messageId === message.id
+    ? cardLine
     : sidebarMessagePreview(message);
 }
 
@@ -751,27 +766,12 @@ export interface ThreadStatusPill {
     | "Awaiting Input"
     | "Guest Request"
     | "Waiting"
-    | "Plan Ready";
+    | "Plan Ready"
+    | "Question";
   colorClass: string;
   dotClass: string;
   pulse: boolean;
 }
-
-type ThreadStatusInput = Pick<
-  SidebarThreadSummary,
-  | "hasActionableProposedPlan"
-  | "hasPendingApprovals"
-  | "hasPendingUserInput"
-  | "pendingSubagentRequest"
-  | "pendingGuestMessageCount"
-  | "interactionMode"
-  | "latestRun"
-  | "runtime"
-> & {
-  lastVisitedAt?: string | null | undefined;
-  pendingBackgroundTasks?: SidebarThreadSummary["pendingBackgroundTasks"] | undefined;
-  blockedOnThreadWait?: boolean | undefined;
-};
 
 // Read at event time: subscribing Sidebar to terminal or modifier state re-renders every row.
 export function threadShortcutContext(routeThreadRef: ScopedThreadRef | null) {
@@ -879,27 +879,6 @@ export function resolveThreadLastVisitedAt(
   // servers.
   if (serverLastVisitedAt === undefined) return localLastVisitedAt;
   return serverLastVisitedAt ?? undefined;
-}
-
-export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
-  if (!thread.latestRun?.completedAt) return false;
-  const completedAt = Date.parse(thread.latestRun.completedAt);
-  if (Number.isNaN(completedAt)) return false;
-  if (!thread.lastVisitedAt) return false;
-
-  const lastVisitedAt = Date.parse(thread.lastVisitedAt);
-  if (Number.isNaN(lastVisitedAt)) return true;
-  return completedAt > lastVisitedAt;
-}
-
-/** Unopened threads' failures still count as unseen, unlike completions. */
-function hasUnseenFailure(thread: ThreadStatusInput): boolean {
-  if (thread.latestRun?.status !== "failed") return false;
-  if (!thread.lastVisitedAt) return true;
-  const completedAt = Date.parse(thread.latestRun.completedAt ?? "");
-  const lastVisitedAt = Date.parse(thread.lastVisitedAt);
-  if (Number.isNaN(completedAt) || Number.isNaN(lastVisitedAt)) return true;
-  return completedAt > lastVisitedAt;
 }
 
 // Suppress trailing double-click navigation; keyboard and synthetic clicks use detail 0.
@@ -1219,15 +1198,26 @@ export function searchSidebarThreads<
   query: string,
   contentMatchKeys: ReadonlySet<string> = EMPTY_CONTENT_MATCH_KEYS,
   now = Date.now(),
-): { readonly titleMatches: T[]; readonly contentMatches: T[] } {
+): {
+  readonly titleMatches: T[];
+  readonly contentMatches: T[];
+  /** Why a title match whose title shows nothing matched, built when the row asks. */
+  readonly explainByThread: ReadonlyMap<T, () => SearchMatchHint | undefined>;
+} {
   const normalizedQuery = foldSearchQuery(query);
-  if (normalizedQuery.length === 0) return { titleMatches: [], contentMatches: [] };
-  const titleMatches = rankSearchItems(threads, (thread, options) =>
+  if (normalizedQuery.length === 0) {
+    return { titleMatches: [], contentMatches: [], explainByThread: new Map() };
+  }
+  const ranked = rankSearchItems(threads, (thread, options) =>
     scoreThreadSearch(normalizedQuery, threadSearchSubject(thread, null), now, {
       ...options,
       picks: false,
     }),
-  ).map(({ item }) => item);
+  );
+  const titleMatches = ranked.map(({ item }) => item);
+  const explainByThread = new Map(
+    ranked.flatMap(({ item, match }) => (match.explain ? [[item, match.explain] as const] : [])),
+  );
   const listed = new Set(titleMatches);
   // In the order the server ranked their messages, as the palette lists them.
   const threadByKey = new Map(
@@ -1240,7 +1230,7 @@ export function searchSidebarThreads<
     const thread = threadByKey.get(key);
     return thread && !listed.has(thread) ? [thread] : [];
   });
-  return { titleMatches, contentMatches };
+  return { titleMatches, contentMatches, explainByThread };
 }
 
 export function pullRequestMatchesSearchQuery(
@@ -1321,149 +1311,81 @@ export function resolveWorkingStartedAt(
   return resolveThreadWorkingStartedAt(thread);
 }
 
+const PILL_BY_KIND: Record<ThreadStatusKind, ThreadStatusPill> = {
+  approval: {
+    label: "Pending Approval",
+    colorClass: "text-amber-600 dark:text-amber-300/90",
+    dotClass: "bg-amber-500 dark:bg-amber-300/90",
+    pulse: false,
+  },
+  input: {
+    label: "Awaiting Input",
+    colorClass: "text-indigo-600 dark:text-indigo-300/90",
+    dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
+    pulse: false,
+  },
+  guest: {
+    label: "Guest Request",
+    colorClass: "text-guest-foreground",
+    dotClass: "bg-guest",
+    pulse: false,
+  },
+  working: {
+    label: "Working",
+    colorClass: "text-sky-600 dark:text-sky-300/80",
+    dotClass: "bg-sky-500 dark:bg-sky-300/80",
+    pulse: true,
+  },
+  connecting: {
+    label: "Connecting",
+    colorClass: "text-sky-600 dark:text-sky-300/80",
+    dotClass: "bg-sky-500 dark:bg-sky-300/80",
+    pulse: true,
+  },
+  waiting: {
+    label: "Waiting",
+    colorClass: "text-sidebar-muted-foreground",
+    dotClass: "bg-sidebar-muted-foreground",
+    pulse: false,
+  },
+  failed: {
+    label: "Failed",
+    colorClass: "text-red-600 dark:text-red-300/90",
+    dotClass: "bg-red-500 dark:bg-red-300/90",
+    pulse: false,
+  },
+  plan: {
+    label: "Plan Ready",
+    colorClass: "text-violet-600 dark:text-violet-300/90",
+    dotClass: "bg-violet-500 dark:bg-violet-300/90",
+    pulse: false,
+  },
+  completed: {
+    label: "Completed",
+    colorClass: "text-emerald-600 dark:text-emerald-300/90",
+    dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
+    pulse: false,
+  },
+  question: {
+    label: "Question",
+    colorClass: "text-indigo-600 dark:text-indigo-300/90",
+    dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
+    pulse: false,
+  },
+};
+
 export function resolveThreadStatusPill(input: {
   thread: ThreadStatusInput;
 }): ThreadStatusPill | null {
-  const { thread } = input;
-
-  if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
-    return {
-      label: "Pending Approval",
-      colorClass: "text-amber-600 dark:text-amber-300/90",
-      dotClass: "bg-amber-500 dark:bg-amber-300/90",
-      pulse: false,
-    };
-  }
-
-  if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
-    return {
-      label: "Awaiting Input",
-      colorClass: "text-indigo-600 dark:text-indigo-300/90",
-      dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
-      pulse: false,
-    };
-  }
-
-  if ((thread.pendingGuestMessageCount ?? 0) > 0) {
-    return {
-      label: "Guest Request",
-      colorClass: "text-guest-foreground",
-      dotClass: "bg-guest",
-      pulse: false,
-    };
-  }
-
-  if (
-    (thread.runtime?.status === "running" && thread.blockedOnThreadWait !== true) ||
-    thread.runtime?.status === "waiting"
-  ) {
-    return {
-      label: "Working",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
-      pulse: true,
-    };
-  }
-
-  if (
-    thread.runtime?.status === "preparing" ||
-    thread.runtime?.status === "starting" ||
-    thread.runtime?.status === "queued"
-  ) {
-    return {
-      label: "Connecting",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
-      pulse: true,
-    };
-  }
-
-  if (
-    (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) ||
-    backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])
-  ) {
-    return {
-      label: "Waiting",
-      colorClass: "text-sidebar-muted-foreground",
-      dotClass: "bg-sidebar-muted-foreground",
-      pulse: false,
-    };
-  }
-
-  if (hasUnseenFailure(thread)) {
-    return {
-      label: "Failed",
-      colorClass: "text-red-600 dark:text-red-300/90",
-      dotClass: "bg-red-500 dark:bg-red-300/90",
-      pulse: false,
-    };
-  }
-
-  const hasPlanReadyPrompt =
-    !thread.hasPendingUserInput &&
-    thread.interactionMode === "plan" &&
-    isLatestRunSettled(thread.latestRun, thread.runtime) &&
-    thread.hasActionableProposedPlan;
-  if (hasPlanReadyPrompt) {
-    return {
-      label: "Plan Ready",
-      colorClass: "text-violet-600 dark:text-violet-300/90",
-      dotClass: "bg-violet-500 dark:bg-violet-300/90",
-      pulse: false,
-    };
-  }
-
-  if (hasUnseenCompletion(thread)) {
-    return {
-      label: "Completed",
-      colorClass: "text-emerald-600 dark:text-emerald-300/90",
-      dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
-      pulse: false,
-    };
-  }
-
-  return null;
+  const kind = threadStatusKind(input.thread);
+  return kind === null ? null : PILL_BY_KIND[kind];
 }
 
-const NEEDS_YOU_STATUS_LABELS: ReadonlySet<ThreadStatusPill["label"]> = new Set([
-  "Pending Approval",
-  "Awaiting Input",
-  "Guest Request",
-  "Failed",
-  "Plan Ready",
-]);
-
-/** Whether the row's status pill asks you to act, or with `includeCompleted`, to look. */
-export function sidebarThreadNeedsYou(
-  thread: ThreadStatusInput,
-  options: { readonly includeCompleted: boolean },
-): boolean {
-  const pill = resolveThreadStatusPill({ thread });
-  if (pill === null) return false;
-  if (pill.label === "Completed") return options.includeCompleted;
-  return NEEDS_YOU_STATUS_LABELS.has(pill.label);
-}
-
-/**
- * Keeps the open thread in or out of Needs you as it was when opened, so opening a
- * finished run never moves the row being looked at. Leaving it, or sending it a
- * message (a new `sentAt`), re-sorts it. Call with the route key on each pass.
- */
-export function createOpenThreadPlacementHold() {
-  let held: {
-    readonly key: string;
-    readonly needsYou: boolean;
-    readonly sentAt: string | null;
-  } | null = null;
-  return (routeKey: string | null) => {
-    if (held?.key !== routeKey) held = null;
-    return (key: string, needsYou: boolean, sentAt: string | null): boolean => {
-      if (key !== routeKey) return needsYou;
-      if (held === null || held.sentAt !== sentAt) held = { key, needsYou, sentAt };
-      return held.needsYou;
-    };
-  };
-}
+export { hasUnseenCompletion };
+export {
+  createOpenThreadPlacementHold,
+  threadNeedsYou as sidebarThreadNeedsYou,
+} from "@t3tools/client-runtime/state/thread-zones";
 
 export function getFallbackThreadIdAfterDelete<
   T extends Pick<

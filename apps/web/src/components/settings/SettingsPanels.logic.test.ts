@@ -112,7 +112,11 @@ describe("auto-settle days field", () => {
     expect(confirmed).toMatchObject({ saved: 30, draft: "30", pending: null });
   });
 
-  it.each(["", "0", "91", "1.5", "abc"])("restores the saved value for %j", (draft) => {
+  it("accepts half days", () => {
+    expect(commitAutoSettleDaysField(type(autoSettleDaysField(14), "1.5")).submit).toBe(1.5);
+  });
+
+  it.each(["", "0", "91", "1.2", "abc"])("restores the saved value for %j", (draft) => {
     const committed = commitAutoSettleDaysField(type(autoSettleDaysField(14), draft));
     expect(committed.submit).toBeNull();
     expect(committed.field.draft).toBe("14");

@@ -1,4 +1,5 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { threadLaterLabel } from "@t3tools/client-runtime/state/thread-zones";
 import { findForMessageMatch, openThreadFindOnQuery } from "./chat/threadFindStore";
 import {
   claimThreadOpen,
@@ -23,6 +24,7 @@ import {
   deriveProviderInstanceEntries,
   type ProviderInstanceEntry,
 } from "../providerInstances";
+import { useClientSettings } from "../hooks/useSettings";
 import { useVisibleThreadShells } from "../state/entities";
 import {
   useEnvironmentProviders,
@@ -107,10 +109,17 @@ export function useCommandPaletteThreadItems(input: {
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   // Ranking is relative to when the palette opened, so rows do not reorder as time passes.
   const [now] = useState(() => Date.now());
+  const sidebarClassicEnabled = useClientSettings((settings) => settings.sidebarClassicEnabled);
 
   const { environments } = useEnvironments();
   const threadItems = buildThreadActionItems({
     threads,
+    ...(sidebarClassicEnabled
+      ? {}
+      : {
+          laterLabelOf: (thread: (typeof threads)[number]) =>
+            threadLaterLabel(thread, { now: new Date(now).toISOString() }),
+        }),
     ...(environments.length > 1
       ? {
           environmentLabelOf: (thread: (typeof threads)[number]) =>

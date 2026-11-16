@@ -57,17 +57,20 @@ import {
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
+  BellDotIcon,
   BugIcon,
   ChartNoAxesColumnIcon,
   CheckIcon,
   ChevronRightIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
+  FocusIcon,
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
   MessageSquareDashedIcon,
   LinkIcon,
+  ListChecksIcon,
   MessageSquareIcon,
   PaletteIcon,
   RotateCcwIcon,
@@ -233,6 +236,7 @@ import {
   useProjectLookups,
   useSortedProjectGroups,
 } from "./CommandPaletteLookups";
+import { runTideCommand } from "./sidebar/tideCommands";
 import {
   buildNewThreadInProjectItems,
   buildProjectSearchItems,
@@ -449,6 +453,7 @@ function OpenCommandPaletteDialog(props: {
     setHighlightedItemValue(null);
   }
   const clientSettings = useClientSettings(selectCommandPaletteClientSettings);
+  const sidebarClassicEnabled = useClientSettings((settings) => settings.sidebarClassicEnabled);
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -1679,6 +1684,46 @@ function OpenCommandPaletteDialog(props: {
       await navigate({ to: "/usage" });
     },
   });
+
+  if (!sidebarClassicEnabled) {
+    for (const item of [
+      {
+        command: "thread.nextNeedsYou",
+        title: "Go to next thread that needs you",
+        description: "Steps through Needs you, then other projects",
+        searchTerms: ["needs you", "next", "waiting", "approval", "question", "inbox"],
+        icon: <BellDotIcon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "thread.clearTrail",
+        title: "Clear the Trail",
+        description:
+          "Settles every Trail thread except the open one into History. Undo restores them",
+        searchTerms: ["trail", "settle all", "clear", "tidy", "sidebar"],
+        icon: <ListChecksIcon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "sidebar.focusProject",
+        title: "Focus sidebar on this project",
+        description: "Shows only the open thread's project. Run again to show all projects",
+        searchTerms: ["focus", "project", "scope", "filter", "sidebar", "all projects"],
+        icon: <FocusIcon className={ITEM_ICON_CLASS} />,
+      },
+    ] as const) {
+      actionItems.push({
+        kind: "action",
+        value: `action:${item.command}`,
+        searchTerms: [...item.searchTerms],
+        title: item.title,
+        description: item.description,
+        icon: item.icon,
+        shortcutCommand: item.command,
+        run: async () => {
+          runTideCommand(item.command);
+        },
+      });
+    }
+  }
 
   for (const direction of [1, -1] as const) {
     const title = direction === 1 ? "Focus Next Workspace Area" : "Focus Previous Workspace Area";

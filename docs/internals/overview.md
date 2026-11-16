@@ -58,6 +58,13 @@ therefore means the intent committed, not that the provider, checkpoint, or othe
 finished. Keep external I/O out of command decisions and the database transaction. Effects tied to
 a lost provider process cannot simply replay; recovery retires them before admitting new work.
 
+Effects that wait on a text model (thread titles and thread cards) are claimed on their own lane
+in the [outbox](../../apps/server/src/orchestration-v2/EffectOutbox.ts), so a slow or hanging
+generation can never delay a turn; add any new model-backed effect to that lane. A card is
+written with `thread.card-updated`, which must not change the thread's `updatedAt`: the
+auto-settle sweep reads `updatedAt` as activity and rejects a thread that changed after its
+snapshot.
+
 The event log only keeps what live readers need: about a day of history for reconnect replay and
 command-id retries.
 [ProjectionMaintenance](../../apps/server/src/orchestration-v2/ProjectionMaintenance.ts) deletes

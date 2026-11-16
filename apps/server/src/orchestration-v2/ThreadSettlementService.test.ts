@@ -160,6 +160,22 @@ describe("isAutoSettlementCandidate", () => {
     ).toBe(false);
   });
 
+  it.each([
+    ["ask", false],
+    ["verify", true],
+  ] as const)("a card with an open %s item leaves the thread a candidate: %s", (kind, expected) => {
+    const card = {
+      line: "Use Clerk or Auth0 for login?",
+      topics: [],
+      open: [{ kind, text: "Use Clerk or Auth0 for login?" }],
+      messageId: MessageId.make("message:card"),
+      at: "2026-06-20T00:00:00.000Z",
+    };
+    expect(ThreadSettlementService.isAutoSettlementCandidate(shell({ card }), NOW_MS)).toBe(
+      expected,
+    );
+  });
+
   it("never settles, or keeps snoozed, a thread whose guest is waiting on the owner", () => {
     expect(
       ThreadSettlementService.isAutoSettlementCandidate(

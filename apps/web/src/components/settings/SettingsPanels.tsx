@@ -511,6 +511,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarProjectSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder
       ? ["Project order"]
       : []),
+    ...(settings.sidebarClassicEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarClassicEnabled
+      ? ["Classic sidebar"]
+      : []),
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
       : []),
@@ -705,6 +708,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
+      sidebarClassicEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarClassicEnabled,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarRowDetail: DEFAULT_UNIFIED_SETTINGS.sidebarRowDetail,
       sidebarNeedsYouPlacement: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement,
@@ -796,6 +800,7 @@ function AutoSettleDaysInput({
       type="number"
       min={MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
       max={MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
+      step={0.5}
       className="w-full sm:w-24"
       value={field.draft}
       onChange={(event) => setField(editAutoSettleDaysField(field, event.target.value))}
@@ -936,21 +941,15 @@ export function GeneralSettingsPanel() {
           }
         />
         <SettingsRow
-          {...setting("working-shelf")}
-          description={
-            <T>
-              Fold working and monitoring threads into a Working section. They return to the top of
-              the inbox when they need you. The boring sidebar in Labs has no Working section.
-            </T>
-          }
+          {...searchableSetting("classic-sidebar")}
+          description="Use the earlier sidebar: one active list you order by hand or by project folder, with Snoozed and Settled shelves in place of Later, Trail and History."
           resetAction={
-            settings.sidebarWorkingShelfEnabled !==
-            DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
+            settings.sidebarClassicEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarClassicEnabled ? (
               <SettingResetButton
-                label="working section"
+                label="classic sidebar"
                 onClick={() =>
                   updateSettings({
-                    sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+                    sidebarClassicEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarClassicEnabled,
                   })
                 }
               />
@@ -958,17 +957,68 @@ export function GeneralSettingsPanel() {
           }
           control={
             <Switch
-              checked={settings.sidebarWorkingShelfEnabled}
+              checked={settings.sidebarClassicEnabled}
               onCheckedChange={(checked) =>
-                updateSettings({ sidebarWorkingShelfEnabled: Boolean(checked) })
+                updateSettings({ sidebarClassicEnabled: Boolean(checked) })
               }
-              aria-label={gt("Working section")}
+              aria-label="Classic sidebar"
             />
           }
         />
+        {settings.sidebarClassicEnabled ? (
+          <SettingsRow
+            {...setting("working-shelf")}
+            description={
+              <T>
+                Fold working and monitoring threads into a Working section. They return to the top
+                of the inbox when they need you. The boring sidebar in Labs has no Working section.
+              </T>
+            }
+            resetAction={
+              settings.sidebarWorkingShelfEnabled !==
+              DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
+                <SettingResetButton
+                  label="working section"
+                  onClick={() =>
+                    updateSettings({
+                      sidebarWorkingShelfEnabled:
+                        DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.sidebarWorkingShelfEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ sidebarWorkingShelfEnabled: Boolean(checked) })
+                }
+                aria-label={gt("Working section")}
+              />
+            }
+          />
+        ) : null}
         <SettingsRow
           {...searchableSetting("sidebar-row-detail")}
-          description="Choose what shows under each thread's title: its branch, the start of its latest message, or both."
+          description={
+            settings.sidebarClassicEnabled ? (
+              "Choose what shows under each thread's title: its branch, the start of its latest message, or both."
+            ) : (
+              <>
+                Choose what shows under the title of pinned and working threads. Other rows show the
+                thread's outcome line, written when{" "}
+                <Link
+                  to="/settings/threads"
+                  hash={searchableSetting("reply-summaries").id}
+                  className="underline underline-offset-2"
+                >
+                  Summarize latest reply
+                </Link>{" "}
+                is on in Threads.
+              </>
+            )
+          }
           resetAction={
             settings.sidebarRowDetail !== DEFAULT_UNIFIED_SETTINGS.sidebarRowDetail ? (
               <SettingResetButton
@@ -999,47 +1049,49 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
-        <SettingsRow
-          {...searchableSetting("needs-you-placement")}
-          description="Collect threads waiting on you or with a finished run you haven't opened, above the active list or at the top of each project folder. Folders need the boring sidebar in Labs."
-          resetAction={
-            settings.sidebarNeedsYouPlacement !==
-            DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement ? (
-              <SettingResetButton
-                label="Needs you section"
-                onClick={() =>
-                  updateSettings({
-                    sidebarNeedsYouPlacement: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.sidebarNeedsYouPlacement}
-              onValueChange={(value) => {
-                if (isSidebarNeedsYouPlacement(value)) {
-                  updateSettings({ sidebarNeedsYouPlacement: value });
-                }
-              }}
-            >
-              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Needs you section">
-                <SelectValue>
-                  {SIDEBAR_NEEDS_YOU_PLACEMENT_LABELS[settings.sidebarNeedsYouPlacement]}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {SidebarNeedsYouPlacement.literals.map((placement) => (
-                  <SelectItem hideIndicator key={placement} value={placement}>
-                    {SIDEBAR_NEEDS_YOU_PLACEMENT_LABELS[placement]}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          }
-        />
-        {settings.sidebarNeedsYouPlacement === "off" ? null : (
+        {settings.sidebarClassicEnabled ? (
+          <SettingsRow
+            {...searchableSetting("needs-you-placement")}
+            description="Collect threads waiting on you or with a finished run you haven't opened, above the active list or at the top of each project folder. Folders need the boring sidebar in Labs."
+            resetAction={
+              settings.sidebarNeedsYouPlacement !==
+              DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement ? (
+                <SettingResetButton
+                  label="Needs you section"
+                  onClick={() =>
+                    updateSettings({
+                      sidebarNeedsYouPlacement: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={settings.sidebarNeedsYouPlacement}
+                onValueChange={(value) => {
+                  if (isSidebarNeedsYouPlacement(value)) {
+                    updateSettings({ sidebarNeedsYouPlacement: value });
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Needs you section">
+                  <SelectValue>
+                    {SIDEBAR_NEEDS_YOU_PLACEMENT_LABELS[settings.sidebarNeedsYouPlacement]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {SidebarNeedsYouPlacement.literals.map((placement) => (
+                    <SelectItem hideIndicator key={placement} value={placement}>
+                      {SIDEBAR_NEEDS_YOU_PLACEMENT_LABELS[placement]}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            }
+          />
+        ) : null}
+        {!settings.sidebarClassicEnabled || settings.sidebarNeedsYouPlacement === "off" ? null : (
           <SettingsRow
             {...searchableSetting("needs-you-finished-threads")}
             description="Move threads with a finished run you haven't opened to Needs you. When off, they stay where they are."
@@ -2113,7 +2165,12 @@ export function ThreadsSettingsPanel() {
               serverScoped
               settingKeys={["sidebarAutoSettleAfterDays"]}
               title={searchableSetting("days-before-auto-settle").title}
-              description="Any new activity un-settles a thread automatically."
+              description={
+                settings.sidebarAutoSettleAfterDays !== null &&
+                !Number.isInteger(settings.sidebarAutoSettleAfterDays)
+                  ? `That is ${Math.round(settings.sidebarAutoSettleAfterDays * 24)} hours. Any new activity un-settles a thread automatically.`
+                  : "Any new activity un-settles a thread automatically."
+              }
               control={
                 <AutoSettleDaysInput
                   value={settings.sidebarAutoSettleAfterDays}

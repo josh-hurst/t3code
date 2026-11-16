@@ -135,6 +135,11 @@ export interface Preferences {
   readonly threadListSettledShelfExpanded?: boolean;
   readonly threadListSnoozedShelfExpanded?: boolean;
   readonly threadListWorkingShelfExpanded?: boolean;
+  /** Unset means the self-filing thread list; true restores the hand-ordered one. */
+  readonly classicThreadList?: boolean;
+  /** Unset means expanded. */
+  readonly threadListLaterExpanded?: boolean;
+  readonly threadListTrailExpanded?: boolean;
   readonly threadListFilters?: ThreadListFilters;
   readonly pullRequestListFilters?: PullRequestListPreferences;
   readonly workspaceSelections?: WorkspaceSelections;
@@ -221,6 +226,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListSettledShelfExpanded?: boolean;
     threadListSnoozedShelfExpanded?: boolean;
     threadListWorkingShelfExpanded?: boolean;
+    classicThreadList?: boolean;
+    threadListLaterExpanded?: boolean;
+    threadListTrailExpanded?: boolean;
     threadListFilters?: ThreadListFilters;
     pullRequestListFilters?: PullRequestListPreferences;
     workspaceSelections?: WorkspaceSelections;
@@ -374,6 +382,15 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.threadListWorkingShelfExpanded === "boolean") {
     preferences.threadListWorkingShelfExpanded = parsed.threadListWorkingShelfExpanded;
+  }
+  if (typeof parsed.classicThreadList === "boolean") {
+    preferences.classicThreadList = parsed.classicThreadList;
+  }
+  if (typeof parsed.threadListLaterExpanded === "boolean") {
+    preferences.threadListLaterExpanded = parsed.threadListLaterExpanded;
+  }
+  if (typeof parsed.threadListTrailExpanded === "boolean") {
+    preferences.threadListTrailExpanded = parsed.threadListTrailExpanded;
   }
   if (isThreadListFilters(parsed.threadListFilters)) {
     preferences.threadListFilters = parsed.threadListFilters;

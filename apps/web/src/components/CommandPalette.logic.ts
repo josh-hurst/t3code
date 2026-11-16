@@ -436,6 +436,8 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   runThread: (thread: TThread) => Promise<void>;
   /** Makes the environment searchable; pass it only with two or more environments. */
   environmentLabelOf?: (thread: TThread) => string | null;
+  /** Replaces the age of a snoozed thread, such as "Later · in 3d". */
+  laterLabelOf?: (thread: TThread) => string | null;
 }): CommandPaletteActionItem[] {
   // Callers order these: recents by last use, search results by rank.
   const visibleThreads = input.threads.filter(
@@ -484,9 +486,11 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
         ),
         title: thread.title,
         description,
-        timestamp: formatRelativeTimeLabel(
-          thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
-        ),
+        timestamp:
+          input.laterLabelOf?.(thread) ??
+          formatRelativeTimeLabel(
+            thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
+          ),
         icon: input.icon,
       },
       leadingContent ? { titleLeadingContent: leadingContent } : {},

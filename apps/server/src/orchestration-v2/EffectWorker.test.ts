@@ -32,6 +32,7 @@ import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "./ProviderTurnStartService.ts";
 import * as RuntimeRequestService from "./RuntimeRequestService.ts";
+import * as ThreadCardService from "./ThreadCardService.ts";
 import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationService.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -157,6 +158,10 @@ function layerExecutorFor(input: {
       ThreadTitleRegenerationService.ThreadTitleRegenerationService.of({
         execute: () => Effect.void,
       }),
+    ),
+    Layer.succeed(
+      ThreadCardService.ThreadCardService,
+      ThreadCardService.ThreadCardService.of({ execute: () => Effect.void }),
     ),
   );
   return EffectWorker.layerExecutor.pipe(

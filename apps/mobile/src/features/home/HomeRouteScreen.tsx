@@ -91,6 +91,7 @@ export function HomeRouteScreen() {
     archiveThread,
     confirmDeleteThread,
     settleThread,
+    settleThreads,
     snoozeThread,
     unsnoozeThread,
     pinThread,
@@ -189,6 +190,7 @@ export function HomeRouteScreen() {
           onArchiveThread={archiveThread}
           onDeleteThread={confirmDeleteThread}
           onSettleThread={settleThread}
+          onSettleThreads={settleThreads}
           onSnoozeThread={snoozeThread}
           onUnsnoozeThread={unsnoozeThread}
           onUnsettleThread={unsettleThread}

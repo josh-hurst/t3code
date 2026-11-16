@@ -18,6 +18,10 @@ const isShelfHeader = (item: SidebarListItem | undefined) =>
   (item.marker === "working-header" ||
     item.marker === "snoozed-header" ||
     item.marker === "settled-header");
+// A day or project label, or the Needs you panel's label, drawn inside a row's own node.
+const ROW_LABEL_HEIGHT = 24;
+const isMarker = (item: SidebarListItem | undefined, marker: SidebarListMarker) =>
+  item?.kind === "marker" && item.marker === marker;
 
 export function restrictBelowSidebarLabel(
   { transform, containerNodeRect, draggingNodeRect }: Parameters<Modifier>[0],
@@ -56,7 +60,9 @@ export function createSidebarCollisionDetection(
       if (pointer.x >= boundary.left && pointer.x <= boundary.right) {
         if (pointer.y < previousY && pointer.y <= boundary.bottom) boundarySection = "pinned";
         else if (pointer.y > previousY && pointer.y >= boundary.top) boundarySection = "active";
-        const nextHeader = (["working-header", "snoozed-header", "settled-header"] as const)
+        const nextHeader = (
+          ["working-header", "snoozed-header", "trail-header", "settled-header"] as const
+        )
           .map((marker) =>
             args.droppableContainers.find((container) => container.id === sidebarMarkerId(marker)),
           )
@@ -219,6 +225,11 @@ export function createSidebarSortingStrategy(input: {
   enabled?: boolean;
   settledOrder: readonly string[];
   activeOrder?: readonly string[];
+  // With a Trail header: the active rows drawn above the shelves and below it once the
+  // dragged row lands in the active section. Left out, the rows keep their current sides.
+  activeZones?: { readonly needsYou: readonly string[]; readonly trail: readonly string[] };
+  // The rows the settled shelf would draw, in drawn order.
+  arrangeSettled?: (keys: readonly string[]) => readonly string[];
   settledExpanded: boolean;
   settledVisibleCount?: number;
   routeThreadKey?: string | null;
@@ -226,10 +237,14 @@ export function createSidebarSortingStrategy(input: {
   cardHeight?: number;
   slimHeight?: number;
   boundaryLabelHeight?: number;
+  // Rows whose measured height includes a label drawn above them.
+  rowHasLabel?: (key: string) => boolean;
 }): SortingStrategy {
   if (input.enabled === false) return () => stationary;
   const { items } = input;
   const indices = new Map(items.map((item, index) => [sidebarListItemId(item), index]));
+  const trailHeaderIndex = items.findIndex((item) => isMarker(item, "trail-header"));
+  const hasTrail = trailHeaderIndex !== -1;
   let previous: Pick<Layout, "rects" | "activeIndex" | "overIndex"> | undefined;
   let transforms: ReturnType<SortingStrategy>[] | null = [];
 
@@ -249,6 +264,29 @@ export function createSidebarSortingStrategy(input: {
     let cardHeight = input.cardHeight;
     let slimHeight = input.slimHeight;
     let headerScale: number | undefined;
+    // Extra lines only make a slim row taller, so the shortest one is a plain row.
+    const shortest = (current: number | undefined, height: number | undefined) =>
+      !height ? current : current === undefined ? height : Math.min(current, height);
+    const zones = (hasTrail ? input.activeZones : { needsYou: [], trail: [] }) ?? {
+      needsYou: items.flatMap((item, index) =>
+        item.kind === "thread" && item.section === "active" && index < trailHeaderIndex
+          ? [item.key]
+          : [],
+      ),
+      trail: items.flatMap((item, index) =>
+        item.kind === "thread" &&
+        (item.key === active.key || (item.section === "active" && index > trailHeaderIndex))
+          ? [item.key]
+          : [],
+      ),
+    };
+    const trailKeys = new Set(zones.trail);
+    const needsYouKeys = new Set(zones.needsYou);
+    // Trail rows are slim; every other pinned, active and working row is a card.
+    const isCardRow = (item: ThreadItem) =>
+      item.section === "pinned" ||
+      item.section === "working" ||
+      (item.section === "active" && (!trailKeys.has(item.key) || needsYouKeys.has(item.key)));
     for (const [index, item] of items.entries()) {
       if (item.kind === "marker") {
         if (isShelfHeader(item)) {
@@ -257,16 +295,31 @@ export function createSidebarSortingStrategy(input: {
         }
         continue;
       }
-      if (item.section === "pinned" || item.section === "active" || item.section === "working")
+      if (
+        item.section === "pinned" ||
+        item.section === "working" ||
+        (item.section === "active" && (!hasTrail || index < trailHeaderIndex))
+      )
         cardHeight ??= rects[index]?.height;
-      else slimHeight ??= rects[index]?.height;
+      // Below a Trail no row is a plain one-line row to sample, so placeholders use the default.
+      else if (!hasTrail && input.slimHeight === undefined) {
+        slimHeight = shortest(slimHeight, rects[index]?.height);
+      }
       if (item.key !== active.key) groups[item.section].push(item);
     }
-    const scale =
-      slimHeight !== undefined ? slimHeight / 36 : (headerScale ?? (cardHeight ?? 82) / 82);
+    // Rows below a Trail differ in height by content, so only the shelf headers give the scale there.
+    const scale = hasTrail
+      ? (headerScale ?? 1)
+      : slimHeight !== undefined
+        ? slimHeight / 36
+        : (headerScale ?? (cardHeight ?? 82) / 82);
     cardHeight ??= 82 * scale;
     slimHeight ??= 36 * scale;
     const labelHeight = (input.boundaryLabelHeight ?? 0) * scale;
+    const startsAsCard =
+      active.section === "pinned" ||
+      active.section === "working" ||
+      (active.section === "active" && (!hasTrail || activeIndex < trailHeaderIndex));
     const group = groups[target.section];
     const order =
       target.section === "pinned"
@@ -290,7 +343,11 @@ export function createSidebarSortingStrategy(input: {
     if (routeKey && settledOrder.includes(routeKey) && !visible.includes(routeKey)) {
       visible.push(routeKey);
     }
-    groups.settled = visible.map((key) => ({ kind: "thread", key, section: "settled" }));
+    groups.settled = (input.arrangeSettled?.(visible) ?? visible).map((key) => ({
+      kind: "thread",
+      key,
+      section: "settled",
+    }));
     const projected: SidebarListItem[] = [];
     const marker = (name: SidebarListMarker) => projected.push({ kind: "marker", marker: name });
     const section = (name: "active" | "settled") => {
@@ -300,7 +357,9 @@ export function createSidebarSortingStrategy(input: {
     marker("pinned-header");
     projected.push(...groups.pinned);
     marker("pinned-divider");
-    section("active");
+    if (hasTrail) {
+      projected.push(...groups.active.filter((item) => needsYouKeys.has(item.key)));
+    } else section("active");
     if (items.some((item) => item.kind === "marker" && item.marker === "working-header")) {
       marker("working-header");
       projected.push(...groups.working);
@@ -313,17 +372,29 @@ export function createSidebarSortingStrategy(input: {
       marker("snoozed-header");
       projected.push(...groups.snoozed);
     }
+    if (hasTrail) {
+      marker("trail-header");
+      // A row past the Trail's cap lands under its expander, so it leaves the list.
+      const trail = groups.active.filter(
+        (item) => trailKeys.has(item.key) && !needsYouKeys.has(item.key),
+      );
+      if (trail.length > 0) projected.push(...trail);
+      else marker("active-placeholder");
+      if (items.some((item) => isMarker(item, "trail-more"))) marker("trail-more");
+    }
     marker("settled-header");
     section("settled");
     const heights = projected.map((item) => {
       const index = indices.get(sidebarListItemId(item));
       const rect = index === undefined ? undefined : rects[index];
       const fallback =
-        item.kind === "thread" &&
-        (item.section === "pinned" || item.section === "active" || item.section === "working")
-          ? cardHeight
-          : slimHeight;
+        item.kind !== "thread" ? slimHeight : isCardRow(item) ? cardHeight : slimHeight;
       const moved = item.kind === "thread" && item.key === active.key;
+      // Below a Trail every row shares one anatomy, so the dragged row keeps its own height
+      // wherever it lands; so does a slim row that stays slim.
+      if (moved && rect && (hasTrail || (!isCardRow(item) && !startsAsCard))) {
+        return rect.height - (input.rowHasLabel?.(item.key) ? ROW_LABEL_HEIGHT * scale : 0);
+      }
       return item.kind === "marker" &&
         (item.marker === "pinned-header" || item.marker === "pinned-divider")
         ? labelHeight
@@ -333,7 +404,10 @@ export function createSidebarSortingStrategy(input: {
             ? fallback
             : (rect?.height ?? fallback);
     });
-    const firstShelf = items.findIndex(isShelfHeader);
+    // Only History is pushed to the bottom below a Trail; otherwise the first shelf is.
+    const isBottomAnchor = (item: SidebarListItem | undefined) =>
+      hasTrail ? isMarker(item, "settled-header") : isShelfHeader(item);
+    const firstShelf = items.findIndex(isBottomAnchor);
     const shelfRect = rects[firstShelf];
     const beforeShelf = rects[firstShelf - 1];
     const lastRect = rects.at(-1);
@@ -347,7 +421,7 @@ export function createSidebarSortingStrategy(input: {
     const result = items.map(() => hidden);
     let top = rects[0].top;
     for (const [projectedIndex, item] of projected.entries()) {
-      if (isShelfHeader(item)) {
+      if (isBottomAnchor(item)) {
         top += shelfSpace;
         shelfSpace = 0;
       }
