@@ -160,36 +160,6 @@ describe("threadNeedsYou", () => {
     expect(threadNeedsYou(thread, { includeCompleted: false })).toBe(withoutCompleted);
     expect(threadNeedsYou(thread, { includeCompleted: true })).toBe(withCompleted);
   });
-
-  // The self-filing list: a finished run needs you only when it leaves something to do.
-  const cardAt = (at: string, ...kinds: ThreadCardOpenKind[]) => ({ ...card(...kinds), at });
-  it.each<[string, Partial<EnvironmentThreadShell>, boolean]>([
-    ["no card yet", { latestRun: run("completed", T2) }, false],
-    ["only the previous run's card", { latestRun: run("completed", T2), card: cardAt(T0) }, false],
-    ["this run's card owes nothing", { latestRun: run("completed", T2), card: cardAt(T3) }, false],
-    [
-      "this run's card has only a followup",
-      { latestRun: run("completed", T2), card: cardAt(T3, "followup") },
-      false,
-    ],
-    ...(["verify", "commit", "ship", "ask"] as const).map(
-      (kind): [string, Partial<EnvironmentThreadShell>, boolean] => [
-        `this run's card has ${kind}`,
-        { latestRun: run("completed", T2), card: cardAt(T3, kind) },
-        true,
-      ],
-    ),
-    ["seen, owing nothing", { latestRun: run("completed", T0), card: cardAt(T3) }, false],
-    [
-      "the previous run's card owes a commit",
-      { latestRun: run("completed", T2), card: cardAt(T0, "commit") },
-      false,
-    ],
-    ["unseen failure", { latestRun: run("failed", T2), card: cardAt(T3) }, true],
-  ])("owed: %s", (_name, overrides, needsYou) => {
-    const thread = { ...shell("t"), ...seen, ...overrides };
-    expect(threadNeedsYou(thread, { includeCompleted: "owed" })).toBe(needsYou);
-  });
 });
 
 describe("threadCardRowLine", () => {
@@ -468,13 +438,22 @@ describe("splitTrail", () => {
     );
     const afterMidnight = touched("after-midnight", new Date(2026, 10, 15, 0, 0));
     const beforeMidnight = touched("before-midnight", new Date(2026, 10, 14, 23, 59));
-    const trail = sortTrailThreads([beforeMidnight, ...recent, afterMidnight]);
+    // Written to two days ago, finished just now and not yet opened: it stays in view.
+    const unseenFinish = {
+      ...touched("unseen-finish", new Date(2026, 10, 13, 9, 0)),
+      lastVisitedAt: new Date(2026, 10, 13, 9, 0).toISOString(),
+      latestRun: run("completed", new Date(2026, 10, 15, 9, 55).toISOString()),
+    };
+    const trail = sortTrailThreads([beforeMidnight, ...recent, unseenFinish, afterMidnight]);
 
     const split = splitTrail(trail, { now });
-    expect(split.head.map(({ id }) => id)).toEqual(recent.map(({ id }) => id));
+    expect(split.head.map(({ id }) => id)).toEqual([
+      ...recent.map(({ id }) => id),
+      "unseen-finish",
+    ]);
     expect(split.moreToday.map(({ id }) => id)).toEqual(["after-midnight"]);
     expect(split.earlier.map(({ id }) => id)).toEqual(["before-midnight"]);
-    expect(splitTrail(trail, { now, visibleCount: 20 }).head).toHaveLength(10);
+    expect(splitTrail(trail, { now, visibleCount: 20 }).head).toHaveLength(11);
   });
 });
 

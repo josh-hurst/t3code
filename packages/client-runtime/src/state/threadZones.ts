@@ -161,40 +161,17 @@ const NEEDS_YOU_KINDS: ReadonlySet<ThreadStatusKind> = new Set([
   "plan",
 ]);
 
-// A followup is a later re-read, not something to act on when the run lands.
-const OWED_KINDS: ReadonlySet<ThreadCardOpenKind> = new Set(["ask", "verify", "commit", "ship"]);
-
-/**
- * Whether a finished run leaves you something to do: its own card owes an item. A run with no
- * card of its own (summaries off, failed, still coming, or it finished before cards) owes nothing.
- */
-function threadCompletionOwes(
-  thread: Pick<ThreadStatusInput, "latestRun"> & Partial<Pick<EnvironmentThreadShell, "card">>,
-): boolean {
-  const card = thread.card;
-  if (card == null) return false;
-  const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
-  if (Number.isNaN(completedAt) || Date.parse(card.at) < completedAt) return false;
-  return card.open.some((item) => OWED_KINDS.has(item.kind));
-}
-
 /**
  * Whether the thread asks you to act, or with `includeCompleted`, to look at a finished run.
- * `"owed"` counts a finished run only when it leaves something to do (`threadCompletionOwes`).
+ * The self-filing list passes false: a finished run waits in the Trail under Done.
  */
 export function threadNeedsYou(
   thread: ThreadStatusInput,
-  options: { readonly includeCompleted: boolean | "owed" },
+  options: { readonly includeCompleted: boolean },
 ): boolean {
   const kind = threadStatusKind(thread);
   if (kind !== null && NEEDS_YOU_KINDS.has(kind)) return true;
-  if (
-    kind === "completed" &&
-    (options.includeCompleted === true ||
-      (options.includeCompleted === "owed" && threadCompletionOwes(thread)))
-  ) {
-    return true;
-  }
+  if (kind === "completed" && options.includeCompleted) return true;
   return threadCardHasOpenAsk(thread.card);
 }
 
@@ -437,19 +414,26 @@ function startOfLocalDay(timestampMs: number, dayOffset = 0): number {
   return date.getTime();
 }
 
-/** `trail` must already be sorted by `sortTrailThreads`. */
-export function splitTrail<T extends LastSentInput>(
+/**
+ * The first rows, then the rest split at local midnight. A finish you haven't opened stays in
+ * the first rows, so its Done shows. `trail` must already be sorted by `sortTrailThreads`.
+ */
+export function splitTrail<
+  T extends LastSentInput & Pick<ThreadStatusInput, "latestRun" | "lastVisitedAt">,
+>(
   trail: readonly T[],
   options: { readonly now: number; readonly visibleCount?: number },
 ): { readonly head: T[]; readonly moreToday: T[]; readonly earlier: T[] } {
   const visibleCount = options.visibleCount ?? TRAIL_VISIBLE_COUNT;
   const todayStart = startOfLocalDay(options.now);
+  const head = trail.slice(0, visibleCount);
   const moreToday: T[] = [];
   const earlier: T[] = [];
   for (const thread of trail.slice(visibleCount)) {
-    (threadLastSentAt(thread) >= todayStart ? moreToday : earlier).push(thread);
+    if (hasUnseenCompletion(thread)) head.push(thread);
+    else (threadLastSentAt(thread) >= todayStart ? moreToday : earlier).push(thread);
   }
-  return { head: trail.slice(0, visibleCount), moreToday, earlier };
+  return { head, moreToday, earlier };
 }
 
 export function trailMoreLabel(counts: {

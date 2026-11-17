@@ -905,7 +905,7 @@ function arrangeThreadListV2Tide(
   const needsYou: EnvironmentThreadShell[] = [];
   const rest: EnvironmentThreadShell[] = [];
   for (const thread of active) {
-    const needs = threadNeedsYou(thread, { includeCompleted: "owed" });
+    const needs = threadNeedsYou(thread, { includeCompleted: false });
     const sentAt =
       (thread.latestUserAuthoredMessageAt === undefined
         ? thread.latestRun?.requestedAt

@@ -336,6 +336,14 @@ describe("resolveTideRowLead", () => {
       "Outcome",
     ],
     [
+      "an unseen finish in the Trail, which owes a publish",
+      finished({ card: card("ship") }),
+      true,
+      false,
+      { kind: "status", tone: "completed", word: "Done" },
+      "Publish · Outcome",
+    ],
+    [
       "a usage limit",
       limited,
       true,

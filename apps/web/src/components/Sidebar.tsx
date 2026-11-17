@@ -498,7 +498,7 @@ function useSidebarThreads(input: {
   const needsYouPlacement = tide ? "top" : needsYouPlacementSetting;
   const needsYouCompletedSetting = useClientSettings((s) => s.sidebarNeedsYouIncludesCompleted);
   // The new layout files a finished run that owes nothing in the Trail, marked Done.
-  const needsYouIncludesCompleted = tide ? ("owed" as const) : needsYouCompletedSetting;
+  const needsYouIncludesCompleted = !tide && needsYouCompletedSetting;
   const inboxReturnsVersion = useSyncExternalStore(
     inboxReturns.subscribe,
     inboxReturns.getSnapshot,
@@ -3340,7 +3340,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const inScope = [
       ...needsYouThreads,
       ...pinnedThreads.filter((thread) =>
-        sidebarThreadNeedsYou(thread, { includeCompleted: "owed" }),
+        sidebarThreadNeedsYou(thread, { includeCompleted: false }),
       ),
       // Then finished runs not yet opened, which lead the Trail.
       ...trailThreads.filter((thread) => hasUnseenCompletion(thread)),

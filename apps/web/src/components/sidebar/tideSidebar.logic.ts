@@ -12,6 +12,7 @@ import {
   threadLastSentAt,
   threadLaterLead,
   threadNeedsYou,
+  threadRowLineText,
   threadStatusKind,
   threadStatusWord,
   threadWaitingSince,
@@ -195,7 +196,7 @@ export function needsYouElsewhere(input: {
       return (
         (section === "active" || section === "pinned") &&
         !isThreadWorking(thread) &&
-        threadNeedsYou(thread, { includeCompleted: "owed" })
+        threadNeedsYou(thread, { includeCompleted: false })
       );
     }),
   );
@@ -289,10 +290,13 @@ export function resolveTideRowLead(
   if (later !== null) {
     return { lead: { kind: "owed", word: later.word }, text: later.text ?? line(false), running };
   }
-  // A finished run that still owes leads with what it owes, not "Done".
+  // A finished run leads with Done; what it still owes starts the text.
   if (kind === "completed" && options.showsStatus) {
-    const owed = threadCardOwedLabel(thread.card);
-    if (owed !== null) return { lead: { kind: "owed", word: owed }, text: line(false), running };
+    return {
+      lead: { kind: "status", tone: "completed", word: threadStatusWord("completed") },
+      text: threadRowLineText({ owed: threadCardOwedLabel(thread.card), line: line(false) }),
+      running,
+    };
   }
   if (kind !== null && options.showsStatus) {
     const limited = kind === "failed" && thread.runtime?.lastErrorClass === "usage_limit";

@@ -163,10 +163,8 @@ own choice.
 
 **Needs you** gathers threads waiting on an approval, an answer, or a
 guest, with a plan ready, with a question you have not answered, or with a failed run you
-haven't opened. A finished run you haven't opened lands here only when it leaves something to
-do (a question, a check, a commit or a publish), and its row leads with that instead of
-**Done**. One that owes nothing, or has no summary, goes to the top of the Trail, marked
-**Done**, until you open it; if its summary arrives owing something, it moves to Needs you. The thread that
+haven't opened. A finished run stays in the Trail, marked **Done** until you open it, with
+anything it still owes, such as a commit or a publish, at the start of its line. The thread that
 has waited longest comes first. Pinned threads stay pinned and working threads stay in Working.
 
 A thread leaves Needs you when you open it, answer it, or settle it. The thread you have
@@ -189,16 +187,14 @@ Needs you rows hold their place.
 wake time, a re-check and its reason, **Set aside**, or **Standing check**. Threads with a
 time come first, soonest first.
 
-The **Trail** holds every other unsettled thread. Finished runs you haven't opened come
-first, marked **Done**; the rest are ordered by when you last opened it or sent it a message,
-most recent first. An agent working in a thread never reorders it, and
-the thread you have open keeps its place until you leave it or send it a message.
-Reopening a thread within ten minutes counts as the same visit. It shows the eight most recent
-threads. Click the row below them, such as **5 more today, 3 earlier**, to see the rest:
+The **Trail** holds every other unsettled thread, ordered by when you last sent it a message,
+most recent first. Opening a thread or an agent working in it never reorders it. It shows the
+eight most recent threads, plus any finished run you haven't opened, marked **Done**. Click the
+row below them, such as **5 more today, 3 earlier**, to see the rest:
 today's first, then earlier days under a date. While those rows or History are open, **By day**
 in the Trail's header switches them to **By project**, and back; the first eight always stay in
 the order you touched them. A Trail row's time is when you last
-opened or wrote to it, so the times read in order; hover a row to see the exact time, or in
+wrote to it, so the times read in order; hover a row to see the exact time, or in
 Needs you, how long it has waited.
 
 **Clear** in the Trail's header, or `thread.clearTrail` (`mod+alt+s`), settles every thread

@@ -1895,7 +1895,6 @@ describe("self-filing list", () => {
         assistantMessageId: null,
       },
     });
-  // A finish only needs you when its own card owes something.
   const owing = (thread: EnvironmentThreadShell): EnvironmentThreadShell => ({
     ...thread,
     card: {
@@ -1979,7 +1978,7 @@ describe("self-filing list", () => {
           updatedAt: NOW,
         },
       }),
-      owing(finishedUnseen("waited-longest", 8)),
+      owing(finishedUnseen("finished-owing", 8)),
       makeThread({
         id: ThreadId.make("snoozed"),
         title: "snoozed",
@@ -2006,11 +2005,12 @@ describe("self-filing list", () => {
     expect(names(items)).toEqual([
       "pinned",
       "[Needs you]",
-      "waited-longest",
       "waited-less",
       "[Trail]",
       "trail-newer",
       "trail-older",
+      // A finished run that owes a commit waits in the Trail, not Needs you.
+      "finished-owing",
       "[v2-working-shelf]",
       "working",
       "[Later]",
@@ -2033,7 +2033,8 @@ describe("self-filing list", () => {
     expect(layout.items.map((item) => [item.thread.id, item.cardLine])).toEqual(
       expect.arrayContaining([
         ["waited-less", "Which branch?"],
-        ["waited-longest", "Fixed it"],
+        // In the Trail what is still owed leads the outcome.
+        ["finished-owing", "Commit · Fixed it"],
       ]),
     );
 
@@ -2202,7 +2203,9 @@ describe("self-filing list", () => {
     });
     const ids = (layout: ThreadListV2Layout) => layout.items.map((item) => item.thread.id);
 
-    const finished = owing(finishedUnseen("finished", 9));
+    // An unseen failure needs you until the thread is opened.
+    const unseen = finishedUnseen("finished", 9);
+    const finished = { ...unseen, latestRun: { ...unseen.latestRun!, status: "failed" as const } };
     const other = touched("other", localIso(10));
     expect(layoutWith([finished, other], "finished").needsYouCount).toBe(1);
     expect(layoutWith([visit(finished), other], "finished").needsYouCount).toBe(1);

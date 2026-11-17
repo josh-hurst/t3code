@@ -1045,13 +1045,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ? DONE_STATUS_LABEL
         : undefined);
   const recede = shouldRecedeThreadRow({ status, selected });
-  // Slim rows that are neither snoozed nor settled are the Trail; one that owes nothing leads with Done until opened, as on web.
+  // Slim rows that are neither snoozed nor settled are the Trail; a finished one leads with Done until opened, as on web.
   const trailDone =
-    variant === "slim" &&
-    !snoozedRow &&
-    thread.settledOverride !== "settled" &&
-    isUnread &&
-    threadCardOwedLabel(thread.card) === null;
+    variant === "slim" && !snoozedRow && thread.settledOverride !== "settled" && isUnread;
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const rowAccessibilityLabel = `${thread.title}${trailDone ? ", done" : ""}${providerNameLabel ? `, ${providerNameLabel}` : ""}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
   const timeLabel = props.timeLabel;
@@ -1551,7 +1547,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         leadingSpace={statusLabel?.label != null}
       />
     ) : null;
-  // A finished run that still owes leads with what it owes, as on web, not "Done".
+  // A finished card row that still owes leads with what it owes, after Done's check.
   const owedLead = statusLabel === DONE_STATUS_LABEL ? threadCardOwedLabel(thread.card) : null;
   const cardStatusLead = showsWoke
     ? {
