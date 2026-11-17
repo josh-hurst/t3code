@@ -130,6 +130,32 @@ index 5fcaa9f9a7d893817fee89b85186ee3936118e69..e166dd14349b4b95f96d648cb64f464e
 -    },
 -});
  export default React.memo(ImageItem);
+diff --git a/dist/components/ImageItem/ImageItem.ios.js b/dist/components/ImageItem/ImageItem.ios.js
+index 0708505..bb22f89 100644
+--- a/dist/components/ImageItem/ImageItem.ios.js
++++ b/dist/components/ImageItem/ImageItem.ios.js
+@@ -13,6 +13,8 @@ import { getImageStyles, getImageTransform } from "../../utils";
+ import { ImageLoading } from "./ImageLoading";
+ const SWIPE_CLOSE_OFFSET = 75;
+ const SWIPE_CLOSE_VELOCITY = 1.55;
++// Rubber-banded content offset; about 100pt of finger travel.
++const SWIPE_CLOSE_DISTANCE = 45;
+ const SCREEN = Dimensions.get("screen");
+ const SCREEN_WIDTH = SCREEN.width;
+ const SCREEN_HEIGHT = SCREEN.height;
+@@ -39,9 +41,11 @@ const ImageItem = ({ imageSrc, onZoom, onRequestClose, onLongPress, delayLongPre
+         const scaled = ((_d = nativeEvent) === null || _d === void 0 ? void 0 : _d.zoomScale) > 1;
+         onZoom(scaled);
+         setScaled(scaled);
++        // Patched: a slow drag closes too, not only a fast flick.
++        const offsetY = nativeEvent?.contentOffset?.y ?? 0;
+         if (!scaled &&
+             swipeToCloseEnabled &&
+-            Math.abs(velocityY) > SWIPE_CLOSE_VELOCITY) {
++            (Math.abs(velocityY) > SWIPE_CLOSE_VELOCITY || Math.abs(offsetY) > SWIPE_CLOSE_DISTANCE)) {
+             onRequestClose();
+         }
+     }, [scaled]);
 diff --git a/dist/components/ImageItem/ImageLoading.js b/dist/components/ImageItem/ImageLoading.js
 index 9770f7db158a2fb2b1c69a49e5fcbc89d8624603..995fab7524bb8673258d44e5eda361c62dae0324 100644
 --- a/dist/components/ImageItem/ImageLoading.js

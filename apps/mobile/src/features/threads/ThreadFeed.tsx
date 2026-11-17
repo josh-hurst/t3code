@@ -130,9 +130,10 @@ import {
 import { Image as ExpoImage } from "expo-image";
 import { useResolveClassNames } from "uniwind";
 import { useReduceMotionEnabled } from "../../lib/appState";
-import { useFilePreviewGallery, FilePreviewGallery } from "../../components/ui/FilePreviewGallery";
+import { useFilePreviewGallery } from "../../components/ui/FilePreviewGallery";
 import { assetImageSource } from "../../lib/assetImageSource";
 import { composerImageGallery } from "../../lib/composerImageGallery";
+import { threadFilePreviewGallery } from "../../lib/filePreviewGallery";
 import { isFileBackedComposerAttachment } from "../../lib/composerImages";
 import { useLocalAttachmentPreview } from "../../lib/localAttachmentPreview";
 import { messageImageGallery } from "./messageImageGallery";
@@ -3674,7 +3675,20 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
 
   const onPressPreview = (source: FilePreviewSource) => {
     markdownLinkRequest.current?.abort();
-    openPreview(markdownLinkScope, { file: source });
+    const context = {
+      environmentId: props.environmentId,
+      threadId: props.threadId,
+      workspaceRoot: props.workspaceRoot,
+    };
+    const threadImages = presentedFeed.flatMap((entry) =>
+      entry.type === "message"
+        ? [
+            ...messageImageGallery(entry.message, context),
+            ...composerImageGallery(entry.pendingMessage?.attachments ?? [], props.environmentId),
+          ]
+        : [],
+    );
+    openPreview(markdownLinkScope, { file: threadFilePreviewGallery(source, threadImages) });
   };
 
   // Without this, every row above the viewport is assumed to be
@@ -3741,82 +3755,75 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       index={info.index}
       layout={disclosureLayout}
     >
-      <MessageImageGalleryScope
-        entry={info.item}
-        environmentId={props.environmentId}
-        threadId={props.threadId}
-        workspaceRoot={props.workspaceRoot}
-      >
-        <ThreadMediaVisibility>
-          {info.item.type === "message" &&
-          info.item.message.projectedItem?.item.type === "user_message" &&
-          info.item.message.projectedItem.item.freshContext ? (
-            <ThreadContextDivider
-              label="New session"
-              icon="arrow.clockwise"
-              iconColor={iconSubtleColor}
-            />
-          ) : null}
-          {info.item.type === "message" &&
-          !isCompactionCommandFeedEntry(info.item) &&
-          info.item.message.projectedItem?.item.type === "user_message" &&
-          info.item.message.projectedItem.item.modelSwitch ? (
-            <ThreadModelSwitchDivider
-              environmentId={props.environmentId}
-              modelSwitch={info.item.message.projectedItem.item.modelSwitch}
-              iconColor={iconSubtleColor}
-            />
-          ) : null}
-          {renderFeedEntry(info, {
-            userMessageGrouping: info.item.userMessageGrouping,
-            environmentId: props.environmentId,
-            dispatchingMessageId: props.dispatchingMessageId,
-            onEditPendingMessage: props.onEditPendingMessage,
-            onUseArtifactTemplate: props.onUseArtifactTemplate,
-            threadId: props.threadId,
-            copiedRowId,
-            expandedWorkRows,
-            workRowSizing,
-            workGroupScrollPositions,
-            terminalAssistantMessageIds,
-            unsettledTurnId,
-            compactionLabelsByEntryId,
-            failedRunIds,
-            onCopyWorkRow,
-            onToggleWorkGroup,
-            onToggleWorkRow,
-            onToggleTurnFold,
-            onOpenTurnDiff,
-            onPressPreview,
-            onPlaybackStart: onInlinePlaybackStart,
-            markdownLinkHandlers,
-            renderMarkdownImage,
-            renderViewedImage,
-            renderReasoning,
-            iconSubtleColor,
-            replyActionSize,
-            screenColor,
-            userBubbleColor,
-            markdownStyles,
-            reviewCommentColors,
-            reviewCommentBubbleWidth,
-            themeAppearance,
-            duoColumns,
-            userBubbleMaxWidth,
-            markdownContentWidth,
-            contentWidth,
-            threadTitle: props.threadTitle,
-            skills: props.skills,
-            workspaceRoot: props.workspaceRoot,
-            workflowOpening,
-          })}
-          {props.worktreeSetup && info.index === setupAnchorIndex ? (
-            <WorktreeSetupCard key={props.threadId} {...props.worktreeSetup} />
-          ) : props.setupWorkingStartedAt && info.index === setupAnchorIndex ? (
-            <WorktreeWorkingHeader startedAt={props.setupWorkingStartedAt} />
-          ) : null}
-        </ThreadMediaVisibility>
-      </MessageImageGalleryScope>
+      <ThreadMediaVisibility>
+        {info.item.type === "message" &&
+        info.item.message.projectedItem?.item.type === "user_message" &&
+        info.item.message.projectedItem.item.freshContext ? (
+          <ThreadContextDivider
+            label="New session"
+            icon="arrow.clockwise"
+            iconColor={iconSubtleColor}
+          />
+        ) : null}
+        {info.item.type === "message" &&
+        !isCompactionCommandFeedEntry(info.item) &&
+        info.item.message.projectedItem?.item.type === "user_message" &&
+        info.item.message.projectedItem.item.modelSwitch ? (
+          <ThreadModelSwitchDivider
+            environmentId={props.environmentId}
+            modelSwitch={info.item.message.projectedItem.item.modelSwitch}
+            iconColor={iconSubtleColor}
+          />
+        ) : null}
+        {renderFeedEntry(info, {
+          userMessageGrouping: info.item.userMessageGrouping,
+          environmentId: props.environmentId,
+          dispatchingMessageId: props.dispatchingMessageId,
+          onEditPendingMessage: props.onEditPendingMessage,
+          onUseArtifactTemplate: props.onUseArtifactTemplate,
+          threadId: props.threadId,
+          copiedRowId,
+          expandedWorkRows,
+          workRowSizing,
+          workGroupScrollPositions,
+          terminalAssistantMessageIds,
+          unsettledTurnId,
+          compactionLabelsByEntryId,
+          failedRunIds,
+          onCopyWorkRow,
+          onToggleWorkGroup,
+          onToggleWorkRow,
+          onToggleTurnFold,
+          onOpenTurnDiff,
+          onPressPreview,
+          onPlaybackStart: onInlinePlaybackStart,
+          markdownLinkHandlers,
+          renderMarkdownImage,
+          renderViewedImage,
+          renderReasoning,
+          iconSubtleColor,
+          replyActionSize,
+          screenColor,
+          userBubbleColor,
+          markdownStyles,
+          reviewCommentColors,
+          reviewCommentBubbleWidth,
+          themeAppearance,
+          duoColumns,
+          userBubbleMaxWidth,
+          markdownContentWidth,
+          contentWidth,
+          threadTitle: props.threadTitle,
+          skills: props.skills,
+          workspaceRoot: props.workspaceRoot,
+          workflowOpening,
+        })}
+        {props.worktreeSetup && info.index === setupAnchorIndex ? (
+          <WorktreeSetupCard key={props.threadId} {...props.worktreeSetup} />
+        ) : props.setupWorkingStartedAt && info.index === setupAnchorIndex ? (
+          <WorktreeWorkingHeader startedAt={props.setupWorkingStartedAt} />
+        ) : null}
+      </ThreadMediaVisibility>
     </DisclosureRow>
   );
 
@@ -3985,22 +3992,4 @@ function ThreadFeedLoadEarlierControl(props: ThreadFeedHistoryControls) {
       ) : null}
     </View>
   );
-}
-
-function MessageImageGalleryScope(props: {
-  entry: ThreadFeedRow;
-  environmentId: EnvironmentId;
-  threadId: ThreadId;
-  workspaceRoot: string | null | undefined;
-  children: ReactNode;
-}) {
-  const { entry, environmentId, threadId, workspaceRoot } = props;
-  const images =
-    entry.type === "message"
-      ? [
-          ...messageImageGallery(entry.message, { environmentId, threadId, workspaceRoot }),
-          ...composerImageGallery(entry.pendingMessage?.attachments ?? [], environmentId),
-        ]
-      : [];
-  return <FilePreviewGallery value={images}>{props.children}</FilePreviewGallery>;
 }

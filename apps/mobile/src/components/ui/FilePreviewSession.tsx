@@ -22,8 +22,6 @@ import type {
 } from "./FilePreviewModal.types";
 
 interface FilePreviewSessionOptions {
-  /** Opens before every image resolves; the viewer takes later URLs as they arrive. */
-  readonly progressiveGallery: boolean;
   readonly Viewer: ComponentType<FilePreviewViewerProps>;
 }
 
@@ -99,7 +97,7 @@ function ResolvedFilePreview(
     readonly onOpenError?: (error: unknown) => void;
   },
 ) {
-  const { progressiveGallery, Viewer } = props;
+  const { Viewer } = props;
   // Freeze the group at opening; streaming messages and URL refreshes must not reopen the viewer.
   const [items] = useState(() => filePreviewGallery(props.source, []));
   const selectedKey = filePreviewKey(props.source);
@@ -130,7 +128,7 @@ function ResolvedFilePreview(
         },
         (error: unknown) => {
           if (controller.signal.aborted) return;
-          if (progressiveGallery && index !== selectedIndex) return settle(index, null);
+          if (index !== selectedIndex) return settle(index, null);
           controller.abort();
           onResolutionError(
             isPreviewResolutionError(error)
@@ -144,22 +142,24 @@ function ResolvedFilePreview(
       controller.abort();
       for (const dispose of leases) dispose();
     };
-  }, [items, selectedIndex, progressiveGallery]);
+  }, [items, selectedIndex]);
   const selected = { ...items[selectedIndex]!, name: filePreviewName(items[selectedIndex]!) };
   if (selected.kind === "image") {
-    // A viewer that resets image gestures when its sources change waits for every image.
-    if (!progressiveGallery && uris.some((uri) => uri === undefined)) return null;
-    const images = items.map((item, index) => {
+    // The gallery viewer resets image gestures when its sources change, so it opens once every
+    // image has resolved, without the ones that failed.
+    if (uris.some((uri) => uri === undefined)) return null;
+    const images = items.flatMap((item, index) => {
       const uri = uris[index];
-      return {
-        ...item,
-        name: filePreviewName(item),
-        ...(uri ? { uri } : uri === null ? { failed: true } : {}),
-      };
+      if (!uri && index !== selectedIndex) return [];
+      return [{ ...item, name: filePreviewName(item), ...(uri ? { uri } : {}) }];
     });
     return (
       <Viewer
-        source={{ kind: "image", images, selectedIndex }}
+        source={{
+          kind: "image",
+          images,
+          selectedIndex: uris.slice(0, selectedIndex).filter(Boolean).length,
+        }}
         onRequestClose={props.onRequestClose}
         {...(props.onOpenError ? { onOpenError: props.onOpenError } : {})}
       />
@@ -227,7 +227,6 @@ export function FilePreviewSession(props: FilePreviewModalProps & FilePreviewSes
       key={filePreviewKey(source)}
       source={source}
       onRequestClose={props.onRequestClose}
-      progressiveGallery={props.progressiveGallery}
       Viewer={props.Viewer}
       {...(props.onOpenError ? { onOpenError: props.onOpenError } : {})}
     />

@@ -28,13 +28,10 @@ export interface ResolvedFilePreviewDocument extends FilePreviewMetadata {
   readonly uri: string;
 }
 
-/** `uri` is absent while it resolves; `failed` marks one that never will. */
 export interface FilePreviewImage extends FilePreviewMetadata {
   readonly uri?: string;
-  readonly failed?: boolean;
 }
 
-/** Opens before every URL resolves; images keep their slot as URLs arrive. */
 export interface FilePreviewImages {
   readonly kind: "image";
   readonly images: readonly FilePreviewImage[];

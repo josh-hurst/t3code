@@ -4,7 +4,7 @@ import type { FilePreviewItem } from "../components/ui/FilePreviewModal.types";
 import type { DraftComposerAttachment } from "./composerImages";
 import { composerImageGallery } from "./composerImageGallery";
 import { messageImageGallery } from "../features/threads/messageImageGallery";
-import { filePreviewGallery, filePreviewKey } from "./filePreviewGallery";
+import { filePreviewGallery, filePreviewKey, threadFilePreviewGallery } from "./filePreviewGallery";
 
 vi.mock("./uuid", () => ({}));
 
@@ -66,6 +66,41 @@ describe("image preview groups", () => {
       expect(composerImageGallery(attachments)).toEqual(local);
     },
   );
+
+  it("pages through the thread's images around the selected one", () => {
+    const environmentId = EnvironmentId.make("test");
+    const image = (id: string): FilePreviewItem => ({
+      kind: "image",
+      environmentId,
+      resource: { _tag: "attachment", attachmentId: id },
+    });
+    const thread = ["a", "b", "c", "d", "e"].map(image);
+    const keys = (source: { gallery?: readonly FilePreviewItem[] }) =>
+      source.gallery?.map(filePreviewKey);
+
+    expect(keys(threadFilePreviewGallery(image("c"), [...thread, image("b")]))).toEqual(
+      thread.map(filePreviewKey),
+    );
+    expect(keys(threadFilePreviewGallery(image("a"), thread, 1))).toEqual(
+      [image("a"), image("b")].map(filePreviewKey),
+    );
+    expect(keys(threadFilePreviewGallery(image("d"), thread, 1))).toEqual(
+      [image("c"), image("d"), image("e")].map(filePreviewKey),
+    );
+    const threadId = ThreadId.make("thread");
+    const relative = messageImageGallery(
+      { text: "![a](shots/a.png)" },
+      { environmentId, threadId, workspaceRoot: "/repo" },
+    );
+    const pressed: FilePreviewItem = {
+      kind: "image",
+      environmentId,
+      resource: { _tag: "media-file", threadId, path: "/repo/shots/a.png" },
+    };
+    expect(keys(threadFilePreviewGallery(pressed, [...thread, ...relative]))).toHaveLength(6);
+    const outside = { ...image("z"), gallery: [image("z"), image("y")] };
+    expect(threadFilePreviewGallery(outside, thread)).toBe(outside);
+  });
 
   it("matches remote originals despite metadata and property order differences", () => {
     const environmentId = EnvironmentId.make("test");

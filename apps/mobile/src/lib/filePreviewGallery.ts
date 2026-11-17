@@ -5,7 +5,7 @@ export function filePreviewKey(source: FilePreviewItem): string {
     return JSON.stringify([
       source.environmentId,
       Object.entries(source.resource)
-        .filter(([key]) => key !== "mimeType" && key !== "fileName")
+        .filter(([key]) => key !== "mimeType" && key !== "fileName" && key !== "hostOnly")
         .sort(([a], [b]) => a.localeCompare(b)),
     ]);
   if ("attachment" in source) return `attachment:${source.attachment.id}`;
@@ -26,6 +26,29 @@ export function filePreviewGallery(source: FilePreviewSource, group: readonly Fi
   }
   if (!seen.has(selectedKey)) items.unshift(source);
   return items;
+}
+
+/**
+ * Pages an image through every image in `thread` when it is one of them. Opening resolves each
+ * image's URL, so the gallery keeps at most `radius` neighbours on either side.
+ */
+export function threadFilePreviewGallery(
+  source: FilePreviewSource,
+  thread: readonly FilePreviewItem[],
+  radius = 10,
+): FilePreviewSource {
+  if (source.kind !== "image") return source;
+  const seen = new Set<string>();
+  const images = thread.filter((item) => {
+    const key = filePreviewKey(item);
+    if (item.kind !== "image" || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const selectedKey = filePreviewKey(source);
+  const index = images.findIndex((item) => filePreviewKey(item) === selectedKey);
+  if (index === -1) return source;
+  return { ...source, gallery: images.slice(Math.max(0, index - radius), index + radius + 1) };
 }
 
 export function filePreviewName(source: FilePreviewItem): string {
