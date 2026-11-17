@@ -4302,8 +4302,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="working-shelf-header"
                                 marker="working-header"
-                                // Only History is pushed to the bottom below a Trail.
-                                className={cn(!tide && "mt-auto")}
+                                // Below a Trail, padding (which drags measure) sets Working apart;
+                                // only History is pushed to the bottom there.
+                                className={cn(tide ? "h-12 pt-4" : "mt-auto")}
                                 label="Working"
                                 count={workingThreads.length}
                                 toggle={{

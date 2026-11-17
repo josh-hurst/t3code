@@ -452,6 +452,8 @@ export interface ThreadListV2WorkingShelfListItem {
   readonly count: number;
   readonly expanded: boolean;
   readonly disabled: boolean;
+  /** Below the self-filing Trail, extra space sets Working apart. */
+  readonly spacedAbove: boolean;
 }
 
 export interface ThreadListV2FolderListItem {
@@ -566,7 +568,8 @@ export function threadListV2ListItemsAreEqual(
         previous.type === "v2-working-shelf" &&
         previous.count === item.count &&
         previous.expanded === item.expanded &&
-        previous.disabled === item.disabled
+        previous.disabled === item.disabled &&
+        previous.spacedAbove === item.spacedAbove
       );
     case "v2-folder":
       return (
@@ -793,6 +796,7 @@ export function buildThreadListV2ListItems(input: {
         count: workingCount,
         expanded: input.workingShelfExpanded === true,
         disabled: shelfDisabled,
+        spacedAbove: tide !== null,
       });
       result.push(...threadItems.slice(workingShelfHeaderIndex, workingEnd));
     }

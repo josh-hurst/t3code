@@ -208,6 +208,7 @@ function ThreadListV2Section(props: {
   readonly label: string;
   readonly pane?: "screen" | "sidebar";
   readonly tone?: "default" | "snoozed";
+  readonly spacedAbove?: boolean;
   readonly disclosure?: {
     readonly expanded: boolean;
     readonly disabled?: boolean;
@@ -225,7 +226,8 @@ function ThreadListV2Section(props: {
   const snoozed = props.tone === "snoozed";
   const sidebarPane = props.pane === "sidebar";
   const className = cn(
-    "mb-1.5 mt-4 flex-row items-center gap-2.5",
+    "mb-1.5 flex-row items-center gap-2.5",
+    props.spacedAbove ? "mt-8" : "mt-4",
     props.pane === "sidebar" ? "px-3" : "px-5",
   );
   const content = (
@@ -335,6 +337,7 @@ type ThreadListV2ShelfHeaderProps = {
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
+  readonly spacedAbove?: boolean;
 };
 
 const SHELF_LABEL = { working: "Working", snoozed: "Snoozed", settled: "Settled" } as const;
@@ -348,6 +351,7 @@ function ThreadListV2ShelfHeader(
       label={props.expanded ? label : `${label} (${props.count})`}
       pane={props.pane}
       tone={props.kind === "snoozed" ? "snoozed" : "default"}
+      spacedAbove={props.spacedAbove}
       disclosure={{
         expanded: props.expanded,
         disabled: props.disabled,

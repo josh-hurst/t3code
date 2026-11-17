@@ -515,6 +515,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             expanded={item.expanded}
             onToggle={toggleWorkingShelf}
             pane="sidebar"
+            spacedAbove={item.spacedAbove}
           />
         );
       case "v2-folder":

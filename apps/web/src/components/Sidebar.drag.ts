@@ -289,7 +289,8 @@ export function createSidebarSortingStrategy(input: {
       (item.section === "active" && (!trailKeys.has(item.key) || needsYouKeys.has(item.key)));
     for (const [index, item] of items.entries()) {
       if (item.kind === "marker") {
-        if (isShelfHeader(item)) {
+        // Below a Trail, Working's header is taller by the space that sets it apart.
+        if (isShelfHeader(item) && !(hasTrail && item.marker === "working-header")) {
           const height = rects[index]?.height;
           if (height) headerScale ??= height / 32;
         }
