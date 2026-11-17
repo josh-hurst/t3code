@@ -1021,11 +1021,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const needsYouDark = isDarkThemeColor(theme["--color-screen"]);
   const needsYouTint =
     grouped && props.needsYou === true
-      ? flattenThemeColor(
-          themeColorWithAlpha(theme["--color-primary"], needsYouDark ? 0.15 : 0.09),
-          // Blue over beige turns grey, so light mode tints white for a clean pale blue.
-          needsYouDark ? theme["--color-grouped-card"] : "#ffffff",
-        )
+      ? needsYouDark
+        ? flattenThemeColor(
+            themeColorWithAlpha(theme["--color-primary"], 0.15),
+            theme["--color-grouped-card"],
+          )
+        : // The deep primary reads lavender as a pale wash, so light mode uses a brighter blue.
+          flattenThemeColor(themeColorWithAlpha("#2f6bff", 0.12), "#ffffff")
       : null;
   const rowSurfaceClassName =
     needsYouTint !== null ? undefined : grouped ? "bg-grouped-card" : rowAppearance.className;

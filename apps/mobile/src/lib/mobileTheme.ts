@@ -457,8 +457,8 @@ export function createMobileThemeVariables(
   };
 }
 
-// The default theme's greys lean warm: beige paper in light mode, near-neutral graphite in dark.
-const WARM_HUE = (80 * Math.PI) / 180;
+// The default theme's greys lean warm: Claude-like ivory in light mode, near-neutral graphite in dark.
+const WARM_HUE = (95 * Math.PI) / 180;
 const NEUTRAL_CHROMA = 0.03;
 
 // The page roles sit a step below the cards that rest on them, so both modes have layers.
@@ -474,12 +474,12 @@ function warmNeutral(value: string, appearance: MobileThemeAppearance, page = fa
   const [lightness, a, b] = srgbToOklab(channels);
   if (Math.hypot(a, b) >= NEUTRAL_CHROMA) return native;
   const dark = appearance === "dark";
-  // Light: pale surfaces settle from stark white into paper. Dark: the near-black lifts a little.
+  // Light: only the page steps below white. Dark: the near-black lifts a little.
   const warmLightness = dark
     ? lightness + (page ? 0 : 0.035) * Math.max(0, 1 - lightness / 0.4)
-    : lightness - 0.03 * Math.max(0, (lightness - 0.8) / 0.2) - (page ? 0.025 : 0);
-  // Dark stays close to neutral graphite, like Material's dark surfaces; light is beige paper.
-  const chroma = dark ? 0.003 + 0.005 * warmLightness : 0.004 + 0.014 * warmLightness;
+    : lightness - (page ? 0.022 : 0);
+  // Both stay close to neutral: Material-like graphite in dark, a faint ivory in light.
+  const chroma = dark ? 0.003 + 0.005 * warmLightness : 0.001 + 0.004 * warmLightness;
   const [red, green, blue] = oklabToSrgb(
     warmLightness,
     chroma * Math.cos(WARM_HUE),
@@ -535,13 +535,14 @@ export function getMobileThemeVariables(
     themeId === DEFAULT_MOBILE_THEME_ID
       ? {
           ...colors,
-          messageSurface: flattenThemeColor(
-            themeColorWithAlpha(
-              appearance === "dark" ? colors.sidebarRowActive : colors.border,
-              0.3,
-            ),
-            colors.messageSurface,
-          ),
+          // Light: the warm page sits where the bubble's pale grey did, so the bubble steps darker.
+          messageSurface:
+            appearance === "dark"
+              ? flattenThemeColor(
+                  themeColorWithAlpha(colors.sidebarRowActive, 0.3),
+                  colors.messageSurface,
+                )
+              : flattenThemeColor(themeColorWithAlpha(colors.text, 0.08), colors.canvas),
         }
       : colors;
   const baseVariables = createMobileThemeVariables(
