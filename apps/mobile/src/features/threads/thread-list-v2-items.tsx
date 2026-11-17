@@ -1520,62 +1520,30 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           >
             {thread.runtime.lastError}
           </Text>
-        ) : rowBranch || props.environmentLabel ? (
+        ) : props.environmentLabel ? (
           <View className="min-w-0 flex-1 flex-row items-center gap-1">
-            {rowBranch ? (
-              <>
-                <SymbolView
-                  name="arrow.triangle.branch"
-                  size={machineIconSize}
-                  tintColorClassName={
-                    selected
-                      ? selectedThreadRowColors.mutedIconTintClassName
-                      : rowAppearance.tertiaryIconTintClassName
-                  }
-                  type="monochrome"
-                />
-                <Text
-                  className={cn(
-                    "shrink text-xs",
-                    selected
-                      ? selectedThreadRowColors.mutedForegroundClassName
-                      : rowAppearance.tertiaryForegroundClassName,
-                  )}
-                  ellipsizeMode="middle"
-                  numberOfLines={1}
-                  style={{ fontFamily: MONO_FONT }}
-                >
-                  {rowBranch}
-                </Text>
-              </>
-            ) : null}
-            {props.environmentLabel && props.environmentMachine ? (
-              <View className={rowBranch ? "ml-1.5" : undefined}>
-                <EnvironmentMachineSymbol
-                  kind={props.environmentMachine}
-                  size={machineIconSize}
-                  tintColorClassName={
-                    selected
-                      ? selectedThreadRowColors.mutedIconTintClassName
-                      : rowAppearance.tertiaryIconTintClassName
-                  }
-                />
-              </View>
-            ) : null}
-            {props.environmentLabel ? (
-              <Text
-                className={cn(
-                  "shrink text-xs",
-                  rowBranch && !props.environmentMachine && "ml-1.5",
+            {props.environmentMachine ? (
+              <EnvironmentMachineSymbol
+                kind={props.environmentMachine}
+                size={machineIconSize}
+                tintColorClassName={
                   selected
-                    ? selectedThreadRowColors.mutedForegroundClassName
-                    : rowAppearance.tertiaryForegroundClassName,
-                )}
-                numberOfLines={1}
-              >
-                {props.environmentLabel}
-              </Text>
+                    ? selectedThreadRowColors.mutedIconTintClassName
+                    : rowAppearance.tertiaryIconTintClassName
+                }
+              />
             ) : null}
+            <Text
+              className={cn(
+                "shrink text-xs",
+                selected
+                  ? selectedThreadRowColors.mutedForegroundClassName
+                  : rowAppearance.tertiaryForegroundClassName,
+              )}
+              numberOfLines={1}
+            >
+              {props.environmentLabel}
+            </Text>
           </View>
         ) : (
           <View className="flex-1" />
@@ -1738,17 +1706,46 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           ) : null}
           <View className="min-w-0 flex-1">
             {projectLine ? (
-              <Text
-                className={cn(
-                  "text-xs",
-                  selected
-                    ? selectedThreadRowColors.mutedForegroundClassName
-                    : rowAppearance.tertiaryForegroundClassName,
-                )}
-                numberOfLines={1}
-              >
-                {projectLine}
-              </Text>
+              <View className="flex-row items-center gap-1">
+                <Text
+                  className={cn(
+                    "shrink text-xs",
+                    selected
+                      ? selectedThreadRowColors.mutedForegroundClassName
+                      : rowAppearance.tertiaryForegroundClassName,
+                  )}
+                  numberOfLines={1}
+                >
+                  {projectLine}
+                </Text>
+                {rowBranch ? (
+                  <>
+                    <SymbolView
+                      name="arrow.triangle.branch"
+                      size={machineIconSize}
+                      tintColorClassName={
+                        selected
+                          ? selectedThreadRowColors.mutedIconTintClassName
+                          : rowAppearance.tertiaryIconTintClassName
+                      }
+                      type="monochrome"
+                    />
+                    <Text
+                      className={cn(
+                        "shrink text-xs",
+                        selected
+                          ? selectedThreadRowColors.mutedForegroundClassName
+                          : rowAppearance.tertiaryForegroundClassName,
+                      )}
+                      ellipsizeMode="middle"
+                      numberOfLines={1}
+                      style={{ fontFamily: MONO_FONT }}
+                    >
+                      {rowBranch}
+                    </Text>
+                  </>
+                ) : null}
+              </View>
             ) : null}
             <Text
               className={cn(

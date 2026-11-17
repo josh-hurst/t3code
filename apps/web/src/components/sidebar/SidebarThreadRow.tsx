@@ -1703,7 +1703,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             <TideRowBody
               project={
                 projectName === null ? null : (
-                  <TideProject project={props.project} name={projectName} />
+                  <TideProject
+                    project={props.project}
+                    name={projectName}
+                    branch={projectLineBranch}
+                  />
                 )
               }
               time={timeSlot}

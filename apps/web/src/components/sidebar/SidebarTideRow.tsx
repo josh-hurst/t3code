@@ -4,6 +4,7 @@ import {
   CircleCheckIcon,
   CircleDashedIcon,
   CircleDotDashedIcon,
+  GitBranchIcon,
   ListTodoIcon,
   MessageCircleQuestionIcon,
   ShieldQuestionIcon,
@@ -14,6 +15,7 @@ import type { ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import { MiddleTruncate } from "../ui/middle-truncate";
 import type { TideStatusTone } from "./tideSidebar.logic";
 
 const STATUS_LOOK: Record<TideStatusTone, { icon: LucideIcon; className: string }> = {
@@ -48,16 +50,29 @@ export function TideOwedLabel(props: { children: ReactNode }) {
   return <span className="font-medium whitespace-nowrap text-foreground/85">{props.children}</span>;
 }
 
-/** The project's icon at text size, keeping its colour, then its name in neutral text. */
-export function TideProject(props: { project: ProjectFaviconProject | null; name: string }) {
+/** The project's icon at text size, keeping its colour, then its name and any off-main branch. */
+export function TideProject(props: {
+  project: ProjectFaviconProject | null;
+  name: string;
+  branch?: string | null;
+}) {
+  const branch = props.branch ?? null;
   return (
-    <span className="flex min-w-0 items-center gap-1">
+    <span className={cn("flex min-w-0 items-center gap-1", branch !== null && "flex-1")}>
       {props.project ? (
         <span data-project-icon className="flex shrink-0">
           <ProjectFavicon project={props.project} className="size-3" />
         </span>
       ) : null}
-      <span className="min-w-0 truncate">{props.name}</span>
+      <span className={cn("min-w-0 truncate", branch !== null && "max-w-1/2")}>{props.name}</span>
+      {branch !== null ? (
+        <span className="ms-1 flex min-w-0 flex-1 items-center gap-1">
+          <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+          <span className="flex min-w-0 font-mono">
+            <MiddleTruncate value={branch} showTitle={false} />
+          </span>
+        </span>
+      ) : null}
     </span>
   );
 }
