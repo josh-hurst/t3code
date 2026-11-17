@@ -48,10 +48,10 @@ vi.mock(import("~/state/server"), async (original) => {
 });
 
 // Both tests list the same threads: the fake socket's later snapshot does not replace the first.
-// The list draws `failed` first because it needs you, then `first` because it was opened last.
+// The list draws `failed` first because it needs you, then `first` because you messaged it last.
 const first = {
   ...threadWithHistory("thread-b", 1),
-  shell: { lastVisitedAt: DateTime.makeUnsafe("2026-06-01T00:00:00.000Z") },
+  shell: { latestUserMessageAt: DateTime.makeUnsafe("2026-06-01T00:00:00.000Z") },
 };
 const second = threadWithHistory("thread-a", 1);
 const failed = {
@@ -115,7 +115,7 @@ it("leaves thread shortcuts and their hints to the preview when their rules excl
   await whileHoldingControl(() => expect(jumpHint()).not.toBeNull());
 });
 
-it("jumps by the drawn order: what needs you, then the Trail by last touch", async () => {
+it("jumps by the drawn order: what needs you, then the Trail by last message sent", async () => {
   using _environment = installFakeEnvironment([first, second, failed]);
   using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
   __setClientSettingsForTests({

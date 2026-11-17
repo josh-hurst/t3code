@@ -43,6 +43,7 @@ import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import { useStableCallback } from "../hooks/useStableCallback";
+import { useStillOpenActions } from "../hooks/useStillOpenActions";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
@@ -1516,6 +1517,7 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadShell && !isWorking && !activePendingApproval && !activePendingUserInput
       ? threadAwaitingAsk(activeThreadShell)
       : null;
+  const { markDone } = useStillOpenActions();
   const activeContextWindow = deriveLatestContextWindowSnapshot(
     serverVisibleTurnItems ?? [],
     activeThreadLiveTokenUsage,
@@ -2642,6 +2644,17 @@ export default function ChatView(props: ChatViewProps) {
       assistantCitationNavigation({ version: 1, ...message, ...selector }, activeThreadShell),
     );
   };
+  // Resolving the card's ask takes the thread out of Needs you; the toast's Undo puts it back.
+  const awaitingQuestionRunId = activeThreadShell?.latestRun?.runId;
+  const dismissAwaitingQuestion =
+    awaitingQuestion === null || awaitingQuestionRunId === undefined || !canOperateThread
+      ? null
+      : () =>
+          void markDone(environmentId, threadId, {
+            kind: "ask",
+            text: awaitingQuestion,
+            runId: awaitingQuestionRunId,
+          });
   const composerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;
     const defaultSelection =
@@ -2703,7 +2716,13 @@ export default function ChatView(props: ChatViewProps) {
     const awaitingQuestionItems =
       awaitingQuestion === null
         ? []
-        : [awaitingQuestionBannerItem(awaitingQuestion, showAwaitingQuestion)];
+        : [
+            awaitingQuestionBannerItem(
+              awaitingQuestion,
+              showAwaitingQuestion,
+              dismissAwaitingQuestion,
+            ),
+          ];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...feedbackBannerItems,

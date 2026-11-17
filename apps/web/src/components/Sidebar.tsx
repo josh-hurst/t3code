@@ -572,6 +572,7 @@ function useSidebarThreads(input: {
       (thread.latestUserAuthoredMessageAt === undefined
         ? thread.latestRun?.requestedAt
         : thread.latestUserAuthoredMessageAt) ?? null,
+      thread.card,
     );
   const liftNeedsYou = (threads: readonly EnvironmentThreadShell[]) => [
     ...threads.filter(isNeedsYou),

@@ -6,6 +6,7 @@ import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 export function awaitingQuestionBannerItem(
   question: string,
   onShow: () => void,
+  onDismiss: (() => void) | null,
 ): ComposerBannerStackItem {
   return {
     id: "awaiting-question",
@@ -18,5 +19,6 @@ export function awaitingQuestionBannerItem(
         Show
       </Button>
     ),
+    ...(onDismiss === null ? {} : { onDismiss, dismissLabel: "Dismiss question" }),
   };
 }

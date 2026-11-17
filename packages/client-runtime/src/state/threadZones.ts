@@ -489,20 +489,37 @@ export function trailDayLabel(timestampMs: number, nowMs: number): string {
 
 /**
  * Keeps the open thread in or out of Needs you as it was when opened, so opening a
- * finished run never moves the row being looked at. Leaving it, or sending it a
- * message (a new `sentAt`), re-sorts it. Call with the route key on each pass.
+ * finished run never moves the row being looked at. Leaving it, sending it a message
+ * (a new `sentAt`), or dismissing its card's question (or undoing that) re-sorts it.
+ * Call with the route key on each pass.
  */
 export function createOpenThreadPlacementHold() {
   let held: {
     readonly key: string;
     readonly needsYou: boolean;
     readonly sentAt: string | null;
+    readonly ask: { readonly messageId: string; readonly open: boolean } | null;
   } | null = null;
   return (routeKey: string | null) => {
     if (held?.key !== routeKey) held = null;
-    return (key: string, needsYou: boolean, sentAt: string | null): boolean => {
+    return (
+      key: string,
+      needsYou: boolean,
+      sentAt: string | null,
+      card?: Pick<ThreadCardSummary, "messageId" | "open"> | null,
+    ): boolean => {
       if (key !== routeKey) return needsYou;
-      if (held === null || held.sentAt !== sentAt) held = { key, needsYou, sentAt };
+      const ask =
+        card == null ? null : { messageId: card.messageId, open: threadCardHasOpenAsk(card) };
+      // The same card gaining or losing its ask is you dismissing it or undoing that; a new
+      // card is a run finishing, which must not move the row being read.
+      const toggled =
+        held?.ask != null && ask?.messageId === held.ask.messageId && ask.open !== held.ask.open;
+      if (held === null || held.sentAt !== sentAt || toggled) {
+        held = { key, needsYou, sentAt, ask };
+      } else {
+        held = { ...held, ask };
+      }
       return held.needsYou;
     };
   };

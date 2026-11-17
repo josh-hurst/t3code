@@ -15,6 +15,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { presentThreadShell, type EnvironmentThreadShell } from "./models.ts";
 import { v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
 import {
+  createOpenThreadPlacementHold,
   sortLaterThreads,
   sortNeedsYouThreads,
   sortTrailThreads,
@@ -226,6 +227,23 @@ describe("threadAwaitingAsk", () => {
     ["a newer reply has no card yet", latest("assistant", "newer"), card("ask"), null],
   ] as const)("%s", (_name, source, threadCard, expected) => {
     expect(threadAwaitingAsk({ card: threadCard, source })).toBe(expected);
+  });
+});
+
+describe("createOpenThreadPlacementHold", () => {
+  it("lets the open thread leave Needs you once you dismiss its card's question, and return on Undo", () => {
+    const hold = createOpenThreadPlacementHold();
+    expect(hold("a")("a", true, null, card("ask"))).toBe(true);
+    expect(hold("a")("a", false, null, card())).toBe(false);
+    expect(hold("a")("a", true, null, card("ask"))).toBe(true);
+  });
+
+  it("holds the open thread when a new card arrives without a question", () => {
+    const hold = createOpenThreadPlacementHold();
+    expect(hold("a")("a", true, null, card("ask"))).toBe(true);
+    expect(hold("a")("a", false, null, { ...card(), messageId: MessageId.make("next") })).toBe(
+      true,
+    );
   });
 });
 

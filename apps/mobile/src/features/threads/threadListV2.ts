@@ -853,7 +853,12 @@ type ThreadListV2TideInput = {
   /** Any time on the local day whose threads the Trail's expander counts as today. */
   readonly day: number;
   /** From `createOpenThreadPlacementHold`, called with `selectedThreadKey`. */
-  readonly holdNeedsYou?: (key: string, needsYou: boolean, sentAt: string | null) => boolean;
+  readonly holdNeedsYou?: (
+    key: string,
+    needsYou: boolean,
+    sentAt: string | null,
+    card: EnvironmentThreadShell["card"],
+  ) => boolean;
 };
 
 /** Splits the active threads into Needs you (longest wait first) and the Trail (latest message you sent first). */
@@ -871,7 +876,8 @@ function arrangeThreadListV2Tide(
       (thread.latestUserAuthoredMessageAt === undefined
         ? thread.latestRun?.requestedAt
         : thread.latestUserAuthoredMessageAt) ?? null;
-    ((tide.holdNeedsYou?.(keyOf(thread), needs, sentAt) ?? needs) ? needsYou : rest).push(thread);
+    const placed = tide.holdNeedsYou?.(keyOf(thread), needs, sentAt, thread.card) ?? needs;
+    (placed ? needsYou : rest).push(thread);
   }
   const trail = sortTrailThreads(rest);
   const split = splitTrail(trail, { now: tide.day });
