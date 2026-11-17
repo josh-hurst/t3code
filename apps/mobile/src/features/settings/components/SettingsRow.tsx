@@ -13,6 +13,8 @@ import { openSettings } from "../settings-navigation";
 export function SettingsRow(props: {
   readonly disabled?: boolean;
   readonly icon: ComponentProps<typeof ListRow>["icon"];
+  /** The icon tile's color on iOS, as in the system Settings list. */
+  readonly tint?: string;
   readonly label: string;
   readonly value?: string;
   readonly valuePosition?: "below" | "trailing";
@@ -29,6 +31,7 @@ export function SettingsRow(props: {
     (props.valuePosition === undefined && Platform.OS === "android");
   const content = {
     icon: props.icon,
+    iconTileColor: props.tint,
     label: props.label,
     description: valueBelow ? props.value : undefined,
     detail: valueBelow ? undefined : props.value,

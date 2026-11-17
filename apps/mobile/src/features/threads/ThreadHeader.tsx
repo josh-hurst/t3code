@@ -1,4 +1,5 @@
 import { contentsVisible, entryOwedLabel } from "@t3tools/client-runtime/state/thread-entries";
+import { Platform } from "react-native";
 
 import { AppBar } from "../../components/ui/AppBar";
 import type { AppBarAction, AppBarMenu, AppBarTitleMenu } from "../../components/ui/AppBar.types";
@@ -17,6 +18,7 @@ import {
 } from "./ThreadGitControls";
 import type { ContentsThread } from "./ThreadContentsList";
 import { requestThreadMessageJump } from "./threadMessageJump";
+import { useDeviceType } from "../../native/native-layout-metrics";
 
 /** The thread's topics under its title: tap the title, pick one, and the feed scrolls to it. */
 function useContentsTitleMenu(thread: ContentsThread | undefined): AppBarTitleMenu | undefined {
@@ -49,22 +51,48 @@ export function ThreadHeader(props: {
   const goBack = useWorkspaceBackNavigation();
   const { toggleAuxiliaryPane, startNewTask } = useAdaptiveWorkspaceLayout();
   const { panes } = useWorkspacePaneState();
+  const deviceType = useDeviceType();
   const gitMenu = useThreadGitMenuDefinition(props.gitControls);
   const terminalMenu = threadTerminalMenu(props.gitControls);
   const filesVisible = props.inspectorMode === "files" && panes.auxiliaryPaneVisible;
-  const actions: AppBarAction[] = props.hasThreadCwd
-    ? [
-        {
-          accessibilityLabel: filesVisible ? "Close files" : "Open files",
-          icon: "folder",
-          selected: filesVisible,
-          disabled: !props.gitControls.canOpenFiles,
-          separateBackground: false,
-          onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
-        },
-      ]
-    : [];
+  const filesAction: AppBarAction | null = props.hasThreadCwd
+    ? {
+        accessibilityLabel: filesVisible ? "Close files" : "Open files",
+        icon: "folder",
+        selected: filesVisible,
+        disabled: !props.gitControls.canOpenFiles,
+        separateBackground: false,
+        onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
+      }
+    : null;
   const menus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
+  // A phone gathers Files, Git and Terminal under one "…", like UIKit does for a crowded bar.
+  const moreMenu: AppBarMenu | null =
+    Platform.OS === "ios" && deviceType === "phone" && (filesAction !== null || menus.length > 0)
+      ? {
+          title: "More actions",
+          icon: "ellipsis",
+          items: [
+            ...(filesAction
+              ? [
+                  {
+                    id: "files",
+                    title: filesVisible ? "Close Files" : "Files",
+                    icon: "folder",
+                    disabled: filesAction.disabled,
+                    onPress: filesAction.onPress,
+                  },
+                ]
+              : []),
+            ...menus.map((menu) => ({
+              id: menu.title,
+              title: menu.title === "Git controls" ? "Git" : menu.title,
+              icon: typeof menu.icon === "string" ? menu.icon : menu.icon.ios,
+              items: menu.items,
+            })),
+          ],
+        }
+      : null;
 
   return (
     <AppBar
@@ -82,8 +110,8 @@ export function ThreadHeader(props: {
             }
           : undefined
       }
-      actions={actions}
-      menus={menus}
+      actions={moreMenu || !filesAction ? [] : [filesAction]}
+      menus={moreMenu ? [moreMenu] : menus}
       hideBottomBorder
     />
   );

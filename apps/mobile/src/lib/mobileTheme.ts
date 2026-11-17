@@ -329,7 +329,15 @@ export function createMobileThemeVariables(
   groupedCardColor = colors.surface,
   prominentAction: readonly [string, string] = [colors.text, colors.canvas],
 ) {
-  const c = nativeColors(colors);
+  const native = nativeColors(colors);
+  // Near-white text on a near-black canvas halates and tires the eye; ease dark text off pure.
+  const c =
+    appearance === "dark"
+      ? {
+          ...native,
+          text: flattenThemeColor(themeColorWithAlpha(native.text, 0.94), native.canvas),
+        }
+      : native;
   const groupedCard = themeColorToNativeColor(groupedCardColor);
   const textSurfaces = [
     c.canvas,
@@ -373,7 +381,8 @@ export function createMobileThemeVariables(
     "--color-border": c.border,
     "--color-focus": c.focus,
     "--color-border-subtle": withAlpha(c.border, 0.7),
-    "--color-separator": withAlpha(c.border, 0.55),
+    // Like UIKit's separator: a hairline that stays visible on both canvases.
+    "--color-separator": withAlpha(c.textMuted, appearance === "dark" ? 0.34 : 0.24),
     "--color-subtle": c.muted,
     "--color-subtle-strong": c.secondary,
     "--color-inline-skill-background": c.accentSurface,
@@ -448,13 +457,61 @@ export function createMobileThemeVariables(
   };
 }
 
+// The default theme's greys lean warm: beige paper in light mode, warm charcoal in dark.
+const WARM_HUE = (80 * Math.PI) / 180;
+const NEUTRAL_CHROMA = 0.03;
+
+// The page roles sit a step below the cards that rest on them, so both modes have layers.
+const PAGE_ROLES = new Set(["canvas", "chrome", "sidebar"]);
+
+function warmNeutral(value: string, appearance: MobileThemeAppearance, page = false): string {
+  const native = themeColorToNativeColor(value);
+  const rgba = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?\s*\)$/i.exec(native);
+  const channels: readonly [number, number, number] | null = rgba
+    ? [Number(rgba[1]), Number(rgba[2]), Number(rgba[3])]
+    : rgbChannels(native);
+  if (!channels) return native;
+  const [lightness, a, b] = srgbToOklab(channels);
+  if (Math.hypot(a, b) >= NEUTRAL_CHROMA) return native;
+  const dark = appearance === "dark";
+  // Light: pale surfaces settle from stark white into paper. Dark: the near-black lifts a little.
+  const warmLightness = dark
+    ? lightness + (page ? 0.015 : 0.07) * Math.max(0, 1 - lightness / 0.4)
+    : lightness - 0.03 * Math.max(0, (lightness - 0.8) / 0.2) - (page ? 0.025 : 0);
+  const chroma = dark ? 0.008 + 0.01 * warmLightness : 0.004 + 0.014 * warmLightness;
+  const [red, green, blue] = oklabToSrgb(
+    warmLightness,
+    chroma * Math.cos(WARM_HUE),
+    chroma * Math.sin(WARM_HUE),
+  );
+  if (rgba?.[4] !== undefined) return `rgba(${red}, ${green}, ${blue}, ${rgba[4]})`;
+  return `#${[red, green, blue].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+// Status, search and terminal roles keep their tuned values; a faint status tint reads as grey.
+const UNWARMED_ROLE = /^(error|warning|update|searchMatch|terminal)/;
+
+function warmThemeColors(colors: ThemeColors, appearance: MobileThemeAppearance): ThemeColors {
+  return Object.fromEntries(
+    Object.entries(colors).map(([role, color]) => [
+      role,
+      UNWARMED_ROLE.test(role)
+        ? themeColorToNativeColor(color)
+        : warmNeutral(color, appearance, PAGE_ROLES.has(role)),
+    ]),
+  ) as ThemeColors;
+}
+
+const WARM_T3_CODE_COLORS = {
+  light: warmThemeColors(T3_CODE_LIGHT_THEME_COLORS, "light"),
+  dark: warmThemeColors(T3_CODE_DARK_THEME_COLORS, "dark"),
+};
+
 export function getMobileThemeColors(
   themeId: SharedMobileThemeId,
   appearance: MobileThemeAppearance,
 ): ThemeColors {
-  if (themeId === DEFAULT_MOBILE_THEME_ID) {
-    return appearance === "dark" ? T3_CODE_DARK_THEME_COLORS : T3_CODE_LIGHT_THEME_COLORS;
-  }
+  if (themeId === DEFAULT_MOBILE_THEME_ID) return WARM_T3_CODE_COLORS[appearance];
   const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? T3_CHAT_THEME;
   return getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
 }
@@ -467,9 +524,7 @@ export function getMobileThemeVariables(
   const colors = getMobileThemeColors(themeId, appearance);
   const groupedCard =
     themeId === DEFAULT_MOBILE_THEME_ID
-      ? appearance === "light"
-        ? colors.toolbarControlHover
-        : colors.sidebarRowActive
+      ? colors.surface
       : themeId === "t3-chat"
         ? appearance === "light"
           ? colors.toolbarControl

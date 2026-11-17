@@ -10,6 +10,7 @@ import {
 } from "./thread-list-v2-row-appearance";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { MOBILE_SHAPE } from "../../lib/designTokens";
+import { flattenThemeColor, isDarkThemeColor, themeColorWithAlpha } from "../../lib/mobileTheme";
 import { groupedListInsets } from "../../components/ui/listMetrics";
 
 const GROUP_CARD_INSET = groupedListInsets(false).paddingHorizontal;
@@ -283,22 +284,22 @@ function ThreadListV2Section(props: {
 }) {
   const snoozed = props.tone === "snoozed";
   const sidebarPane = props.pane === "sidebar";
-  // A full-width list reads like Mail: a bold heading, no rule. The sidebar keeps its quiet label.
+  // A full-width list labels each card like a grouped list: small caps over the card, in line
+  // with the rows' text. The sidebar keeps its quiet label and rule.
   const heading = !sidebarPane;
   const className = cn(
-    "flex-row items-center gap-2.5",
-    heading ? "mb-1" : "mb-1.5",
-    props.spacedAbove ? "mt-8" : heading ? "mt-6" : "mt-4",
-    props.pane === "sidebar" ? "px-3" : "px-5",
+    "flex-row items-center gap-1.5",
+    "mb-1.5",
+    props.spacedAbove ? "mt-8" : heading ? "mt-5" : "mt-4",
+    props.pane === "sidebar" ? "px-3" : "px-9",
   );
   const content = (
     <>
       <Text
         className={cn(
           heading
-            ? "text-xl font-t3-bold text-foreground"
+            ? "text-xs uppercase text-foreground-muted"
             : "text-xs font-t3-medium text-drawer-foreground-muted",
-          heading && snoozed && "text-foreground-secondary",
         )}
       >
         {props.label}
@@ -306,7 +307,7 @@ function ThreadListV2Section(props: {
       {props.disclosure ? (
         <SymbolView
           name="chevron.down"
-          size={heading ? 13 : 10}
+          size={10}
           tintColorClassName={
             sidebarPane
               ? "accent-drawer-foreground-muted"
@@ -315,7 +316,7 @@ function ThreadListV2Section(props: {
                 : "accent-foreground-muted"
           }
           type="monochrome"
-          weight={heading ? "semibold" : undefined}
+          weight={heading ? "medium" : undefined}
           style={{ transform: [{ rotate: props.disclosure.expanded ? "180deg" : "0deg" }] }}
         />
       ) : null}
@@ -363,7 +364,7 @@ function ThreadListV2Section(props: {
             className={
               sidebarPane
                 ? "text-xs font-t3-medium text-drawer-foreground-muted"
-                : "text-base text-primary-text"
+                : "text-sm text-primary-text"
             }
           >
             {action.label}
@@ -493,7 +494,7 @@ export const ThreadListV2TrailMoreRow = memo(function ThreadListV2TrailMoreRow(p
       accessibilityState={{ disabled: props.disabled, expanded: props.expanded }}
       disabled={props.disabled}
       onPress={props.onToggle}
-      className={cn("flex-row items-center gap-2 py-2.5", sidebarPane ? "px-3" : "px-5")}
+      className={cn("flex-row items-center gap-2 py-2.5", sidebarPane ? "px-3" : "px-9")}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
       <SymbolView
@@ -565,7 +566,7 @@ export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(pro
       }
       disabled={props.state === "loading"}
       onPress={props.onPress}
-      className={cn("flex-row items-center py-2.5", props.pane === "sidebar" ? "px-3" : "px-5")}
+      className={cn("flex-row items-center py-2.5", props.pane === "sidebar" ? "px-3" : "px-9")}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
       <Text
@@ -872,6 +873,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly projectLine?: string | null;
   /** The self-filing list, where card rows share the slim rows' anatomy. */
   readonly selfFiling?: boolean;
+  /** A Needs you row, whose card takes the primary tint as on web. */
+  readonly needsYou?: boolean;
   /** First and last rows of a run, which round its grouped card. */
   readonly groupStart?: boolean;
   readonly groupEnd?: boolean;
@@ -1014,7 +1017,19 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         borderBottomRightRadius: groupEndRadius,
       }
     : rowAppearance.swipeContainerStyle;
-  const rowSurfaceClassName = grouped ? "bg-grouped-card" : rowAppearance.className;
+  // The Needs you card takes the primary tint, as on web.
+  const needsYouDark = isDarkThemeColor(theme["--color-screen"]);
+  const needsYouTint =
+    grouped && props.needsYou === true
+      ? flattenThemeColor(
+          themeColorWithAlpha(theme["--color-primary"], needsYouDark ? 0.15 : 0.09),
+          // Blue over beige turns grey, so light mode tints white for a clean pale blue.
+          needsYouDark ? theme["--color-grouped-card"] : "#ffffff",
+        )
+      : null;
+  const rowSurfaceClassName =
+    needsYouTint !== null ? undefined : grouped ? "bg-grouped-card" : rowAppearance.className;
+  const rowSurfaceStyle = needsYouTint !== null ? { backgroundColor: needsYouTint } : undefined;
 
   const status = resolveThreadListV2Status(thread);
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
@@ -1664,6 +1679,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       {thread.title}
     </Text>
   );
+  // Full-width rows drop the model icon; their last line shows only what is worth reading.
+  const cardMetaVisible =
+    !mailCard ||
+    ((status === "failed" || status === "limited") && Boolean(thread.runtime?.lastError)) ||
+    Boolean(props.environmentLabel) ||
+    pr !== null;
   const cardContent = (
     <>
       {mailCard ? (
@@ -1755,128 +1776,130 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           />
         </View>
       ) : null}
-      <View className="mt-1 flex-row items-center gap-2" style={{ paddingLeft: titleTextInset }}>
-        {(status === "failed" || status === "limited") && thread.runtime?.lastError ? (
-          <Text
-            className={cn(
-              "flex-1 text-xs",
-              selected
-                ? selectedThreadRowColors.mutedForegroundClassName
-                : status === "limited"
-                  ? "text-warning-foreground"
-                  : "text-danger-foreground",
-            )}
-            numberOfLines={1}
-          >
-            {thread.runtime.lastError}
-          </Text>
-        ) : props.environmentLabel ? (
-          <View className="min-w-0 flex-1 flex-row items-center gap-1">
-            {props.environmentMachine ? (
-              <EnvironmentMachineSymbol
-                kind={props.environmentMachine}
-                size={machineIconSize}
-                tintColorClassName={
-                  selected
-                    ? selectedThreadRowColors.mutedIconTintClassName
-                    : rowAppearance.tertiaryIconTintClassName
-                }
-              />
-            ) : null}
+      {cardMetaVisible ? (
+        <View className="mt-1 flex-row items-center gap-2" style={{ paddingLeft: titleTextInset }}>
+          {(status === "failed" || status === "limited") && thread.runtime?.lastError ? (
             <Text
               className={cn(
-                "shrink text-xs",
+                "flex-1 text-xs",
                 selected
                   ? selectedThreadRowColors.mutedForegroundClassName
-                  : rowAppearance.tertiaryForegroundClassName,
+                  : status === "limited"
+                    ? "text-warning-foreground"
+                    : "text-danger-foreground",
               )}
               numberOfLines={1}
             >
-              {props.environmentLabel}
+              {thread.runtime.lastError}
             </Text>
-          </View>
-        ) : (
-          <View className="flex-1" />
-        )}
-        {pr ? (
-          <Pressable
-            // Padding cancelled by negative margin grows the touch target into
-            // the row padding without moving the badge.
-            className="-m-2.5 flex-row items-center gap-1 p-2.5"
-            accessibilityRole="button"
-            accessibilityLabel={prBadgeLabel ?? undefined}
-            onPress={handleOpenPullRequests}
-            // Handle long-press so opening the iOS row menu cannot also open the PR on release.
-            onLongPress={() => undefined}
-            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-          >
-            <SymbolView
-              name={
-                pr.kind === "stack"
-                  ? PullRequestGlyph.stack
-                  : pr.state === null
-                    ? PullRequestGlyph.pullRequest
-                    : pullRequestStatus({ state: pr.state, isDraft: pr.isDraft }).icon
-              }
-              size={12}
-              tintColorClassName={
-                pr.state === null || pr.isDraft
-                  ? rowAppearance.mutedIconTintClassName
-                  : pr.state === "open"
-                    ? "accent-adaptive-emerald-600-400"
-                    : pr.state === "closed"
-                      ? "accent-adaptive-rose-600-400"
-                      : "accent-adaptive-violet-600-400"
-              }
-            />
-            <Text
-              accessibilityLabel={pr.accessibilityLabel}
-              className={cn("text-xs", pr.textClassName)}
-              style={{ fontFamily: MONO_FONT }}
-            >
-              {pr.label}
-            </Text>
-          </Pressable>
-        ) : null}
-        {providerInstance ? (
-          <View className="flex-row items-center">
-            {providerDrivers.slice(0, -1).map(
-              (driver, index) => (
-                /* oxlint-disable react/no-array-index-key -- Provider history can repeat a driver; these decorative icons have no local state. */ <View
-                  key={`${driver}:${index}`}
-                  className="-mr-1 opacity-30"
-                >
-                  <ProviderIcon provider={driver} size={12} />
-                </View>
-              ) /* oxlint-enable react/no-array-index-key */,
-            )}
-            <ProviderInstanceIcon
-              iconUrl={providerIconUrl}
-              provider={providerInstance.driverKind}
-              size={14}
-              displayName={providerInstance.displayName}
-              accentColor={providerInstance.accentColor}
-              showBadge={providerInstance.showBadge}
-              surfaceColor={rowAppearance.providerIconSurfaceColor}
-            />
-            {providerNameLabel ? (
+          ) : props.environmentLabel ? (
+            <View className="min-w-0 flex-1 flex-row items-center gap-1">
+              {props.environmentMachine ? (
+                <EnvironmentMachineSymbol
+                  kind={props.environmentMachine}
+                  size={machineIconSize}
+                  tintColorClassName={
+                    selected
+                      ? selectedThreadRowColors.mutedIconTintClassName
+                      : rowAppearance.tertiaryIconTintClassName
+                  }
+                />
+              ) : null}
               <Text
                 className={cn(
-                  "ml-1.5 text-xs",
+                  "shrink text-xs",
                   selected
                     ? selectedThreadRowColors.mutedForegroundClassName
                     : rowAppearance.tertiaryForegroundClassName,
                 )}
-                ellipsizeMode="middle"
                 numberOfLines={1}
-                style={{ maxWidth: 140 }}
               >
-                {providerNameLabel}
+                {props.environmentLabel}
               </Text>
-            ) : null}
-          </View>
-        ) : null}
-      </View>
+            </View>
+          ) : (
+            <View className="flex-1" />
+          )}
+          {pr ? (
+            <Pressable
+              // Padding cancelled by negative margin grows the touch target into
+              // the row padding without moving the badge.
+              className="-m-2.5 flex-row items-center gap-1 p-2.5"
+              accessibilityRole="button"
+              accessibilityLabel={prBadgeLabel ?? undefined}
+              onPress={handleOpenPullRequests}
+              // Handle long-press so opening the iOS row menu cannot also open the PR on release.
+              onLongPress={() => undefined}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+            >
+              <SymbolView
+                name={
+                  pr.kind === "stack"
+                    ? PullRequestGlyph.stack
+                    : pr.state === null
+                      ? PullRequestGlyph.pullRequest
+                      : pullRequestStatus({ state: pr.state, isDraft: pr.isDraft }).icon
+                }
+                size={12}
+                tintColorClassName={
+                  pr.state === null || pr.isDraft
+                    ? rowAppearance.mutedIconTintClassName
+                    : pr.state === "open"
+                      ? "accent-adaptive-emerald-600-400"
+                      : pr.state === "closed"
+                        ? "accent-adaptive-rose-600-400"
+                        : "accent-adaptive-violet-600-400"
+                }
+              />
+              <Text
+                accessibilityLabel={pr.accessibilityLabel}
+                className={cn("text-xs", pr.textClassName)}
+                style={{ fontFamily: MONO_FONT }}
+              >
+                {pr.label}
+              </Text>
+            </Pressable>
+          ) : null}
+          {providerInstance && !mailCard ? (
+            <View className="flex-row items-center">
+              {providerDrivers.slice(0, -1).map(
+                (driver, index) => (
+                  /* oxlint-disable react/no-array-index-key -- Provider history can repeat a driver; these decorative icons have no local state. */ <View
+                    key={`${driver}:${index}`}
+                    className="-mr-1 opacity-30"
+                  >
+                    <ProviderIcon provider={driver} size={12} />
+                  </View>
+                ) /* oxlint-enable react/no-array-index-key */,
+              )}
+              <ProviderInstanceIcon
+                iconUrl={providerIconUrl}
+                provider={providerInstance.driverKind}
+                size={14}
+                displayName={providerInstance.displayName}
+                accentColor={providerInstance.accentColor}
+                showBadge={providerInstance.showBadge}
+                surfaceColor={rowAppearance.providerIconSurfaceColor}
+              />
+              {providerNameLabel ? (
+                <Text
+                  className={cn(
+                    "ml-1.5 text-xs",
+                    selected
+                      ? selectedThreadRowColors.mutedForegroundClassName
+                      : rowAppearance.tertiaryForegroundClassName,
+                  )}
+                  ellipsizeMode="middle"
+                  numberOfLines={1}
+                  style={{ maxWidth: 140 }}
+                >
+                  {providerNameLabel}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
     </>
   );
 
@@ -1926,7 +1949,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           close();
           selectThread();
         }}
-        style={rowAppearance.cardStyle}
+        style={rowSurfaceStyle ?? rowAppearance.cardStyle}
       >
         {sidebarPane ? (
           fadedCardContent
@@ -2059,7 +2082,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         dormant={dormant}
         threadKey={`${thread.environmentId}:${thread.id}`}
         backgroundColor={
-          grouped ? theme["--color-grouped-card"] : rowAppearance.swipeBackgroundColor
+          needsYouTint ??
+          (grouped ? theme["--color-grouped-card"] : rowAppearance.swipeBackgroundColor)
         }
         compactActions={variant === "slim"}
         containerStyle={swipeContainerStyle}

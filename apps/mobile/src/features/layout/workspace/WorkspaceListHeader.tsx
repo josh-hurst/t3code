@@ -50,7 +50,7 @@ function SidebarColumnHeader(
           headerWidth: sidebar.width,
           trailingItemCount: items.length,
           onOpenEnvironments: props.onOpenEnvironments,
-          fallbackTitleStyle: { fontSize: 18, fontWeight: "800" },
+          fallbackTitleStyle: { fontSize: 17, fontWeight: "600" },
         }),
         headerSearchBarOptions: {
           ref: searchBarRef,

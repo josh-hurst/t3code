@@ -1,3 +1,5 @@
+import { GROUP_CARD_CLASS_NAME } from "../../lib/surfaces";
+import { cn } from "../../lib/cn";
 import { Button } from "../../components/ui/Button";
 import type {
   ProviderApprovalDecision,
@@ -38,7 +40,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
   const disabled = !canRespond || props.respondingApprovalId === props.approval.requestId;
   const [explanationOpen, setExplanationOpen] = useState(false);
   return (
-    <View className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4">
+    <View className={cn(GROUP_CARD_CLASS_NAME, "gap-2.5 p-4")}>
       <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
         Approval needed
       </Text>

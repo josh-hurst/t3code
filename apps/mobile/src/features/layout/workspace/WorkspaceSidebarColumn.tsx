@@ -7,7 +7,7 @@ import { getCompactBrandHeaderOptions } from "./brand-header-options";
 
 const SIDEBAR_COLUMN_OPTIONS = {
   ...pageRoute(),
-  ...getCompactBrandHeaderOptions({ fontSize: 18, fontWeight: "800" }),
+  ...getCompactBrandHeaderOptions({ fontSize: 17, fontWeight: "600" }),
 };
 
 /** The iOS sidebar column hosts its own stack so it gets a native bar with the brand title. */

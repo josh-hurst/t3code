@@ -1,3 +1,5 @@
+import { GROUP_CARD_CLASS_NAME } from "../../lib/surfaces";
+import { cn } from "../../lib/cn";
 import { pipe } from "effect/Function";
 import {
   SECRET_REQUEST_DEFAULT_PLACEHOLDER,
@@ -124,7 +126,7 @@ function PendingSecretRequestForm(props: {
   const link = secretRequestLink(item);
 
   return (
-    <View className="mb-3 gap-3 rounded-[20px] border border-border bg-card-alt p-4">
+    <View className={cn(GROUP_CARD_CLASS_NAME, "mb-3 gap-3 p-4")}>
       <View className="gap-1">
         <Text className="font-t3-bold text-base text-foreground">{item.label}</Text>
         {item.reason.trim() ? (

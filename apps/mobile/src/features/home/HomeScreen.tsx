@@ -599,6 +599,10 @@ export function HomeScreen(props: HomeScreenProps) {
         variant={item.item.variant}
         cardLine={item.item.cardLine}
         projectLine={item.item.projectLine}
+        selfFiling={tide}
+        needsYou={item.item.needsYou === true}
+        groupStart={item.groupStart}
+        groupEnd={item.groupEnd}
         hasQueuedMessages={item.hasQueuedMessages}
         snoozed={item.item.snoozed}
         pinned={item.item.pinned}

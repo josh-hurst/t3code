@@ -1,3 +1,4 @@
+import { GROUP_CARD_CLASS_NAME } from "../../lib/surfaces";
 import { Button } from "../../components/ui/Button";
 import { QuestionAttachments } from "./QuestionAttachments";
 import type { EnvironmentId, RuntimeRequestId, ThreadId } from "@t3tools/contracts";
@@ -218,7 +219,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       pointerEvents={props.collapsed ? "none" : "auto"}
       accessibilityElementsHidden={props.collapsed}
       importantForAccessibility={props.collapsed ? "no-hide-descendants" : "auto"}
-      className="overflow-hidden gap-2.5 rounded-[20px] border border-border bg-card-alt p-4"
+      className={cn(GROUP_CARD_CLASS_NAME, "overflow-hidden gap-2.5 p-4")}
       style={cardAnimatedStyle}
     >
       <Pressable

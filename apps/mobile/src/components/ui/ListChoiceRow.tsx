@@ -1,10 +1,11 @@
-import type { ReactNode } from "react";
+import { use, type ReactNode } from "react";
 import { Platform, View } from "react-native";
 import { useResolveClassNames } from "uniwind";
 
 import { cn } from "../../lib/cn";
 import { SymbolView } from "./AppSymbol";
 import { ListRowLayout } from "./ListRowLayout";
+import { ListSectionSeparatorContext } from "./ListSection";
 import { RadioIndicator } from "./RadioIndicator";
 import { RowPressable } from "./RowPressable";
 
@@ -19,6 +20,8 @@ export function ListChoiceRow(props: {
   readonly onPress: () => void;
 }) {
   const rippleStyle = useResolveClassNames("bg-subtle-strong");
+  // A grouped iOS section already draws the hairline between rows.
+  const separatorDrawn = use(ListSectionSeparatorContext);
   return (
     <RowPressable
       accessibilityRole="radio"
@@ -30,7 +33,10 @@ export function ListChoiceRow(props: {
       android_ripple={{ color: rippleStyle.backgroundColor }}
       unstable_pressDelay={Platform.OS === "android" ? 50 : undefined}
       // Like UIKit and Material lists, only the checkmark or radio marks the selected row.
-      className={cn("bg-grouped-card", props.separated && "border-t border-border-subtle")}
+      className={cn(
+        "bg-grouped-card",
+        props.separated && !separatorDrawn && "border-t border-border-subtle",
+      )}
     >
       <ListRowLayout
         label={props.label}

@@ -293,7 +293,10 @@ const SETTINGS_SCREENS = {
     linking: "settings/scheduled-tasks",
     options: {
       ...settingsPage("Scheduled tasks"),
-      headerTitleStyle: { fontSize: 16, fontWeight: "800" },
+      headerTitleStyle:
+        Platform.OS === "ios"
+          ? { fontSize: 16, fontWeight: "600" }
+          : { fontSize: 16, fontWeight: "800" },
     },
   }),
   SettingsScheduledTaskNew: createNativeStackScreen({

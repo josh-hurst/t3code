@@ -19,7 +19,11 @@ const SOLID_HEADER_OPTIONS: AppScreenOptions = {
   headerLargeTitle: false,
   headerShadowVisible: false,
   headerShown: true,
-  headerTitleStyle: { fontSize: 18, fontWeight: "800" },
+  // iOS bars use Apple's 17pt semibold title; Android keeps its heavier one.
+  headerTitleStyle:
+    Platform.OS === "ios"
+      ? { fontSize: 17, fontWeight: "600" }
+      : { fontSize: 18, fontWeight: "800" },
   headerTransparent: false,
 };
 

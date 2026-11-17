@@ -20,6 +20,7 @@ import {
   type MarkdownLinkOccurrence,
   type MarkdownStyle,
 } from "react-native-enriched-markdown";
+import { FONT_WEIGHTS } from "../lib/fontFamilies";
 import { codeFenceRenderer } from "./codeBlockMarkdown";
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
 import { MermaidCodeBlock } from "./MermaidCodeBlock";
@@ -70,6 +71,7 @@ function enrichedStyle(
       ...body,
       color: style.strongColor,
       fontFamily: style.headingFontFamily,
+      fontWeight: FONT_WEIGHTS.bold,
       fontSize,
       lineHeight: fontSize * 1.35,
       marginTop: 8,
@@ -95,7 +97,11 @@ function enrichedStyle(
     h4: heading(4),
     h5: heading(5),
     h6: heading(6),
-    strong: { color: style.strongColor, fontFamily: style.boldFontFamily, fontWeight: "normal" },
+    strong: {
+      color: style.strongColor,
+      fontFamily: style.boldFontFamily,
+      fontWeight: Platform.OS === "ios" ? "bold" : "normal",
+    },
     link: { color: style.linkColor, underline: false },
     code: {
       fontFamily: monospace,

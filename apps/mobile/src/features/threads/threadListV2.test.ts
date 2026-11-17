@@ -2090,7 +2090,15 @@ describe("self-filing list", () => {
       cardLine: "Publish · Fixed the login test",
     });
     expect(rowOf(true)).toMatchObject({ projectLine: null });
-    // A slim search result names its project too; a card result names it in its header.
+    // Card rows (pinned, Working) name their project the same way.
+    const cardRows = build(threads, { projectTitleOf }).layout.items.filter(
+      (item) => item.variant === "card",
+    );
+    expect(cardRows.map((item) => item.thread.id)).toEqual(
+      expect.arrayContaining(["pinned", "working"]),
+    );
+    expect(cardRows.every((item) => item.projectLine === "block-warfare")).toBe(true);
+    // A search result names its project whatever its shelf.
     expect(
       build(threads, { projectTitleOf, searchQuery: "snoozed" }).layout.items.find(
         (item) => item.thread.id === "snoozed",

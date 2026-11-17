@@ -1,5 +1,5 @@
 import { memo, useId } from "react";
-import { Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import Svg, { Circle, Defs, RadialGradient, Stop } from "react-native-svg";
 import { ScopedTheme, ScopedVariables } from "uniwind";
 
@@ -281,7 +281,14 @@ function ModeCard(props: {
 }
 
 function SectionLabel({ children }: { readonly children: string }) {
-  return <Text className="px-2 text-sm font-t3-medium text-foreground-muted">{children}</Text>;
+  // Matches ListSection's headers on each platform.
+  return Platform.OS === "ios" ? (
+    <Text textRole="label" className="px-4 uppercase text-foreground-muted">
+      {children}
+    </Text>
+  ) : (
+    <Text className="px-2 text-sm font-t3-medium text-foreground-muted">{children}</Text>
+  );
 }
 
 export function ThemeAppearanceSection() {

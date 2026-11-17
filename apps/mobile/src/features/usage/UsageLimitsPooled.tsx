@@ -476,9 +476,9 @@ export function UsageLimitsSection({
         return (
           <Fragment key={pool.driver}>
             <View className="gap-3">
-              <View className="flex-row items-center gap-2 px-1">
-                <ProviderIcon provider={pool.driver} size={18} />
-                <Text className="text-base font-t3-medium text-foreground">
+              <View className="flex-row items-center gap-1.5 px-4">
+                <ProviderIcon provider={pool.driver} size={14} />
+                <Text className="text-xs uppercase text-foreground-muted">
                   {providerClients.get(pool.driver)?.label ?? pool.driver}
                 </Text>
               </View>

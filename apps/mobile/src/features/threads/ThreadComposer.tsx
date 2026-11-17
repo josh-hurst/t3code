@@ -128,9 +128,9 @@ export const COMPOSER_COLLAPSED_CHROME = 60;
 
 const NO_MACHINES: ReadonlyArray<ComposerEnvironmentCandidate> = [];
 const COLLAPSED_EDITOR_DEFAULT_INSET = 6;
-// iOS puts line-height slack above glyphs. DM Sans's lowercase midline is
-// descender (0.31em) + half x-height (0.504em) above the line bottom.
-const LOWERCASE_MIDLINE_EM = 0.562;
+// iOS puts line-height slack above glyphs. The lowercase midline is descender + half x-height
+// above the line bottom: SF Pro 0.216em + 0.263em on iOS, DM Sans 0.31em + 0.252em elsewhere.
+const LOWERCASE_MIDLINE_EM = Platform.OS === "ios" ? 0.479 : 0.562;
 
 function lowercaseMidline(text: ScaledTextRole): number {
   return text.lineHeight - LOWERCASE_MIDLINE_EM * text.fontSize;

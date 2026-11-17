@@ -385,6 +385,8 @@ export interface ThreadListV2Item {
   readonly cardLine: string | null;
   /** The project's name on its own line above a slim row's title; only in the new layout. */
   readonly projectLine: string | null;
+  /** A row in the self-filing list's Needs you, which tints its card as on web. */
+  readonly needsYou?: boolean;
   readonly isLast: boolean;
 }
 
@@ -432,6 +434,9 @@ export interface ThreadListV2ThreadListItem {
   readonly timeLabel: string;
   readonly snoozePresetMinute: string | undefined;
   readonly showTrailingDivider: boolean;
+  /** First and last thread rows of a run, which round a grouped card's corners. */
+  readonly groupStart: boolean;
+  readonly groupEnd: boolean;
   /** Include queued state in item equality; outbox writes do not update thread shells. */
   readonly hasQueuedMessages: boolean;
   readonly canMoveUp: boolean;
@@ -547,10 +552,13 @@ export function threadListV2ListItemsAreEqual(
         previous.item.wokeAt === item.item.wokeAt &&
         previous.item.cardLine === item.item.cardLine &&
         previous.item.projectLine === item.item.projectLine &&
+        previous.item.needsYou === item.item.needsYou &&
         previous.snoozeWakeLabelText === item.snoozeWakeLabelText &&
         previous.timeLabel === item.timeLabel &&
         previous.snoozePresetMinute === item.snoozePresetMinute &&
         previous.showTrailingDivider === item.showTrailingDivider &&
+        previous.groupStart === item.groupStart &&
+        previous.groupEnd === item.groupEnd &&
         previous.hasQueuedMessages === item.hasQueuedMessages &&
         previous.canMoveUp === item.canMoveUp &&
         previous.canMoveDown === item.canMoveDown
@@ -723,6 +731,8 @@ export function buildThreadListV2ListItems(input: {
       ),
       snoozePresetMinute,
       showTrailingDivider: false,
+      groupStart: false,
+      groupEnd: false,
       hasQueuedMessages:
         queuedThreadKeys?.has(`${item.thread.environmentId}:${item.thread.id}`) === true,
       canMoveUp: move?.canMoveUp === true,
@@ -857,9 +867,18 @@ export function buildThreadListV2ListItems(input: {
     const next = result[index + 1];
     const showTrailingDivider =
       next?.type === "v2-thread" || (next?.type === "v2-pending" && !next.showPendingDivider);
-    return showTrailingDivider === entry.showTrailingDivider
+    if (entry.type === "v2-pending") {
+      return showTrailingDivider === entry.showTrailingDivider
+        ? entry
+        : { ...entry, showTrailingDivider };
+    }
+    const groupStart = result[index - 1]?.type !== "v2-thread";
+    const groupEnd = next?.type !== "v2-thread";
+    return showTrailingDivider === entry.showTrailingDivider &&
+      groupStart === entry.groupStart &&
+      groupEnd === entry.groupEnd
       ? entry
-      : { ...entry, showTrailingDivider };
+      : { ...entry, showTrailingDivider, groupStart, groupEnd };
   });
 }
 
@@ -1127,7 +1146,7 @@ export function buildThreadListV2Items(input: {
             : slim.has(thread)
               ? slimRowLine(thread, snoozedThreads.has(thread) ? laterOf(thread) : null)
               : threadCardRowLine(thread.card, { needsYou: false }),
-        projectLine: tide !== null && slim.has(thread) ? slimRowProject(thread, input) : null,
+        projectLine: tide !== null ? slimRowProject(thread, input) : null,
         isLast: index === results.length - 1,
       })),
       folders: [],
@@ -1219,7 +1238,7 @@ export function buildThreadListV2Items(input: {
       pinned: true,
       wokeAt: resolveThreadListV2WokeAt(thread, { now }),
       cardLine: cardLineOf(thread, false),
-      projectLine: null,
+      projectLine: slimProjectOf(thread),
       isLast: false,
     });
   }
@@ -1231,7 +1250,9 @@ export function buildThreadListV2Items(input: {
       pinned: false,
       wokeAt: resolveThreadListV2WokeAt(thread, { now }),
       cardLine: cardLineOf(thread, true),
-      projectLine: null,
+      needsYou: tideZones !== null,
+      // A project folder already names the project.
+      projectLine: projectFolders === null ? slimProjectOf(thread) : null,
       isLast: false,
     });
   const folders: ThreadListV2Folder[] = [];
@@ -1279,7 +1300,7 @@ export function buildThreadListV2Items(input: {
         pinned: false,
         wokeAt: resolveThreadListV2WokeAt(thread, { now }),
         cardLine: cardLineOf(thread, false),
-        projectLine: null,
+        projectLine: slimProjectOf(thread),
         isLast: false,
       });
     }

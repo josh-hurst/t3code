@@ -17,7 +17,11 @@ export const GLASS_HEADER_OPTIONS: AppScreenOptions = {
   headerShadowVisible: false,
   headerShown: true,
   headerStyle: NATIVE_LIQUID_GLASS_SUPPORTED ? { backgroundColor: "transparent" } : undefined,
-  headerTitleStyle: { fontSize: 18, fontWeight: "800" },
+  // iOS bars use Apple's 17pt semibold title; Android keeps its heavier one.
+  headerTitleStyle:
+    Platform.OS === "ios"
+      ? { fontSize: 17, fontWeight: "600" }
+      : { fontSize: 18, fontWeight: "800" },
   headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
   scrollEdgeEffects: NATIVE_LIQUID_GLASS_SUPPORTED
     ? nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version)

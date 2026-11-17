@@ -37,6 +37,20 @@ import { I18nProvider, useGT, useLanguagePreference } from "../../i18n/I18nProvi
 import { nativeLanguageName } from "@t3tools/client-runtime/locales";
 import { SUPPORTED_LOCALES } from "../../i18n/locales";
 
+// Apple's system colors, so the icon tiles read like the iOS Settings list.
+const TILE = {
+  blue: "#0A84FF",
+  indigo: "#5E5CE6",
+  purple: "#BF5AF2",
+  red: "#FF453A",
+  orange: "#FF9F0A",
+  green: "#30D158",
+  teal: "#40C8E0",
+  pink: "#FF375F",
+  gray: "#8E8E93",
+  brown: "#AC8E68",
+} as const;
+
 export function SettingsRouteScreen() {
   const list = useSettingsListPlacement();
   return <SettingsListScreen sidebar={list.sidebar} selected={list.selected} />;
@@ -142,6 +156,7 @@ function ConfiguredSettingsRouteScreen() {
         {
           id: "account",
           icon: "person.crop.circle",
+          tint: TILE.blue,
           label: gt("T3 Account"),
           value: accountLabel,
           disabled: !isLoaded,
@@ -151,6 +166,7 @@ function ConfiguredSettingsRouteScreen() {
         {
           id: "SettingsNotifications",
           icon: "bell.badge",
+          tint: TILE.red,
           label: gt("Notifications"),
           target: "SettingsNotifications",
         },
@@ -173,6 +189,7 @@ function environmentsRow(label: string, count: number): SettingsListRow {
   return {
     id: "SettingsEnvironments",
     icon: "desktopcomputer",
+    tint: TILE.indigo,
     label,
     value: `${count}`,
     valuePosition: "trailing",
@@ -261,36 +278,41 @@ function useSettingsIndexSections(): SettingsListSection[] {
   const page = (
     target: SettingsPageTarget,
     icon: SettingsListRow["icon"],
+    tint: string,
     label: string,
     extra?: Pick<SettingsListRow, "disabled" | "value">,
-  ): SettingsListRow => ({ id: target, icon, label, target, ...extra });
-  const serverPage = (target: SettingsPageTarget, icon: SettingsListRow["icon"], label: string) =>
-    page(target, icon, label, { disabled: noServerTargets });
+  ): SettingsListRow => ({ id: target, icon, tint, label, target, ...extra });
+  const serverPage = (
+    target: SettingsPageTarget,
+    icon: SettingsListRow["icon"],
+    tint: string,
+    label: string,
+  ) => page(target, icon, tint, label, { disabled: noServerTargets });
   // The same pages and groups as Settings on web, minus what mobile has no setting for.
   return [
     {
       rows: [
-        page("SettingsOrganization", "gearshape", gt("General")),
-        page("SettingsAppearance", "paintbrush", gt("Appearance")),
-        page("SettingsLanguage", "globe", gt("Language"), {
+        page("SettingsOrganization", "gearshape", TILE.gray, gt("General")),
+        page("SettingsAppearance", "paintbrush", TILE.blue, gt("Appearance")),
+        page("SettingsLanguage", "globe", TILE.teal, gt("Language"), {
           value: SUPPORTED_LOCALES.includes(language)
             ? nativeLanguageName(language)
             : gt("System default"),
         }),
-        page("SettingsFollowUp", "bubble.left.and.bubble.right", gt("Chat")),
+        page("SettingsFollowUp", "bubble.left.and.bubble.right", TILE.green, gt("Chat")),
         ...(navigationCustomizationAvailable()
-          ? [page("SettingsNavigation", "line.3.horizontal", gt("Navigation tabs"))]
+          ? [page("SettingsNavigation", "line.3.horizontal", TILE.indigo, gt("Navigation tabs"))]
           : []),
-        page("SettingsKeyboard", "keyboard", gt("Keyboard")),
-        page("SettingsVoice", "mic", gt("Voice")),
+        page("SettingsKeyboard", "keyboard", TILE.gray, gt("Keyboard")),
+        page("SettingsVoice", "mic", TILE.pink, gt("Voice")),
       ],
     },
     {
       title: gt("Agents"),
       rows: [
-        serverPage("SettingsProviderAccounts", "person.crop.circle", gt("Providers")),
-        serverPage("SettingsThreads", "text.bubble", gt("Threads")),
-        page("SettingsScheduledTasks", "clock", gt("Scheduled tasks")),
+        serverPage("SettingsProviderAccounts", "person.crop.circle", TILE.purple, gt("Providers")),
+        serverPage("SettingsThreads", "text.bubble", TILE.blue, gt("Threads")),
+        page("SettingsScheduledTasks", "clock", TILE.orange, gt("Scheduled tasks")),
       ],
     },
     {
@@ -299,23 +321,30 @@ function useSettingsIndexSections(): SettingsListSection[] {
         page(
           "SettingsProjectOverview",
           "folder",
+          TILE.blue,
           gt("Projects"),
           selectedProjectKey !== null ? { value: projectLabel } : undefined,
         ),
         serverPage(
           "SettingsEnvironmentSourceControl",
           "arrow.triangle.branch",
+          TILE.orange,
           gt("Source control"),
         ),
-        serverPage("SettingsWorktrees", "square.on.square", gt("Worktrees")),
+        serverPage("SettingsWorktrees", "square.on.square", TILE.teal, gt("Worktrees")),
       ],
     },
     {
       rows: [
-        serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", gt("Maintenance")),
-        page("SettingsLabs", "flask", gt("Labs")),
-        page("SettingsAbout", "info.circle", gt("About")),
-        page("SettingsArchive", "archivebox", gt("Archive")),
+        serverPage(
+          "SettingsEnvironmentMaintenance",
+          "arrow.clockwise",
+          TILE.gray,
+          gt("Maintenance"),
+        ),
+        page("SettingsLabs", "flask", TILE.purple, gt("Labs")),
+        page("SettingsAbout", "info.circle", TILE.gray, gt("About")),
+        page("SettingsArchive", "archivebox", TILE.brown, gt("Archive")),
       ],
     },
   ];
@@ -331,6 +360,7 @@ function useOverflowRows(): SettingsListRow[] {
   return tabs.map((tab) => ({
     id: tab,
     icon: NAVIGATION_TAB_ICONS[tab],
+    tint: TILE.blue,
     label: WORKSPACE_TAB_LABELS[tab],
     onPress: () => selectTab(tab),
   }));
