@@ -1394,21 +1394,21 @@ describe("Working shelf (beta)", () => {
       expect(resolveSidebarDropVerb("active", "working")).toBeNull();
     });
 
-    it("keeps the Trail below the shelves active, and orders active rows on both sides", () => {
+    it("keeps the Trail above the shelves active, and orders active rows on both sides", () => {
       const trailItems: readonly SidebarListItem[] = [
         marker("pinned-header"),
         row("p1", "pinned"),
         marker("pinned-divider"),
         row("n1", "active"),
-        marker("working-header"),
-        row("w1", "working"),
-        marker("snoozed-header"),
-        row("z1", "snoozed"),
         marker("trail-header"),
         marker("active-placeholder"),
         row("t1", "active"),
         row("t2", "active"),
         marker("trail-more"),
+        marker("working-header"),
+        row("w1", "working"),
+        marker("snoozed-header"),
+        row("z1", "snoozed"),
         marker("settled-header"),
         row("s1", "settled"),
       ];
@@ -1417,11 +1417,16 @@ describe("Working shelf (beta)", () => {
         pinnedOrder: ["p1"],
         activeOrder: ["n1", "t1", "s1", "t2"],
       });
-      // From below, the placeholder is the Trail's first slot; the header's own slot is Snoozed's.
+      // From below, the placeholder is the Trail's first slot; Working's header slot is the Trail's last.
       expect(
         resolveSidebarDropTarget(trailItems, "s1", "sidebar-marker-active-placeholder"),
       ).toEqual({ section: "active", pinnedOrder: ["p1"], activeOrder: ["n1", "s1", "t1", "t2"] });
-      expect(resolveSidebarDropTarget(trailItems, "s1", "sidebar-marker-trail-header")).toBeNull();
+      expect(resolveSidebarDropTarget(trailItems, "s1", "sidebar-marker-working-header")).toEqual({
+        section: "active",
+        pinnedOrder: ["p1"],
+        activeOrder: ["n1", "t1", "t2", "s1"],
+      });
+      expect(resolveSidebarDropTarget(trailItems, "s1", "w1")).toBeNull();
       expect(
         resolveSidebarDropTarget(trailItems, "p1", "sidebar-marker-trail-header")?.section,
       ).toBe("active");

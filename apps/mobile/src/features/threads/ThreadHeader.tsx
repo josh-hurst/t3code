@@ -1,5 +1,9 @@
+import { contentsVisible, entryOwedLabel } from "@t3tools/client-runtime/state/thread-entries";
+
 import { AppBar } from "../../components/ui/AppBar";
-import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
+import type { AppBarAction, AppBarMenu, AppBarTitleMenu } from "../../components/ui/AppBar.types";
+import { scopedThreadKey } from "../../lib/scopedEntities";
+import { useThreadEntries } from "../../state/threadEntries";
 import {
   useAdaptiveWorkspaceLayout,
   useWorkspacePaneState,
@@ -11,6 +15,24 @@ import {
   useThreadGitMenuDefinition,
   type ThreadGitControlsProps,
 } from "./ThreadGitControls";
+import type { ContentsThread } from "./ThreadContentsList";
+import { requestThreadMessageJump } from "./threadMessageJump";
+
+/** The thread's topics under its title: tap the title, pick one, and the feed scrolls to it. */
+function useContentsTitleMenu(thread: ContentsThread | undefined): AppBarTitleMenu | undefined {
+  const result = useThreadEntries(thread?.environmentId ?? null, thread?.threadId ?? null);
+  if (thread === undefined || !contentsVisible(result?.entries)) return undefined;
+  const key = scopedThreadKey(thread.environmentId, thread.threadId);
+  return {
+    title: "Contents",
+    items: (result?.entries ?? []).map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      subtitle: entryOwedLabel(entry.open) ?? entry.outcome ?? undefined,
+      onPress: () => requestThreadMessageJump(key, entry.startMessageId),
+    })),
+  };
+}
 
 export function ThreadHeader(props: {
   readonly title: string;
@@ -21,7 +43,9 @@ export function ThreadHeader(props: {
   readonly hasThreadCwd: boolean;
   readonly inspectorMode: ThreadInspectorMode | null;
   readonly onOpenFilesInspector: () => void;
+  readonly contentsThread?: ContentsThread;
 }) {
+  const titleMenu = useContentsTitleMenu(props.contentsThread);
   const goBack = useWorkspaceBackNavigation();
   const { toggleAuxiliaryPane, startNewTask } = useAdaptiveWorkspaceLayout();
   const { panes } = useWorkspacePaneState();
@@ -46,6 +70,7 @@ export function ThreadHeader(props: {
     <AppBar
       title={props.title}
       subtitle={props.subtitle}
+      titleMenu={titleMenu}
       onBackToList={goBack}
       onCompose={props.draft ? undefined : startNewTask}
       backInSplitView={

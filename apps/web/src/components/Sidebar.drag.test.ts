@@ -693,20 +693,20 @@ describe("sidebar drag projection with a Trail", () => {
     pinnedHeader,
     divider,
     thread("n1", "active"),
-    marker("working-header"),
-    thread("w1", "working"),
     marker("trail-header"),
     marker("active-placeholder"),
     thread("t1", "active"),
     thread("t2", "active"),
     marker("trail-more"),
+    marker("working-header"),
+    thread("w1", "working"),
     settledHeader,
     thread("s1", "settled"),
   ];
   const base = { items, settledOrder: [], settledExpanded: true };
   const y = (result: ReturnType<typeof preview>, id: string) => result.get(id)?.y;
 
-  it("lands a settled row in the Trail, below the shelves", () => {
+  it("lands a settled row in the Trail, above the shelves", () => {
     const result = preview(
       {
         ...base,
@@ -717,17 +717,17 @@ describe("sidebar drag projection with a Trail", () => {
       "t2",
     );
     expect(y(result, "n1")).toBe(0);
-    expect(y(result, sidebarMarkerId("working-header"))).toBe(0);
     expect(y(result, sidebarMarkerId("trail-header"))).toBe(0);
     // The zero-height placeholder gives up its one-pixel gap.
     expect(y(result, "t1")).toBe(-1);
     const slot = y(result, "t2")!;
     expect(slot).toBeGreaterThan(0);
     expect(y(result, sidebarMarkerId("trail-more"))).toBe(slot);
+    expect(y(result, sidebarMarkerId("working-header"))).toBe(slot);
     expect(y(result, sidebarMarkerId("settled-header"))).toBe(slot);
   });
 
-  it("lands a row that needs you above the shelves", () => {
+  it("lands a row that needs you above the Trail", () => {
     const result = preview(
       {
         ...base,
@@ -738,10 +738,11 @@ describe("sidebar drag projection with a Trail", () => {
       "t2",
     );
     expect(y(result, "n1")).toBe(0);
-    // Every row shares one anatomy, so the settled row keeps its own height above the shelves.
-    expect(y(result, sidebarMarkerId("working-header"))).toBe(37);
+    // Every row shares one anatomy, so the settled row keeps its own height above the Trail.
+    expect(y(result, sidebarMarkerId("trail-header"))).toBe(37);
     expect(y(result, "t1")).toBe(36);
     expect(y(result, "t2")).toBe(36);
+    expect(y(result, sidebarMarkerId("working-header"))).toBe(36);
   });
 
   it("opens no slot for a row that lands past the Trail's cap, and drops the row it pushes out", () => {
@@ -828,10 +829,10 @@ describe("sidebar drag projection with a Trail", () => {
     expect(y(result, "t2")! - y(result, "t1")!).toBe(83);
   });
 
-  it("keeps the rows on their sides of the shelves when no order is given", () => {
+  it("keeps the rows on their sides of the Trail header when no order is given", () => {
     const result = preview(base, "t2", sidebarMarkerId("settled-header"));
     expect(y(result, "n1")).toBe(0);
-    expect(y(result, sidebarMarkerId("working-header"))).toBe(0);
+    expect(y(result, sidebarMarkerId("trail-header"))).toBe(0);
     expect(y(result, "t1")).toBe(-1);
   });
 

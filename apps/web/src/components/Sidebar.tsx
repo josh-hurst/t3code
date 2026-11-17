@@ -472,7 +472,7 @@ function useSidebarThreads(input: {
   readonly folderGroups: readonly SidebarProjectSnapshot[] | null;
   // Keeps folders with no active threads, so a project the user filtered to or pinned can start one.
   readonly keepEmptyFolders: (group: SidebarProjectSnapshot) => boolean;
-  // The self-filing layout: Needs you, Working, Trail, Later, History.
+  // The self-filing layout: Needs you, Trail, Working, Later, History.
   readonly tide: boolean;
   readonly projectOf: TideProjectOf;
 }) {
@@ -2310,10 +2310,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       items.push({ kind: "marker", marker: "active-placeholder" });
       items.push(...rowsOf(activeThreads, "active"));
     }
-    if (workingThreads.length > 0) {
+    const pushWorking = () => {
+      if (workingThreads.length === 0) return;
       items.push({ kind: "marker", marker: "working-header" });
       items.push(...rowsOf(visibleWorkingThreads, "working"));
-    }
+    };
+    // The new layout draws Working below the Trail, so the Trail sits right under Needs you.
+    if (!tide) pushWorking();
     const pushLater = () => {
       if (snoozedThreads.length === 0) return;
       items.push({ kind: "marker", marker: "snoozed-header" });
@@ -2329,6 +2332,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       if (trailCounts !== null && trailCounts.moreToday + trailCounts.earlier > 0) {
         items.push({ kind: "marker", marker: "trail-more" });
       }
+      pushWorking();
       pushLater();
     }
     items.push({ kind: "marker", marker: "settled-header" });

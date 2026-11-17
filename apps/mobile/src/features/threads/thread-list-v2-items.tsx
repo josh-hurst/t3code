@@ -33,6 +33,8 @@ import {
 } from "@t3tools/contracts";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
+import { nonMainlineBranchName } from "@t3tools/shared/git";
+import { threadCardOwedLabel } from "@t3tools/client-runtime/state/thread-zones";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useMemo, useState, type ComponentProps } from "react";
@@ -941,8 +943,15 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ? DONE_STATUS_LABEL
         : undefined);
   const recede = shouldRecedeThreadRow({ status, selected });
+  // Slim rows that are neither snoozed nor settled are the Trail; one that owes nothing leads with Done until opened, as on web.
+  const trailDone =
+    variant === "slim" &&
+    !snoozedRow &&
+    thread.settledOverride !== "settled" &&
+    isUnread &&
+    threadCardOwedLabel(thread.card) === null;
   const isRegeneratingTitle = thread.titleRegeneration != null;
-  const rowAccessibilityLabel = `${thread.title}${providerNameLabel ? `, ${providerNameLabel}` : ""}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
+  const rowAccessibilityLabel = `${thread.title}${trailDone ? ", done" : ""}${providerNameLabel ? `, ${providerNameLabel}` : ""}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
   const timeLabel = props.timeLabel;
 
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
@@ -1343,6 +1352,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
   const titleTextInset = props.project ? projectIconSize + 8 : 0;
+  const rowBranch = nonMainlineBranchName(thread.branch);
   const cardContent = (
     <>
       <View className="flex-row items-start gap-2">
@@ -1506,30 +1516,62 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           >
             {thread.runtime.lastError}
           </Text>
-        ) : props.environmentLabel ? (
+        ) : rowBranch || props.environmentLabel ? (
           <View className="min-w-0 flex-1 flex-row items-center gap-1">
-            {props.environmentMachine ? (
-              <EnvironmentMachineSymbol
-                kind={props.environmentMachine}
-                size={machineIconSize}
-                tintColorClassName={
-                  selected
-                    ? selectedThreadRowColors.mutedIconTintClassName
-                    : rowAppearance.tertiaryIconTintClassName
-                }
-              />
+            {rowBranch ? (
+              <>
+                <SymbolView
+                  name="arrow.triangle.branch"
+                  size={machineIconSize}
+                  tintColorClassName={
+                    selected
+                      ? selectedThreadRowColors.mutedIconTintClassName
+                      : rowAppearance.tertiaryIconTintClassName
+                  }
+                  type="monochrome"
+                />
+                <Text
+                  className={cn(
+                    "shrink text-xs",
+                    selected
+                      ? selectedThreadRowColors.mutedForegroundClassName
+                      : rowAppearance.tertiaryForegroundClassName,
+                  )}
+                  ellipsizeMode="middle"
+                  numberOfLines={1}
+                  style={{ fontFamily: MONO_FONT }}
+                >
+                  {rowBranch}
+                </Text>
+              </>
             ) : null}
-            <Text
-              className={cn(
-                "shrink text-xs",
-                selected
-                  ? selectedThreadRowColors.mutedForegroundClassName
-                  : rowAppearance.tertiaryForegroundClassName,
-              )}
-              numberOfLines={1}
-            >
-              {props.environmentLabel}
-            </Text>
+            {props.environmentLabel && props.environmentMachine ? (
+              <View className={rowBranch ? "ml-1.5" : undefined}>
+                <EnvironmentMachineSymbol
+                  kind={props.environmentMachine}
+                  size={machineIconSize}
+                  tintColorClassName={
+                    selected
+                      ? selectedThreadRowColors.mutedIconTintClassName
+                      : rowAppearance.tertiaryIconTintClassName
+                  }
+                />
+              </View>
+            ) : null}
+            {props.environmentLabel ? (
+              <Text
+                className={cn(
+                  "shrink text-xs",
+                  rowBranch && !props.environmentMachine && "ml-1.5",
+                  selected
+                    ? selectedThreadRowColors.mutedForegroundClassName
+                    : rowAppearance.tertiaryForegroundClassName,
+                )}
+                numberOfLines={1}
+              >
+                {props.environmentLabel}
+              </Text>
+            ) : null}
           </View>
         ) : (
           <View className="flex-1" />
@@ -1716,7 +1758,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             >
               {thread.title}
             </Text>
-            {cardLine ? (
+            {cardLine || trailDone ? (
               // Takes the provider line's place.
               <Text
                 className={cn(
@@ -1727,6 +1769,19 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                 )}
                 numberOfLines={1}
               >
+                {trailDone ? (
+                  <Text
+                    className={cn(
+                      "font-t3-bold",
+                      selected
+                        ? selectedThreadRowColors.foregroundClassName
+                        : DONE_STATUS_LABEL.className,
+                    )}
+                  >
+                    Done
+                  </Text>
+                ) : null}
+                {trailDone && cardLine ? " · " : null}
                 {cardLine}
               </Text>
             ) : providerNameLabel ? (

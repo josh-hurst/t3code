@@ -122,6 +122,14 @@ export function isTemporaryWorktreeBranch(refName: string): boolean {
   return TEMP_WORKTREE_BRANCH_PATTERN.test(refName.trim().toLowerCase());
 }
 
+/** The branch worth surfacing beside a thread, or null when it is the usual main or master. */
+export function nonMainlineBranchName(branch: string | null | undefined): string | null {
+  const trimmed = branch?.trim() ?? "";
+  if (trimmed === "") return null;
+  const lower = trimmed.toLowerCase();
+  return lower === "main" || lower === "master" ? null : trimmed;
+}
+
 function lowerCaseRemote(value: string): string {
   return value
     .trim()

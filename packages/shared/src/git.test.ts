@@ -9,6 +9,7 @@ import {
   flattenTemporaryWorktreeBranchName,
   isBareGitConfig,
   isTemporaryWorktreeBranch,
+  nonMainlineBranchName,
   normalizeGitRemoteUrl,
   parseOriginUrlFromGitConfig,
   resolveAutoFeatureBranchName,
@@ -198,6 +199,17 @@ describe("parseOriginUrlFromGitConfig", () => {
       "\turl = https://github.com/me/repo.git",
     ].join("\n");
     expect(parseOriginUrlFromGitConfig(config)).toBe("https://github.com/acme/repo.git");
+  });
+});
+
+describe("nonMainlineBranchName", () => {
+  it("hides main and master and keeps every other branch", () => {
+    expect(nonMainlineBranchName(null)).toBeNull();
+    expect(nonMainlineBranchName("  ")).toBeNull();
+    expect(nonMainlineBranchName("main")).toBeNull();
+    expect(nonMainlineBranchName(" Master ")).toBeNull();
+    expect(nonMainlineBranchName("josh/fork-features")).toBe("josh/fork-features");
+    expect(nonMainlineBranchName("origin/main")).toBe("origin/main");
   });
 });
 

@@ -242,7 +242,7 @@ export function sidebarListItemId(item: SidebarListItem): string {
   return item.kind === "thread" ? item.key : sidebarMarkerId(item.marker);
 }
 
-// The Trail lists active rows below the Working and Snoozed shelves.
+// The Trail lists active rows between Needs you and the Working shelf.
 function sectionBelowSidebarMarker(
   section: SidebarSection,
   marker: SidebarListMarker,

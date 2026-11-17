@@ -1948,7 +1948,7 @@ describe("self-filing list", () => {
             : `[${item.type}]`,
     );
 
-  it("files Pinned, Needs you, Working, the Trail, Later, then History", () => {
+  it("files Pinned, Needs you, the Trail, Working, Later, then History", () => {
     const card = (line: string, ask?: string) => ({
       line,
       topics: [],
@@ -2008,11 +2008,11 @@ describe("self-filing list", () => {
       "[Needs you]",
       "waited-longest",
       "waited-less",
-      "[v2-working-shelf]",
-      "working",
       "[Trail]",
       "trail-newer",
       "trail-older",
+      "[v2-working-shelf]",
+      "working",
       "[Later]",
       "snoozed",
       "[History]",
@@ -2024,6 +2024,10 @@ describe("self-filing list", () => {
       item: { variant: "slim", cardLine: "Publish · Fixed the login test" },
       // The Trail's time is the last touch it is ordered by, not the latest activity.
       timeLabel: relativeTime(localIso(11)),
+    });
+    // Working follows the Trail but keeps its own time, not the Trail's last touch.
+    expect(items.find((item) => item.key === "v2-thread:environment-1:working")).toMatchObject({
+      timeLabel: "",
     });
     // In Needs you the open question says more than the outcome.
     expect(layout.items.map((item) => [item.thread.id, item.cardLine])).toEqual(

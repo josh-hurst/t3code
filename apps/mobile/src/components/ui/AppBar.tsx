@@ -118,7 +118,11 @@ export function AppBar(props: AppBarProps) {
   return (
     <>
       <NativeStackScreenOptions
-        optionsVersion={[props.optionsVersion, compactSearch ? menu : undefined]}
+        optionsVersion={[
+          props.optionsVersion,
+          compactSearch ? menu : undefined,
+          props.titleMenu?.items.map((item) => item.id),
+        ]}
         options={{
           headerShown: true,
           headerBackVisible:
@@ -129,6 +133,19 @@ export function AppBar(props: AppBarProps) {
           ...(props.guardBack ? { gestureEnabled: false } : undefined),
           title: props.title,
           unstable_headerSubtitle: props.subtitle || undefined,
+          ...(props.titleMenu
+            ? {
+                unstable_headerTitleMenu: {
+                  title: props.titleMenu.title,
+                  items: props.titleMenu.items.map((item) => ({
+                    type: "action" as const,
+                    label: item.title,
+                    description: item.subtitle,
+                    onPress: item.onPress,
+                  })),
+                },
+              }
+            : undefined),
           ...(props.matchSearchSurface
             ? { contentStyle: { backgroundColor: themeVariables["--color-sheet-solid"] } }
             : undefined),
@@ -288,4 +305,5 @@ export type {
   AppBarMenuItem,
   AppBarProps,
   AppBarSearch,
+  AppBarTitleMenu,
 } from "./AppBar.types";

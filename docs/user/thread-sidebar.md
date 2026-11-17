@@ -63,7 +63,7 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 Pin a thread from its menu to keep it above your active work.
 
 On web and desktop, the rest of the sidebar files itself. Below your pins come
-**Needs you**, **Working**, the **Trail**, **Later**, and **History**, and each section
+**Needs you**, the **Trail**, **Working**, **Later**, and **History**, and each section
 keeps its own order, so there is nothing to arrange by hand. Dragging still pins, unpins,
 settles, un-settles, and wakes a thread; a thread you drop below the pins goes to Needs
 you or the Trail, wherever it belongs; an older thread can land under the Trail's
@@ -354,8 +354,9 @@ published" marks it for you. History and Mark published need a server that keeps
 
 On mobile, **All** beside the thread list's History label opens the same History screen, with
 a project filter, Still open, search, **Mark published** (it asks first) and **Done**. Tap a
-topic to open its thread where the topic started. In a thread with two or more topics,
-**Contents** in the thread settings sheet lists them; tap one to scroll to where it started.
+topic to open its thread where the topic started. In a thread with two or more topics, tap
+the thread's title on iPhone and iPad to list them, or use **Contents** in the thread settings
+sheet; tap one to scroll to where it started.
 Mobile shows topics but does not rename or merge them.
 
 ## Link a pull request

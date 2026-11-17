@@ -157,8 +157,8 @@ export function tideRenderedOrder<T>(sections: {
   return [
     ...sections.pinned,
     ...sections.needsYou,
-    ...sections.working,
     ...sections.trail,
+    ...sections.working,
     ...sections.later,
     ...sections.history,
   ];

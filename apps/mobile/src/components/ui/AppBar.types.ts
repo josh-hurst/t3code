@@ -48,6 +48,16 @@ export interface AppBarMenu {
   readonly items: ReadonlyArray<AppBarMenuItem>;
 }
 
+export interface AppBarTitleMenu {
+  readonly title?: string;
+  readonly items: ReadonlyArray<{
+    readonly id: string;
+    readonly title: string;
+    readonly subtitle?: string;
+    readonly onPress: () => void;
+  }>;
+}
+
 export interface AppBarConfirm {
   readonly label: string;
   readonly onPress: () => void;
@@ -77,6 +87,8 @@ export interface AppBarProps {
   /** Android: replaces the title text, such as the brand title. iOS ignores it. */
   readonly titleContent?: ReactNode;
   readonly subtitle?: string | null;
+  /** iOS: tapping the title opens this menu. Android ignores it. */
+  readonly titleMenu?: AppBarTitleMenu;
   readonly actions?: ReadonlyArray<AppBarAction>;
   /**
    * Pull-to-refresh is the gesture on both platforms. Android also lists this in the overflow

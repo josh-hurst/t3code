@@ -61,7 +61,7 @@ export function createSidebarCollisionDetection(
         if (pointer.y < previousY && pointer.y <= boundary.bottom) boundarySection = "pinned";
         else if (pointer.y > previousY && pointer.y >= boundary.top) boundarySection = "active";
         const nextHeader = (
-          ["working-header", "snoozed-header", "trail-header", "settled-header"] as const
+          ["trail-header", "working-header", "snoozed-header", "settled-header"] as const
         )
           .map((marker) =>
             args.droppableContainers.find((container) => container.id === sidebarMarkerId(marker)),
@@ -360,18 +360,22 @@ export function createSidebarSortingStrategy(input: {
     if (hasTrail) {
       projected.push(...groups.active.filter((item) => needsYouKeys.has(item.key)));
     } else section("active");
-    if (items.some((item) => item.kind === "marker" && item.marker === "working-header")) {
-      marker("working-header");
-      projected.push(...groups.working);
-    }
-    if (
-      groups.snoozed.length > 0 ||
-      ((active.section !== "snoozed" || (input.snoozedThreadCount ?? 0) > 1) &&
-        items.some((item) => item.kind === "marker" && item.marker === "snoozed-header"))
-    ) {
-      marker("snoozed-header");
-      projected.push(...groups.snoozed);
-    }
+    const shelves = () => {
+      if (items.some((item) => isMarker(item, "working-header"))) {
+        marker("working-header");
+        projected.push(...groups.working);
+      }
+      if (
+        groups.snoozed.length > 0 ||
+        ((active.section !== "snoozed" || (input.snoozedThreadCount ?? 0) > 1) &&
+          items.some((item) => isMarker(item, "snoozed-header")))
+      ) {
+        marker("snoozed-header");
+        projected.push(...groups.snoozed);
+      }
+    };
+    // Below Needs you, a Trail comes before the Working and Later shelves.
+    if (!hasTrail) shelves();
     if (hasTrail) {
       marker("trail-header");
       // A row past the Trail's cap lands under its expander, so it leaves the list.
@@ -381,6 +385,7 @@ export function createSidebarSortingStrategy(input: {
       if (trail.length > 0) projected.push(...trail);
       else marker("active-placeholder");
       if (items.some((item) => isMarker(item, "trail-more"))) marker("trail-more");
+      shelves();
     }
     marker("settled-header");
     section("settled");

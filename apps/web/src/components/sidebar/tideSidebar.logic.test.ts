@@ -204,7 +204,7 @@ it("labels History by the day each thread was settled", () => {
   ]);
 });
 
-it("draws Pinned, Needs you, Working, Trail, Later, then History", () => {
+it("draws Pinned, Needs you, Trail, Working, Later, then History", () => {
   expect(
     tideRenderedOrder({
       history: ["h"],
@@ -214,7 +214,7 @@ it("draws Pinned, Needs you, Working, Trail, Later, then History", () => {
       needsYou: ["n"],
       pinned: ["p"],
     }),
-  ).toEqual(["p", "n", "w", "t", "l", "h"]);
+  ).toEqual(["p", "n", "t", "w", "l", "h"]);
 });
 
 describe("nextNeedsYouKey", () => {

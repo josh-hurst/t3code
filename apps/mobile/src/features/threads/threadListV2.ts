@@ -685,9 +685,12 @@ export function buildThreadListV2ListItems(input: {
 }): ThreadListV2ListItem[] {
   const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   const trailStart = input.tide?.trailHeaderIndex ?? null;
-  // The self-filing list draws Later after the Trail, so the Trail stops where Later starts.
+  // The self-filing list draws Working, then Later, after the Trail, so the Trail stops at the first.
   const trailStop =
-    input.snoozedShelfHeaderIndex ?? input.settledShelfHeaderIndex ?? input.items.length;
+    input.workingShelfHeaderIndex ??
+    input.snoozedShelfHeaderIndex ??
+    input.settledShelfHeaderIndex ??
+    input.items.length;
   const threadItems = input.items.map((item, index): ThreadListV2ListItem => {
     const snoozeWakeLabelText =
       item.snoozed && input.snoozeLabelNow !== undefined
@@ -739,12 +742,14 @@ export function buildThreadListV2ListItems(input: {
   const tide = input.tide ?? null;
   const trailHeaderIndex = tide?.trailHeaderIndex ?? null;
   const listEnd = settledShelfHeaderIndex ?? threadItems.length;
-  const trailEnd = snoozedShelfHeaderIndex ?? listEnd;
+  // Classic: active, Working, Snoozed. Self-filing: Needs you, Trail, Working, Later.
   const snoozedEnd = tide === null ? (trailHeaderIndex ?? listEnd) : listEnd;
-  const workingEnd =
-    (tide === null ? snoozedShelfHeaderIndex : (trailHeaderIndex ?? snoozedShelfHeaderIndex)) ??
-    snoozedEnd;
-  const activeEnd = workingShelfHeaderIndex ?? workingEnd;
+  const workingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
+  const trailEnd = workingShelfHeaderIndex ?? workingEnd;
+  const activeEnd =
+    (tide === null ? workingShelfHeaderIndex : trailHeaderIndex) ??
+    workingShelfHeaderIndex ??
+    workingEnd;
   const shelfDisabled = input.shelfPreferencesLoading === true;
   const result: ThreadListV2ListItem[] = [...pendingItems];
   const folders = input.folders ?? [];
@@ -780,16 +785,19 @@ export function buildThreadListV2ListItems(input: {
     result.push(threadItems[index]!);
   }
   pushFoldersAt(activeEnd);
-  if (workingShelfHeaderIndex !== null && workingCount > 0) {
-    result.push({
-      type: "v2-working-shelf",
-      key: "v2-working-shelf",
-      count: workingCount,
-      expanded: input.workingShelfExpanded === true,
-      disabled: shelfDisabled,
-    });
-    result.push(...threadItems.slice(workingShelfHeaderIndex, workingEnd));
-  }
+  const pushWorking = () => {
+    if (workingShelfHeaderIndex !== null && workingCount > 0) {
+      result.push({
+        type: "v2-working-shelf",
+        key: "v2-working-shelf",
+        count: workingCount,
+        expanded: input.workingShelfExpanded === true,
+        disabled: shelfDisabled,
+      });
+      result.push(...threadItems.slice(workingShelfHeaderIndex, workingEnd));
+    }
+  };
+  if (tide === null) pushWorking();
   const pushLater = () => {
     if (snoozedShelfHeaderIndex !== null && snoozedCount > 0) {
       result.push({
@@ -824,7 +832,10 @@ export function buildThreadListV2ListItems(input: {
       });
     }
   }
-  if (tide !== null) pushLater();
+  if (tide !== null) {
+    pushWorking();
+    pushLater();
+  }
   if (settledShelfHeaderIndex !== null && settledCount > 0) {
     result.push({
       type: "v2-settled-shelf",
@@ -930,12 +941,8 @@ function slimRowLine(
   const lead = later === null ? null : threadLaterLead(thread, later);
   const line = threadCardRowLine(thread.card, { needsYou: false });
   return lead === null
-    ? threadRowLineText({
-        // An unread finished run that owes nothing sits in the Trail, marked until opened.
-        owed:
-          threadCardOwedLabel(thread.card) ?? (threadHasUnseenCompletion(thread) ? "Done" : null),
-        line,
-      })
+    ? // The row draws a Trail row's green Done lead itself.
+      threadRowLineText({ owed: threadCardOwedLabel(thread.card), line })
     : threadRowLineText({ owed: lead.word, line: lead.text ?? line });
 }
 
@@ -991,7 +998,7 @@ export function buildThreadListV2Items(input: {
   readonly isListedSettled?: (thread: EnvironmentThreadShell) => boolean;
   /** Settled threads in scope that are not local (older settled threads not loaded). */
   readonly unloadedSettledCount?: number;
-  /** The self-filing list: Needs you, Working, the Trail, then Later. Ignores project folders. */
+  /** The self-filing list: Needs you, the Trail, Working, then Later. Ignores project folders. */
   readonly tide?: ThreadListV2TideInput;
   /** Names a slim row's project in the self-filing list. */
   readonly projectTitleOf?: (thread: EnvironmentThreadShell) => string | null;
@@ -1257,19 +1264,24 @@ export function buildThreadListV2Items(input: {
       }
     });
   }
-  const workingShelfHeaderIndex = orderedWorking.length > 0 ? items.length : null;
-  for (const thread of visibleWorking) {
-    items.push({
-      thread,
-      variant: "card",
-      snoozed: false,
-      pinned: false,
-      wokeAt: resolveThreadListV2WokeAt(thread, { now }),
-      cardLine: cardLineOf(thread, false),
-      projectLine: null,
-      isLast: false,
-    });
-  }
+  let workingShelfHeaderIndex: number | null = null;
+  const pushWorking = () => {
+    workingShelfHeaderIndex = orderedWorking.length > 0 ? items.length : null;
+    for (const thread of visibleWorking) {
+      items.push({
+        thread,
+        variant: "card",
+        snoozed: false,
+        pinned: false,
+        wokeAt: resolveThreadListV2WokeAt(thread, { now }),
+        cardLine: cardLineOf(thread, false),
+        projectLine: null,
+        isLast: false,
+      });
+    }
+  };
+  // The self-filing list draws Working below the Trail, so the Trail sits right under Needs you.
+  if (tideZones === null) pushWorking();
   let snoozedShelfHeaderIndex: number | null = null;
   const pushLater = () => {
     snoozedShelfHeaderIndex = orderedSnoozed.length > 0 ? items.length : null;
@@ -1301,7 +1313,10 @@ export function buildThreadListV2Items(input: {
       isLast: false,
     });
   }
-  if (tideZones !== null) pushLater();
+  if (tideZones !== null) {
+    pushWorking();
+    pushLater();
+  }
   const settledShelfHeaderIndex = settledTotal > 0 ? items.length : null;
   for (const thread of visibleSettled) {
     items.push({

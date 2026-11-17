@@ -108,6 +108,7 @@ import {
   setFileDragActive,
 } from "../Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "../BranchToolbar.logic";
+import { nonMainlineBranchName } from "@t3tools/shared/git";
 import {
   ThreadPullRequestBadgeControl,
   ThreadPullRequestsMiniList,
@@ -972,6 +973,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     needsYou: props.needsYou,
   });
   const showsBranchDetail = showsBranch && (Boolean(checkoutThread.branch) || showsScratchMachine);
+  // With the meta line given to the message, an off-main branch rides beside the project name.
+  const projectLineBranch = showsBranch ? null : nonMainlineBranchName(checkoutThread.branch);
   // The new layout's last line; Needs you, Working and pinned rows (cards) show status.
   const recheckLimit = useAtomValue(serverEnvironment.laterRecheckLimitAtom(thread.environmentId));
   const tideLead = props.tide
@@ -1989,13 +1992,24 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {pinIndicator}
               {props.projectDisplayName ? (
                 <span
-                  className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
+                  className={cn(
+                    "min-w-0 truncate font-normal text-secondary-label text-xs",
+                    projectLineBranch === null ? "flex-1" : "max-w-1/2",
+                  )}
                 >
                   {props.projectDisplayName}
                 </span>
-              ) : (
+              ) : projectLineBranch === null ? (
                 <span className="flex-1" />
-              )}
+              ) : null}
+              {projectLineBranch !== null ? (
+                <span className="flex min-w-0 flex-1 items-center gap-1 text-secondary-label">
+                  <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+                  <span className="flex min-w-0 font-mono text-2xs">
+                    <MiddleTruncate value={projectLineBranch} showTitle={false} />
+                  </span>
+                </span>
+              ) : null}
               {sortable?.isDragging ? (
                 dragDestination
               ) : (
