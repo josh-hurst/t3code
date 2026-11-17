@@ -20,6 +20,8 @@ import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { shouldRestoreNativeSearch } from "./workspace-tabs-state";
 import { useFloatingWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWorkspaceTabBar";
 import { WorkspaceTabToolbarButtons } from "./WorkspaceSectionToolbar";
+import { workspaceListFilterIcon } from "./WorkspaceListHeader.types";
+import { useHomeListFilter } from "../../home/useHomeListFilter";
 
 const SEARCH_LABELS = {
   threads: "Search threads",
@@ -50,6 +52,7 @@ export function WorkspaceToolbar(props: {
   const { panes } = useWorkspacePaneState();
   const searchRef = useRef<SearchBarCommands>(null);
   const settingsMenu = useSettingsEnvironmentMenu();
+  const homeFilter = useHomeListFilter();
   // The Settings list takes the selected tab's place, so search follows it.
   const selectedTab = workspace.settingsOpen ? "settings" : workspace.state.selectedTab;
   const tab = workspace.state.tabs[selectedTab];
@@ -206,6 +209,14 @@ export function WorkspaceToolbar(props: {
           {searchButton}
           {nativeToolbarCompose && foldedSearch ? <Toolbar.Spacer width={8} /> : null}
           {composeButton}
+          {selectedTab === "threads" && homeFilter.environments.length > 0
+            ? createNativeHeaderMenu({
+                title: "Filter threads",
+                icon: workspaceListFilterIcon(homeFilter.activeLabels.length > 0),
+                items: homeFilter.menuItems,
+                separateBackground: false,
+              })
+            : null}
           {selectedTab !== "threads" ||
           isDuoDevice(deviceType) ||
           (deviceType === "pad" && layout.usesSplitView) ||

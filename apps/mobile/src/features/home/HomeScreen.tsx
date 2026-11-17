@@ -105,7 +105,7 @@ import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "./thread-sw
 import { useFabScroll } from "./FabScrollContext";
 import { holdLaunchSplashForHomeRows, settleLaunchSplashHomeRows } from "./home-launch-splash";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
-import { ThreadListFilters } from "./ThreadListFilters";
+import { ThreadListActiveFilters } from "./ThreadListActiveFilters";
 import { deriveHomeEmptyState } from "./home-empty-state";
 
 interface HomeScreenProps {
@@ -120,6 +120,8 @@ interface HomeScreenProps {
     HomeListFilterMenuEnvironment & Pick<WorkspaceEnvironment, "connectionState">
   >;
   readonly searchQuery: string;
+  /** Names of the active environment and project filters. */
+  readonly activeFilterLabels: ReadonlyArray<string>;
   readonly selectedEnvironmentId: EnvironmentId | null;
   readonly selectedProjectKey: string | null;
   readonly projectSortOrder: HomeProjectSortOrder;
@@ -751,17 +753,12 @@ export function HomeScreen(props: HomeScreenProps) {
     <>
       {listHeader}
       {Platform.OS === "ios" && workspace ? (
-        <ThreadListFilters
-          gutter={sidebarSurface ? 8 : 0}
-          environments={props.environments}
-          projects={pickableProjectGroups(projectScopes).map((scope) => ({
-            key: scope.key,
-            label: scope.title,
-          }))}
-          selectedEnvironmentId={props.selectedEnvironmentId}
-          selectedProjectKey={props.selectedProjectKey}
-          onEnvironmentChange={props.onEnvironmentChange}
-          onProjectChange={props.onProjectChange}
+        <ThreadListActiveFilters
+          labels={props.activeFilterLabels}
+          onReset={() => {
+            props.onEnvironmentChange(null);
+            props.onProjectChange(null);
+          }}
         />
       ) : null}
     </>
