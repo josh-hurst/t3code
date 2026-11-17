@@ -575,6 +575,7 @@ export function HomeScreen(props: HomeScreenProps) {
           disabled={item.disabled}
           expanded={item.expanded}
           onToggle={toggleSnoozedShelf}
+          spacedAbove={item.spacedAbove}
         />
       );
     }

@@ -457,7 +457,7 @@ export interface ThreadListV2WorkingShelfListItem {
   readonly count: number;
   readonly expanded: boolean;
   readonly disabled: boolean;
-  /** Below the self-filing Trail, extra space sets Working apart. */
+  /** Leads the self-filing Working and Later stack, so extra space sets it apart from the Trail. */
   readonly spacedAbove: boolean;
 }
 
@@ -479,6 +479,8 @@ export interface ThreadListV2SnoozedShelfListItem {
   readonly expanded: boolean;
   /** Include disabled state in item equality; recycled cells ignore render-closure updates. */
   readonly disabled: boolean;
+  /** Leads the self-filing Working and Later stack, so extra space sets it apart from the Trail. */
+  readonly spacedAbove: boolean;
 }
 
 export interface ThreadListV2SettledShelfListItem {
@@ -594,7 +596,8 @@ export function threadListV2ListItemsAreEqual(
         previous.label === item.label &&
         previous.count === item.count &&
         previous.expanded === item.expanded &&
-        previous.disabled === item.disabled
+        previous.disabled === item.disabled &&
+        previous.spacedAbove === item.spacedAbove
       );
     case "v2-settled-shelf":
       return (
@@ -798,8 +801,9 @@ export function buildThreadListV2ListItems(input: {
     result.push(threadItems[index]!);
   }
   pushFoldersAt(activeEnd);
+  const hasWorkingShelf = workingShelfHeaderIndex !== null && workingCount > 0;
   const pushWorking = () => {
-    if (workingShelfHeaderIndex !== null && workingCount > 0) {
+    if (hasWorkingShelf) {
       result.push({
         type: "v2-working-shelf",
         key: "v2-working-shelf",
@@ -821,6 +825,7 @@ export function buildThreadListV2ListItems(input: {
         count: snoozedCount,
         expanded: input.snoozedShelfExpanded === true,
         disabled: shelfDisabled,
+        spacedAbove: tide !== null && !hasWorkingShelf,
       });
       result.push(...threadItems.slice(snoozedShelfHeaderIndex, snoozedEnd));
     }

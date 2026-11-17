@@ -561,6 +561,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             expanded={item.expanded}
             onToggle={toggleSnoozedShelf}
             pane="sidebar"
+            spacedAbove={item.spacedAbove}
           />
         );
       case "v2-settled-shelf":

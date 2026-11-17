@@ -1083,11 +1083,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     event.stopPropagation();
     onSettle(threadRef);
   };
-  const handleActionPointerDown = (event: ReactPointerEvent) => {
+  const startSweep = (action: SidebarSweepAction, event: ReactPointerEvent) => {
     if (!event.isPrimary || event.button !== 0) return;
     event.stopPropagation();
-    onActionSweepStart(threadRef, variantAction, event.nativeEvent);
+    onActionSweepStart(threadRef, action, event.nativeEvent);
   };
+  const handleActionPointerDown = (event: ReactPointerEvent) => startSweep(variantAction, event);
+  const handleSettlePointerDown = (event: ReactPointerEvent) => startSweep("settle", event);
   const handleUnsettleClick = (event: ReactMouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1513,7 +1515,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               type="button"
               aria-label="Settle thread"
               onClick={handleSettleClick}
-              onPointerDown={handleActionPointerDown}
+              onPointerDown={handleSettlePointerDown}
               className={actionClassName}
             />
           }
@@ -1558,23 +1560,28 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         </>
       ) : null
     ) : variantAction === "unsnooze" ? (
-      props.snoozeSupported ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                aria-label="Wake thread now"
-                onClick={handleUnsnoozeClick}
-                onPointerDown={handleActionPointerDown}
-                className={actionClassName}
-              />
-            }
-          >
-            <AlarmClockOffIcon className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">Wake thread now</TooltipPopup>
-        </Tooltip>
+      props.snoozeSupported || settleButton !== null ? (
+        <>
+          {props.snoozeSupported ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="Wake thread now"
+                    onClick={handleUnsnoozeClick}
+                    onPointerDown={handleActionPointerDown}
+                    className={actionClassName}
+                  />
+                }
+              >
+                <AlarmClockOffIcon className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Wake thread now</TooltipPopup>
+            </Tooltip>
+          ) : null}
+          {settleButton}
+        </>
       ) : null
     ) : variantAction === "unsettle" ? (
       props.settlementSupported ? (
