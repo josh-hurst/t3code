@@ -9,6 +9,7 @@ import {
   type OrchestrationV2AppThread,
   type OrchestrationV2Command,
   type RunId,
+  type ThreadCard,
   type ThreadFollowUp,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -158,6 +159,23 @@ export function followUpFilesOnVisit(
     threadFollowUpIsArmed(followUp) &&
     followUp?.filedAt === undefined &&
     (thread.snoozedUntil == null || DateTime.toEpochMillis(thread.snoozedUntil) <= nowMs)
+  );
+}
+
+/**
+ * Whether the reply just read asks nothing of the owner, so reading it may file the thread:
+ * the latest run is summarized and its summary owes only re-checks. No summary yet means
+ * unknown, which keeps the thread out of Later.
+ */
+export function replyAsksNothing(
+  card: Pick<ThreadCard, "runId" | "open"> | null | undefined,
+  latestRunId: RunId | null,
+): boolean {
+  return (
+    card != null &&
+    latestRunId !== null &&
+    card.runId === latestRunId &&
+    card.open.every((item) => item.kind === "followup")
   );
 }
 

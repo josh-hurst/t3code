@@ -12,8 +12,9 @@ export function useThreadListV2ShelfPreferences() {
   // Unset means the self-filing list, so it is also what shows before preferences load.
   const tide = !(loaded && preferencesResult.value.classicThreadList === true);
   // Each layout keeps its own Later/Snoozed state, so switching back restores the classic shelf.
+  // Later starts collapsed in both layouts: what lands there should not need a look.
   const snoozedShelfExpanded = tide
-    ? !loaded || preferencesResult.value.threadListLaterExpanded !== false
+    ? loaded && preferencesResult.value.threadListLaterExpanded === true
     : loaded && preferencesResult.value.threadListSnoozedShelfExpanded === true;
   const settledShelfExpanded =
     loaded && preferencesResult.value.threadListSettledShelfExpanded === true;
@@ -41,7 +42,7 @@ export function useThreadListV2ShelfPreferences() {
       transform: (current) =>
         current.classicThreadList === true
           ? { threadListSnoozedShelfExpanded: current.threadListSnoozedShelfExpanded !== true }
-          : { threadListLaterExpanded: current.threadListLaterExpanded === false },
+          : { threadListLaterExpanded: current.threadListLaterExpanded !== true },
     });
   };
   const toggleSettledShelf = () => {

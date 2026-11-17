@@ -511,9 +511,10 @@ function useSidebarThreads(input: {
     false,
     Schema.Boolean,
   );
+  // Later starts collapsed in both layouts: what lands there should not need a look.
   const [snoozedShelfExpanded, setSnoozedShelfExpanded] = useLocalStorage(
     tide ? FILED_LATER_EXPANDED_KEY : SNOOZED_SHELF_EXPANDED_KEY,
-    tide,
+    false,
     Schema.Boolean,
   );
   const [workingShelfExpanded, setWorkingShelfExpanded] = useLocalStorage(

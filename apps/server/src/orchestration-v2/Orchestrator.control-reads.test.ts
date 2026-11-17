@@ -19,6 +19,7 @@ import {
   ThreadId,
   TurnItemId,
   isThreadSetAside,
+  type ThreadCardOpenItem,
   threadFollowUpIsArmed,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -2674,6 +2675,40 @@ const completeRuns = Effect.fn(function* (threadId: ThreadId) {
   });
 });
 
+/** The reply summary for the thread's latest run, as the card call records it. */
+const recordCard = Effect.fn(function* (
+  threadId: ThreadId,
+  id: string,
+  open: ReadonlyArray<ThreadCardOpenItem>,
+) {
+  const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const now = yield* DateTime.now;
+  const { runs } = yield* projections.getThreadRecords(threadId, ["runs"]);
+  const run = runs.at(-1)!;
+  yield* orchestrator.dispatch({
+    type: "thread.card.record",
+    commandId: CommandId.make(`${id}:card`),
+    threadId,
+    runId: run.id,
+    messageId: MessageId.make(`${id}:reply`),
+    repliedAt: DateTime.formatIso(now),
+    line: "Nightly test still running",
+    topics: [],
+    open,
+    run: {
+      ordinal: run.ordinal,
+      userMessageId: run.userMessageId,
+      startedAt: DateTime.formatIso(now),
+      startedBy: "owner",
+      ownerText: "Is the nightly test done?",
+      goAhead: false,
+      ownerSpokeMidRun: false,
+    },
+    filing: [],
+  });
+});
+
 const armAsAgent = (threadId: ThreadId, id: string, limit: number) =>
   Effect.flatMap(Effect.all([Orchestrator.OrchestratorV2, DateTime.now]), ([orchestrator, now]) =>
     orchestrator.dispatch({
@@ -2711,6 +2746,23 @@ it.effect(
 
       yield* completeRuns(threadId);
       yield* TestClock.adjust("1 second");
+      // A reply that still asks the owner something keeps the thread out of Later.
+      yield* recordCard(threadId, "later-life-ask", [
+        { kind: "ask", text: "Run the slow suite too?" },
+        { kind: "followup", text: "Check the nightly test" },
+      ]);
+      yield* orchestrator.dispatch({
+        type: "thread.visit",
+        commandId: CommandId.make("later-life-visit-ask"),
+        threadId,
+        visitedAt: DateTime.formatIso(yield* DateTime.now),
+      });
+      assert.isUndefined((yield* projections.getThread(threadId)).followUp?.filedAt);
+
+      yield* TestClock.adjust("1 second");
+      yield* recordCard(threadId, "later-life-quiet", [
+        { kind: "followup", text: "Check the nightly test" },
+      ]);
       yield* orchestrator.dispatch({
         type: "thread.visit",
         commandId: CommandId.make("later-life-visit-read"),
@@ -2837,6 +2889,9 @@ it.effect(
       assert.isUndefined(thread.followUp?.filedAt);
       yield* completeRuns(threadId);
       yield* TestClock.adjust("1 second");
+      yield* recordCard(threadId, "later-owner-reply", [
+        { kind: "followup", text: "Check the rollout" },
+      ]);
       yield* orchestrator.dispatch({
         type: "thread.visit",
         commandId: CommandId.make("later-owner-visit-reply"),

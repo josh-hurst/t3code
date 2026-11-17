@@ -176,6 +176,7 @@ import { applyBackfill, applyRegroup, threadRegroupEffect } from "./ThreadRegrou
 import {
   followUpAfterOwnerMessage,
   followUpFilesOnVisit,
+  replyAsksNothing,
   holdForFollowUp,
   nextFollowUp,
   releaseSetAside,
@@ -3829,9 +3830,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.searchQuery,
         )
       : null;
-    // Reading the reply that set a re-check files the thread into Later, once. A reply to
-    // something the owner wrote since is news, so it stays out. Emitted before the visit,
-    // whose projection step rereads the thread.
+    // Reading the reply that set a re-check files the thread into Later, once, and only when
+    // that reply asks nothing of the owner. A reply to something the owner wrote since is
+    // news, so it stays out. Emitted before the visit, whose projection step rereads it.
     if (
       thread.followUp != null &&
       followUpFilesOnVisit(thread, DateTime.toEpochMillis(occurredAt))
@@ -3848,6 +3849,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (
         shell !== null &&
         shell.activeRunId == null &&
+        shell.pendingRuntimeRequest === null &&
+        replyAsksNothing(thread.card, shell.latestRunId) &&
         (wroteAt === null ||
           DateTime.toEpochMillis(wroteAt) <= Date.parse(thread.followUp.armedAt)) &&
         (completedAt === null ||
@@ -4145,6 +4148,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       line: command.line,
       topics: command.topics,
       open: command.open,
+      settle: command.settle,
       at: DateTime.formatIso(occurredAt),
       // A wake starts a newer run without answering anything, so runs are not compared.
       answered: lastWroteAt !== null && DateTime.toEpochMillis(lastWroteAt) > repliedAtMs,

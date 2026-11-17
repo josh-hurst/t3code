@@ -520,7 +520,8 @@ is sent to the thread's agent, which works on it without you, and the thread com
 when the run finishes. If you open the thread before then, the re-check still runs.
 
 An agent can schedule its own re-check when you ask for something it can't answer yet,
-and tells you when. The thread moves to Later once you've read the reply and left it. If you write to
+and tells you when. The thread moves to Later once you've read the reply and left it, but only
+if the reply asks nothing of you: no question, and nothing to check, commit, or publish. If you write to
 the thread again, the re-check still runs, but the answers to what you wrote stay where you can
 see them instead of moving to Later. If the re-check
 finds nothing new, the agent can schedule another, and the row reads **Re-check 2 of 3**.
