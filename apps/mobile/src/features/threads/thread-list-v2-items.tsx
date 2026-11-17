@@ -1568,8 +1568,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       }
     : owedLead !== null
       ? {
-          icon: null,
-          iconTintClassName: "",
+          // The run is done, so it keeps Done's green check; the word says what is still owed.
+          icon: DONE_STATUS_LABEL.icon,
+          iconTintClassName: selected
+            ? selectedThreadRowColors.iconTintClassName
+            : DONE_STATUS_LABEL.iconTintClassName,
           className: selected ? selectedThreadRowColors.foregroundClassName : "text-foreground",
           label: owedLead,
         }

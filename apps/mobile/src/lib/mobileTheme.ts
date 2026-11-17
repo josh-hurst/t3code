@@ -457,7 +457,7 @@ export function createMobileThemeVariables(
   };
 }
 
-// The default theme's greys lean warm: beige paper in light mode, warm charcoal in dark.
+// The default theme's greys lean warm: beige paper in light mode, near-neutral graphite in dark.
 const WARM_HUE = (80 * Math.PI) / 180;
 const NEUTRAL_CHROMA = 0.03;
 
@@ -476,9 +476,10 @@ function warmNeutral(value: string, appearance: MobileThemeAppearance, page = fa
   const dark = appearance === "dark";
   // Light: pale surfaces settle from stark white into paper. Dark: the near-black lifts a little.
   const warmLightness = dark
-    ? lightness + (page ? 0.015 : 0.07) * Math.max(0, 1 - lightness / 0.4)
+    ? lightness + (page ? 0 : 0.035) * Math.max(0, 1 - lightness / 0.4)
     : lightness - 0.03 * Math.max(0, (lightness - 0.8) / 0.2) - (page ? 0.025 : 0);
-  const chroma = dark ? 0.008 + 0.01 * warmLightness : 0.004 + 0.014 * warmLightness;
+  // Dark stays close to neutral graphite, like Material's dark surfaces; light is beige paper.
+  const chroma = dark ? 0.003 + 0.005 * warmLightness : 0.004 + 0.014 * warmLightness;
   const [red, green, blue] = oklabToSrgb(
     warmLightness,
     chroma * Math.cos(WARM_HUE),
