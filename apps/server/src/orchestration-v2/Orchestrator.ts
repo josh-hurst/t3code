@@ -3829,8 +3829,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.searchQuery,
         )
       : null;
-    // Reading a finished reply with a pending re-check files the thread into Later, once.
-    // Emitted before the visit, whose projection step rereads the thread.
+    // Reading the reply that set a re-check files the thread into Later, once. A reply to
+    // something the owner wrote since is news, so it stays out. Emitted before the visit,
+    // whose projection step rereads the thread.
     if (
       thread.followUp != null &&
       followUpFilesOnVisit(thread, DateTime.toEpochMillis(occurredAt))
@@ -3843,9 +3844,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ),
         );
       const completedAt = shell?.latestRunCompletedAt ?? null;
+      const wroteAt = shell?.latestUserAuthoredMessageAt ?? null;
       if (
         shell !== null &&
         shell.activeRunId == null &&
+        (wroteAt === null ||
+          DateTime.toEpochMillis(wroteAt) <= Date.parse(thread.followUp.armedAt)) &&
         (completedAt === null ||
           DateTime.toEpochMillis(visitedAt.value) >= DateTime.toEpochMillis(completedAt)) &&
         (yield* snoozeRefusal(command.threadId)) === null

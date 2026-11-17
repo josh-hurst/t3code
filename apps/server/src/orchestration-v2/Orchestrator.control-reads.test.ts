@@ -2827,12 +2827,25 @@ it.effect(
       assert.isTrue(isThreadSetAside(thread.snoozedUntil));
       assert.deepInclude(thread.followUp, { armedBy: "user", quietCount: 0 });
 
-      // "Thanks" after "I'll check tomorrow" keeps the check, and reading files it again later.
+      // Writing after the check was set keeps it but ends the hold: the reply answers a new
+      // question, so reading it leaves the thread out of Later until the check runs.
+      yield* TestClock.adjust("1 second");
       yield* laterMessage(threadId, "later-owner-thanks", "owner");
       thread = yield* projections.getThread(threadId);
       assert.isNull(thread.snoozedUntil ?? null);
       assert.isDefined(thread.followUp);
       assert.isUndefined(thread.followUp?.filedAt);
+      yield* completeRuns(threadId);
+      yield* TestClock.adjust("1 second");
+      yield* orchestrator.dispatch({
+        type: "thread.visit",
+        commandId: CommandId.make("later-owner-visit-reply"),
+        threadId,
+        visitedAt: DateTime.formatIso(yield* DateTime.now),
+      });
+      thread = yield* projections.getThread(threadId);
+      assert.isNull(thread.snoozedUntil ?? null);
+      assert.isTrue(threadFollowUpIsArmed(thread.followUp));
 
       yield* orchestrator.dispatch({
         type: "thread.follow-up.clear",

@@ -4,7 +4,7 @@ import { expect, it, vi } from "vite-plus/test";
 
 import type { VisitThreadInput } from "../operations/commands.ts";
 import { claimThreadOpen } from "./threadSearch.ts";
-import { createThreadVisitTracker, VISIT_DISPATCH_THROTTLE_MS } from "./threadVisits.ts";
+import { createThreadVisitTracker } from "./threadVisits.ts";
 
 const environmentId = EnvironmentId.make("env-visits");
 
@@ -48,6 +48,11 @@ function setup(threadName: string, initial: Omit<Shell, "environmentId" | "id"> 
     visits,
     localVisits,
     mount: () => registry.mount(tracker(ref)),
+    /** Leaving: the registry drops the tracker on its next tick. */
+    leave: (unmount: () => void) => {
+      unmount();
+      vi.runOnlyPendingTimers();
+    },
     update: (patch: Partial<Shell>) => {
       const current = registry.get(shellAtom);
       registry.set(shellAtom, {
@@ -63,131 +68,88 @@ function setup(threadName: string, initial: Omit<Shell, "environmentId" | "id"> 
   };
 }
 
-it("records the open once, then throttles streaming visits", () => {
-  using t = setup("thread-throttle", {
+it("records the open without marking anything read, and marks it read on leaving", () => {
+  using t = setup("thread-leave", {
     updatedAt: at(10),
     lastVisitedAt: at(0),
-    latestRun: null,
+    latestRun: { completedAt: at(9) },
   });
-  t.mount();
-  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(10), opened: true }]);
+  const unmount = t.mount();
+  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(0), opened: true }]);
 
-  vi.advanceTimersByTime(1_000);
+  // A reply landing while the thread is shown stays unread until the user moves on.
   t.update({ updatedAt: at(11) });
-  t.update({ updatedAt: at(12) });
+  t.update({ updatedAt: at(20), latestRun: { completedAt: at(20) } });
+  vi.advanceTimersByTime(60_000);
   expect(t.visits).toHaveLength(1);
 
-  vi.advanceTimersByTime(VISIT_DISPATCH_THROTTLE_MS - 1_000);
-  expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(12) }]);
+  t.leave(unmount);
+  expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(20) }]);
 });
 
-it("sends an unseen completion without waiting for the throttle", () => {
-  using t = setup("thread-completion", {
+it("sends nothing on leaving a thread that had nothing new", () => {
+  using t = setup("thread-leave-read", {
     updatedAt: at(10),
-    lastVisitedAt: at(0),
-    latestRun: null,
+    lastVisitedAt: at(10),
+    latestRun: { completedAt: at(9) },
   });
-  t.mount();
-  t.update({ updatedAt: at(20), latestRun: { completedAt: at(20) } });
-  expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(20) }]);
+  t.leave(t.mount());
+  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(10), opened: true }]);
 });
 
 it("does not resend the open a palette pick already sent", () => {
   using t = setup("thread-palette", { updatedAt: at(10), lastVisitedAt: at(0), latestRun: null });
   claimThreadOpen(environmentId, t.ref.threadId, Date.UTC(2026, 0, 1));
-  t.mount();
+  t.leave(t.mount());
   expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(10) }]);
 });
 
-it("keeps a mark-unread on the open thread until new activity lands", () => {
-  using t = setup("thread-unread", { updatedAt: at(10), lastVisitedAt: at(0), latestRun: null });
-  t.mount();
-  t.update({ lastVisitedAt: at(10) });
-  t.update({ lastVisitedAt: at(5) });
-  vi.advanceTimersByTime(VISIT_DISPATCH_THROTTLE_MS);
-  expect(t.visits).toHaveLength(1);
-
-  t.update({ updatedAt: at(30) });
-  expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(30) }]);
-});
-
-it("keeps a mark-unread on a read thread reopened within the open dedupe window", () => {
-  using t = setup("thread-unread-reopened", {
-    updatedAt: at(10),
-    lastVisitedAt: at(10),
-    latestRun: { completedAt: at(9) },
-  });
+it("keeps a mark-unread made on the open thread until new activity lands", () => {
+  using t = setup("thread-unread", { updatedAt: at(10), lastVisitedAt: at(10), latestRun: null });
   claimThreadOpen(environmentId, t.ref.threadId, Date.UTC(2026, 0, 1));
-  t.mount();
-  t.update({ lastVisitedAt: at(8) });
-  vi.advanceTimersByTime(VISIT_DISPATCH_THROTTLE_MS);
+  let unmount = t.mount();
+  t.update({ lastVisitedAt: at(5) });
+  t.leave(unmount);
   expect(t.visits).toEqual([]);
 
   // An authoritative snapshot can briefly replace the row with an older one.
-  t.update({ updatedAt: at(5), lastVisitedAt: at(5), latestRun: { completedAt: at(4) } });
-  t.update({ updatedAt: at(10), lastVisitedAt: at(8), latestRun: { completedAt: at(9) } });
-  vi.advanceTimersByTime(VISIT_DISPATCH_THROTTLE_MS);
-  expect(t.visits).toEqual([]);
-});
-
-it("keeps mark unread sticky after an expired wake is retired", () => {
-  using t = setup("thread-unread-retired-wake", {
-    updatedAt: at(10),
-    lastVisitedAt: at(0),
-    latestRun: { completedAt: at(9) },
-    wokeAt: at(15),
-  });
-  t.mount();
-  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(15), opened: true }]);
-  t.update({ lastVisitedAt: at(15) });
-  t.update({ lastVisitedAt: at(8), wokeAt: null });
-  vi.advanceTimersByTime(VISIT_DISPATCH_THROTTLE_MS);
-  expect(t.visits).toHaveLength(1);
-
+  unmount = t.mount();
+  t.update({ lastVisitedAt: at(2) });
+  t.update({ updatedAt: at(5), lastVisitedAt: at(2) });
+  t.update({ updatedAt: at(10), lastVisitedAt: at(2) });
   t.update({ updatedAt: at(30) });
-  expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(30) }]);
+  t.leave(unmount);
+  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(30) }]);
 });
 
 it("waits for the shell and records local visits for servers without tracking", () => {
   using t = setup("thread-local", null);
-  t.mount();
-  expect(t.visits).toEqual([]);
+  const unmount = t.mount();
   t.update({ updatedAt: at(10), latestRun: null });
   t.update({ updatedAt: at(11) });
+  expect(t.localVisits).toEqual([]);
+  t.leave(unmount);
   expect(t.visits).toEqual([]);
-  expect(t.localVisits).toEqual([at(10), at(11)]);
+  expect(t.localVisits).toEqual([at(11)]);
 });
 
-it("drops a pending visit when the thread is no longer viewed", () => {
-  using t = setup("thread-unmount", { updatedAt: at(10), lastVisitedAt: at(0), latestRun: null });
-  const unmount = t.mount();
-  t.update({ updatedAt: at(11) });
-  unmount();
-  vi.advanceTimersByTime(VISIT_DISPATCH_THROTTLE_MS);
-  expect(t.visits).toHaveLength(1);
-});
-
-it("sends the open with the first visit when the shell arrives after the thread is shown", () => {
+it("sends the open when the shell arrives after the thread is shown", () => {
   using t = setup("thread-shell-missing", null);
-  t.mount();
+  const unmount = t.mount();
   expect(claimThreadOpen(environmentId, t.ref.threadId, Date.UTC(2026, 0, 1))).toBe(false);
   expect(t.visits).toEqual([]);
 
   t.update({ updatedAt: at(10), lastVisitedAt: at(0), latestRun: null });
-  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(10), opened: true }]);
-
-  t.update({ updatedAt: at(10), lastVisitedAt: at(10) });
-  vi.advanceTimersByTime(VISIT_DISPATCH_THROTTLE_MS);
-  expect(t.visits).toHaveLength(1);
+  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(0), opened: true }]);
+  t.leave(unmount);
+  expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(10) }]);
 });
 
-it("advances the watermark to a wake without waiting for the throttle", () => {
+it("marks a wake seen on leaving", () => {
   using t = setup("thread-wake", { updatedAt: at(10), lastVisitedAt: at(0), latestRun: null });
-  t.mount();
+  const unmount = t.mount();
   t.update({ wokeAt: at(15) });
+  expect(t.visits).toHaveLength(1);
+  t.leave(unmount);
   expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(15) }]);
-
-  vi.advanceTimersByTime(1_000);
-  t.update({ updatedAt: at(16) });
-  expect(t.visits).toHaveLength(2);
 });

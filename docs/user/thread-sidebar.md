@@ -163,12 +163,13 @@ own choice.
 
 **Needs you** gathers threads waiting on an approval, an answer, or a
 guest, with a plan ready, with a question you have not answered, or with a failed run you
-haven't opened. A finished run stays in the Trail, marked **Done** until you open it, with
-anything it still owes, such as a commit or a publish, at the start of its line. The thread that
+haven't opened. A finished run stays in the Trail, marked **Done** until you leave the thread
+or send it a message, with anything it still owes, such as a commit or a publish, at the start of its line. The thread that
 has waited longest comes first. Pinned threads stay pinned and working threads stay in Working.
 
-A thread leaves Needs you when you open it, answer it, or settle it. The thread you have
-open stays where it was until you leave it, and moves once you send it a message.
+A thread leaves Needs you once you've opened it and moved on, answered it, or settled it. The
+thread you have open stays where it was until you leave it, and moves once you send it a
+message. A reply that arrives while the thread is on screen counts as read only when you leave.
 
 **Next** on the Needs you header, or `thread.nextNeedsYou` (`mod+shift+u`), opens the next
 thread that needs you, starting again from the top after the last one. Pinned threads that
@@ -519,7 +520,9 @@ is sent to the thread's agent, which works on it without you, and the thread com
 when the run finishes. If you open the thread before then, the re-check still runs.
 
 An agent can schedule its own re-check when you ask for something it can't answer yet,
-and tells you when. The thread moves to Later once you've read the reply. If the re-check
+and tells you when. The thread moves to Later once you've read the reply and left it. If you write to
+the thread again, the re-check still runs, but the answers to what you wrote stay where you can
+see them instead of moving to Later. If the re-check
 finds nothing new, the agent can schedule another, and the row reads **Re-check 2 of 3**.
 After the last one it must report what it found. Set how many it may chain in
 **Settings → Threads → Unattended re-checks**; **Off** stops agents scheduling them, and

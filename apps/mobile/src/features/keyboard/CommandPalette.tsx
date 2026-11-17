@@ -9,6 +9,7 @@ import {
   type EnvironmentThreadSearchMatch,
   type ShownOrder,
 } from "@t3tools/client-runtime/state/thread-search";
+import { openVisitedAt } from "@t3tools/client-runtime/state/thread-visits";
 import { isListedThreadLineage, THREAD_JUMP_KEYBINDING_COMMANDS } from "@t3tools/contracts";
 import {
   foldSearchQuery,
@@ -528,7 +529,7 @@ export function CommandPalette(props: {
         environmentId: thread.environmentId,
         input: {
           threadId: thread.id,
-          visitedAt: thread.updatedAt,
+          visitedAt: openVisitedAt(thread),
           opened: true,
           searchQuery: pickedQuery(query),
         },

@@ -7,6 +7,7 @@ import {
   type EnvironmentThreadSearchMatch,
   type ShownOrder,
 } from "@t3tools/client-runtime/state/thread-search";
+import { openVisitedAt } from "@t3tools/client-runtime/state/thread-visits";
 import {
   foldSearchQuery,
   PALETTE_MESSAGE_LIMIT,
@@ -192,7 +193,7 @@ export function useCommandPaletteThreadItems(input: {
           environmentId: thread.environmentId,
           input: {
             threadId: thread.id,
-            visitedAt: thread.updatedAt,
+            visitedAt: openVisitedAt(thread),
             opened: true,
             searchQuery: pickedQuery(threadSearchQuery),
           },

@@ -134,7 +134,10 @@ export function spendFollowUp(
     : { ...followUp, sentAt: DateTime.formatIso(now) };
 }
 
-/** A user message keeps an armed follow-up but files it again once read; a sent one is done. */
+/**
+ * A user message keeps an armed follow-up but ends its filing, so an agent re-arming in the
+ * reply files afresh; a sent one is done.
+ */
 export function followUpAfterOwnerMessage(
   followUp: ThreadFollowUp | null | undefined,
 ): ThreadFollowUp | null | undefined {

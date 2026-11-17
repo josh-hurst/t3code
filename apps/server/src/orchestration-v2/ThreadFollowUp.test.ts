@@ -156,7 +156,7 @@ describe("nextFollowUp", () => {
 });
 
 describe("followUpAfterOwnerMessage", () => {
-  it("keeps an armed follow-up but files it again, and ends a sent one", () => {
+  it("keeps an armed follow-up but ends its filing, and ends a sent one", () => {
     const filed = { ...armed, filedAt: minutes(-30) };
     const { filedAt: _filedAt, ...unfiled } = { ...filed, quietCount: 0 };
     assert.deepEqual(followUpAfterOwnerMessage(filed), unfiled);
