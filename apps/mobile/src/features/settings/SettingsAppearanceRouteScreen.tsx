@@ -8,6 +8,7 @@ import { SettingsScreen } from "./components/SettingsScreen";
 import { CodeAppearanceSection } from "./appearance/sections/CodeAppearanceSection";
 import { TerminalAppearanceSection } from "./appearance/sections/TerminalAppearanceSection";
 import { TextAppearanceSection } from "./appearance/sections/TextAppearanceSection";
+import { ChatFontAppearanceSection } from "./appearance/sections/ChatFontAppearanceSection";
 import { ThemeAppearanceSection } from "./appearance/sections/ThemeAppearanceSection";
 import { ToolCallsAppearanceSection } from "./appearance/sections/ToolCallsAppearanceSection";
 
@@ -29,6 +30,7 @@ export function SettingsAppearanceRouteScreen() {
         <AppIconAppearanceSection />
         {Platform.OS === "android" ? <AndroidNavigationAppearanceSection /> : null}
         <TextAppearanceSection />
+        <ChatFontAppearanceSection />
         <TerminalAppearanceSection />
         <CodeAppearanceSection />
         <ToolCallsAppearanceSection />

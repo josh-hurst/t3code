@@ -22,10 +22,14 @@ export interface AppearancePreferences {
   readonly terminalFontSize: number | null;
   readonly codeFontSize: number | null;
   readonly codeWordBreak: boolean;
+  readonly chatFontSize: number | null;
 }
 
 export interface ResolvedAppearance {
   readonly baseFontSize: number;
+  /** Chat messages; follows the text size until set. */
+  readonly chatFontSize: number;
+  readonly isChatFontSizeCustom: boolean;
   readonly terminalFontSize: number;
   readonly codeFontSize: number;
   readonly codeWordBreak: boolean;
@@ -98,6 +102,7 @@ interface StoredAppearancePreferences {
   readonly terminalFontSize?: number | null | undefined;
   readonly codeFontSize?: number | null | undefined;
   readonly codeWordBreak?: boolean | null | undefined;
+  readonly chatFontSize?: number | null | undefined;
 }
 
 export function resolveAppearancePreferences(
@@ -114,12 +119,18 @@ export function resolveAppearancePreferences(
         ? normalizeCodeFontSize(stored.codeFontSize)
         : null,
     codeWordBreak: normalizeCodeWordBreak(stored?.codeWordBreak),
+    chatFontSize:
+      typeof stored?.chatFontSize === "number" && Number.isFinite(stored.chatFontSize)
+        ? normalizeBaseFontSize(stored.chatFontSize)
+        : null,
   };
 }
 
 export function resolveAppearance(preferences: AppearancePreferences): ResolvedAppearance {
   return {
     baseFontSize: preferences.baseFontSize,
+    chatFontSize: preferences.chatFontSize ?? preferences.baseFontSize,
+    isChatFontSizeCustom: preferences.chatFontSize !== null,
     terminalFontSize:
       preferences.terminalFontSize ?? deriveTerminalFontSize(preferences.baseFontSize),
     codeFontSize: preferences.codeFontSize ?? deriveCodeFontSize(preferences.baseFontSize),

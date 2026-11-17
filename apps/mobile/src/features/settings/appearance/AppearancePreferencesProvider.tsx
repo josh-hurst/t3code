@@ -12,6 +12,7 @@ import { Atom, AsyncResult } from "effect/reactivity";
 
 import { ScopedTheme, ScopedVariables, Uniwind } from "uniwind";
 
+import { DEFAULT_CHAT_FONT, normalizeChatFont, type ChatFontId } from "../../../lib/chatFonts";
 import {
   resolveAppearance,
   resolveAppearancePreferences,
@@ -72,6 +73,9 @@ interface AppearancePreferencesContextValue {
   readonly setCodeWordBreak: (value: boolean) => void;
   readonly mathRenderingEnabled: boolean;
   readonly setMathRenderingEnabled: (value: boolean) => void;
+  readonly chatFont: ChatFontId;
+  readonly setChatFont: (value: ChatFontId) => void;
+  readonly setChatFontSize: (value: number | null) => void;
 }
 
 const AppearancePreferencesContext = createContext<AppearancePreferencesContextValue | null>(null);
@@ -217,10 +221,17 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   );
   const themeVariables = themeVariablesByAppearance[themeAppearance];
   const activeThemeName = getMobileUniwindThemeName(themeId, themeAppearance);
-  const { baseFontSize, codeFontSize, codeWordBreak, terminalFontSize } = preferences;
+  const { baseFontSize, chatFontSize, codeFontSize, codeWordBreak, terminalFontSize } = preferences;
   const appearance = useMemo(
-    () => resolveAppearance({ baseFontSize, codeFontSize, codeWordBreak, terminalFontSize }),
-    [baseFontSize, codeFontSize, codeWordBreak, terminalFontSize],
+    () =>
+      resolveAppearance({
+        baseFontSize,
+        chatFontSize,
+        codeFontSize,
+        codeWordBreak,
+        terminalFontSize,
+      }),
+    [baseFontSize, chatFontSize, codeFontSize, codeWordBreak, terminalFontSize],
   );
   const isReady = AsyncResult.isSuccess(preferencesResult);
   const updatePreferences = (patch: Partial<Preferences>) => {
@@ -293,6 +304,12 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   const setMathRenderingEnabled = (value: boolean) =>
     updatePreferences({ mathRenderingEnabled: value });
 
+  // Android draws bold through per-weight font files, which a single chosen family lacks.
+  const chatFont =
+    Platform.OS === "ios" ? normalizeChatFont(storedPreferences?.chatFont) : DEFAULT_CHAT_FONT;
+  const setChatFont = (value: ChatFontId) => updatePreferences({ chatFont: value });
+  const setChatFontSize = (value: number | null) => updatePreferences({ chatFontSize: value });
+
   const value = useMemo(
     (): AppearancePreferencesContextValue => ({
       appearance,
@@ -317,6 +334,9 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       setCodeWordBreak,
       mathRenderingEnabled,
       setMathRenderingEnabled,
+      chatFont,
+      setChatFont,
+      setChatFontSize,
     }),
     [
       appearance,
@@ -340,6 +360,9 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       setCodeWordBreak,
       mathRenderingEnabled,
       setMathRenderingEnabled,
+      chatFont,
+      setChatFont,
+      setChatFontSize,
     ],
   );
 
