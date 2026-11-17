@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   type LimitAccount,
+  type LimitPoolWindow,
   displayLimitWindows,
   cursorUsageWindowDetails,
   collectProviderUsageLimits,
@@ -1112,6 +1113,7 @@ describe("pooled account columns", () => {
       restores: [4, 15, 0],
       capacityWeighted: true,
       pace: "under",
+      segments: [0, 4, 77],
     },
     {
       driver: "claudeAgent",
@@ -1121,6 +1123,17 @@ describe("pooled account columns", () => {
       restores: [6, 25, 0],
       capacityWeighted: true,
       pace: "under",
+      segments: [0, 6, 63],
+    },
+    {
+      driver: "claudeAgent",
+      plans: ["Pro", "Max", "Ultra"],
+      weights: [1, 5, 10],
+      remaining: 69,
+      restores: [6, 25, 0],
+      capacityWeighted: true,
+      pace: "under",
+      segments: [0, 6, 63],
     },
     {
       driver: "codex",
@@ -1130,6 +1143,7 @@ describe("pooled account columns", () => {
       restores: [33, 27, 0],
       capacityWeighted: false,
       pace: "on",
+      segments: [0, 7, 33],
     },
   ])("weights $driver quotas, resets, pace and columns for $plans", (test) => {
     const accounts = test.plans.map((plan, index) => ({
@@ -1146,7 +1160,25 @@ describe("pooled account columns", () => {
     });
     expect(pool!.columns.map((column) => column.weight)).toEqual(test.weights);
     expect(pool!.resets.map((reset) => reset.restoresPercent)).toEqual(test.restores);
+    expect(pool!.segments.map((segment) => Math.round(segment.width))).toEqual(test.segments);
+    expect(pool!.evenPacePercent).toBeCloseTo(40);
     expect(accounts).toEqual(snapshot);
+  });
+
+  it("stacks one combined bar whose pace mark ignores accounts without a clock", () => {
+    const timed = account("timed", [{ ...window, usedPercent: 80 }]);
+    const untimed = account("untimed", [{ ...window, usedPercent: 50, resetsAt: undefined }]);
+    const [pool] = collectLimitPools([untimed, timed], now)[0]!.windows;
+    const spans = (list: LimitPoolWindow["segments"]) =>
+      list.map(({ member, start, width }) => [member.account.key, start, width]);
+    expect(spans(pool!.segments)).toEqual([
+      ["timed", 0, 10],
+      ["untimed", 10, 25],
+    ]);
+    expect(spans(pool!.refills)).toEqual([["timed", 35, 40]]);
+    expect(pool!.remainingPercent).toBe(35);
+    expect(pool!.evenPacePercent).toBeCloseTo(45);
+    expect(pool!.pace).toBe("ahead");
   });
 
   // regression: #20349 sessions stay visible while the weekly quota is exhausted

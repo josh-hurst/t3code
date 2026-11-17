@@ -280,42 +280,28 @@ function ActiveSegmentPopover({
   );
 }
 
+type AccountProps = Omit<Parameters<typeof AccountTriggers>[0], "redeem">;
+
 /**
  * The confirm is a sibling of the popover, not a child: dialogs stack under
  * popovers, and the popover closes as the confirm opens.
  */
-function PoolSegment({
-  account,
-  ...props
-}: {
-  readonly account: LimitAccount;
-  readonly window: LimitPoolMember["window"];
-  readonly reset: LimitPoolWindow["resets"][number] | undefined;
-  readonly accountAverage: boolean;
-  readonly refillPercent: number;
-  readonly color: string;
-  readonly now: number;
-  readonly index: number;
-  readonly showAccountName: boolean;
-  readonly compact: boolean;
-}) {
-  return account.redeem ? (
-    <RedeemableSegment account={account} redeemAt={account.redeem} {...props} />
+function PoolAccount(props: AccountProps) {
+  return props.account.redeem ? (
+    <RedeemableAccount redeemAt={props.account.redeem} {...props} />
   ) : (
-    <SegmentTriggers account={account} redeem={null} {...props} />
+    <AccountTriggers redeem={null} {...props} />
   );
 }
 
-function RedeemableSegment({
+function RedeemableAccount({
   redeemAt,
   ...props
-}: Omit<Parameters<typeof SegmentTriggers>[0], "redeem"> & {
-  readonly redeemAt: NonNullable<LimitAccount["redeem"]>;
-}) {
+}: AccountProps & { readonly redeemAt: NonNullable<LimitAccount["redeem"]> }) {
   const redeem = useResetCredit(redeemAt.environmentId);
   return (
     <>
-      <SegmentTriggers redeem={redeem} {...props} />
+      <AccountTriggers redeem={redeem} {...props} />
       <ResetCreditDialog
         open={redeem.confirming}
         onOpenChange={redeem.setConfirming}
@@ -334,124 +320,90 @@ function RedeemableSegment({
   );
 }
 
-function SegmentTriggers({
+/** A transparent hover target over the account's slice of the combined bar, plus its legend row. */
+function AccountTriggers({
   account,
   window,
   reset,
   accountAverage,
   redeem,
-  refillPercent,
+  segment,
   color,
   now,
   index,
-  showAccountName,
-  compact,
+  single,
 }: SegmentPayload & {
-  readonly refillPercent: number;
+  readonly segment: { readonly start: number; readonly width: number };
   readonly color: string;
   readonly now: number;
   readonly index: number;
-  readonly showAccountName: boolean;
-  readonly compact: boolean;
+  readonly single: boolean;
 }) {
   const popover = use(SegmentPopoverContext) ?? undefined;
   const payload: SegmentPayload = { account, window, reset, redeem, accountAverage };
   const remaining = remainingPercent(window);
   const timeLeft = paceRemainingPercent(window, now);
-  const [segmentRef, paceMark] = usePaceMark(timeLeft);
   const resetsIn = formatResetsIn(window, now);
   const credits = account.limits.resetCredits?.availableCount ?? 0;
+  const span = single ? { start: 0, width: 100 } : segment;
   return (
     <>
-      <PopoverTrigger
-        handle={popover}
-        payload={payload}
-        openOnHover
-        render={
-          <button
-            ref={segmentRef}
-            type="button"
-            style={{ gridColumn: index, gridRow: 1, ...paceMark?.gappedTrack }}
-            aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${resetsIn ? `, ${resetsIn}` : ""}${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
-            className="relative h-5 min-w-0 cursor-pointer rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-inset data-[popup-open]:ring-border @2xl/pool:h-8"
-          />
-        }
-      >
-        <div aria-hidden className="absolute inset-0 overflow-hidden rounded-md">
-          {/* Clipped inside the rounded clip so the bar's own corners keep their antialiasing. */}
-          <div className="absolute inset-0" style={paceMark?.gap}>
-            <div
+      {span.width > 0 ? (
+        <PopoverTrigger
+          handle={popover}
+          payload={payload}
+          openOnHover
+          render={
+            <button
+              type="button"
+              // Multi-account legend rows are always visible and carry keyboard focus instead.
+              tabIndex={single ? undefined : -1}
+              style={{
+                gridColumn: 1,
+                gridRow: 1,
+                justifySelf: "start",
+                marginInlineStart: `${span.start}%`,
+                width: `${span.width}%`,
+              }}
+              aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${resetsIn ? `, ${resetsIn}` : ""}${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
+              className="relative h-5 min-w-0 cursor-pointer rounded-md text-start outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-inset data-[popup-open]:ring-border @2xl/pool:h-8"
+            />
+          }
+        >
+          {single || span.width >= 6 ? (
+            <span
               aria-hidden
-              className="absolute inset-y-0 left-0 rounded-md opacity-35"
-              style={{ width: `${remaining}%`, backgroundColor: color }}
-            />
-            {remaining < 100 && reset && refillPercent > 0 ? (
-              <div
-                aria-hidden
-                className="absolute inset-y-0 right-0 opacity-20"
-                style={{
-                  width: `${Math.min(100 - remaining, refillPercent)}%`,
-                  backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 1px, transparent 1px 5px)`,
-                }}
-              />
-            ) : null}
-          </div>
-        </div>
-        {paceMark ? (
-          <span
-            aria-hidden
-            className="absolute inset-y-0.5 w-0.5 -translate-x-1/2 rounded-full bg-foreground"
-            style={paceMark.tick}
-          />
-        ) : null}
-        <span
-          aria-hidden
-          className={cn(
-            "absolute inset-0 flex items-center justify-center overflow-hidden rounded-md text-3xs leading-none font-semibold text-foreground/80 tabular-nums",
-            !compact && "@2xl/pool:hidden",
-          )}
-        >
-          {index}
-        </span>
-        <div
-          className={cn(
-            "relative hidden h-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs",
-            !compact && "@2xl/pool:flex",
-          )}
-        >
-          {showAccountName ? (
-            <AccountName
-              account={account}
-              className="min-w-0 truncate font-medium text-foreground"
-            />
-          ) : null}
-          {/* A single-account bar repeats the headline percentage. */}
-          {showAccountName ? (
-            <span className="shrink-0 font-semibold text-foreground tabular-nums">
-              {remaining}%
+              className={cn(
+                "absolute inset-0 flex items-center justify-center overflow-hidden text-3xs leading-none font-semibold text-foreground/80 tabular-nums",
+                single && "@2xl/pool:hidden",
+              )}
+            >
+              {index}
             </span>
           ) : null}
-          {resetsIn || credits ? (
-            <span className="ms-auto flex min-w-0 items-center gap-1.5 overflow-hidden rounded-sm bg-background/85 px-1.5 py-0.5 text-2xs whitespace-nowrap text-foreground tabular-nums">
-              {resetsIn?.replace("resets in ", "↻ ") ?? ""}
-              {credits ? (
-                <>
-                  {resetsIn ? (
-                    <span aria-hidden className="text-muted-foreground">
-                      ·
+          {single && (resetsIn || credits) ? (
+            <div className="relative hidden h-full min-w-0 items-center overflow-hidden px-2 text-xs @2xl/pool:flex">
+              <span className="ms-auto flex min-w-0 items-center gap-1.5 overflow-hidden rounded-sm bg-background/85 px-1.5 py-0.5 text-2xs whitespace-nowrap text-foreground tabular-nums">
+                {resetsIn?.replace("resets in ", "↻ ") ?? ""}
+                {credits ? (
+                  <>
+                    {resetsIn ? (
+                      <span aria-hidden className="text-muted-foreground">
+                        ·
+                      </span>
+                    ) : null}
+                    <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
+                      <TicketIcon className="size-3" aria-hidden />
+                      {credits}
                     </span>
-                  ) : null}
-                  <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
-                    <TicketIcon className="size-3" aria-hidden />
-                    {credits}
-                  </span>
-                </>
-              ) : null}
-            </span>
+                  </>
+                ) : null}
+              </span>
+            </div>
           ) : null}
-        </div>
-      </PopoverTrigger>
-      <LegendRow payload={payload} color={color} now={now} index={index} compact={compact} />
+        </PopoverTrigger>
+      ) : null}
+      <LegendRow payload={payload} color={color} now={now} index={index} single={single} />
     </>
   );
 }
@@ -461,13 +413,13 @@ function LegendRow({
   color,
   now,
   index,
-  compact,
+  single,
 }: {
   readonly payload: SegmentPayload;
   readonly color: string;
   readonly now: number;
   readonly index: number;
-  readonly compact: boolean;
+  readonly single: boolean;
 }) {
   const popover = use(SegmentPopoverContext) ?? undefined;
   const { account, window } = payload;
@@ -480,17 +432,9 @@ function LegendRow({
       payload={payload}
       style={{ gridColumn: "1 / -1", gridRow: index + 1 }}
       render={<Button variant="ghost" size="compact" />}
-      className={cn("min-w-0", !compact && "@2xl/pool:hidden")}
+      className={cn("min-w-0", single && "@2xl/pool:hidden")}
     >
-      <span className="relative inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-3xs leading-none font-semibold text-foreground/80 tabular-nums">
-        <span
-          aria-hidden
-          className="absolute inset-0 rounded-sm opacity-35"
-          style={{ backgroundColor: color }}
-        />
-        <span className="sr-only">Segment </span>
-        <span className="relative">{index}</span>
-      </span>
+      <LegendSwatch color={color} index={index} />
       <AccountName account={account} className="min-w-0 truncate font-medium text-foreground" />
       <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
       <span className="ms-auto flex shrink-0 items-center gap-1.5 text-2xs text-muted-foreground tabular-nums">
@@ -515,6 +459,21 @@ function LegendRow({
   );
 }
 
+function LegendSwatch({ color, index }: { readonly color: string; readonly index: number }) {
+  return (
+    <span className="relative inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-3xs leading-none font-semibold text-foreground/80 tabular-nums">
+      <span
+        aria-hidden
+        className="absolute inset-0 rounded-sm opacity-35"
+        style={{ backgroundColor: color }}
+      />
+      <span className="sr-only">Segment </span>
+      <span className="relative">{index}</span>
+    </span>
+  );
+}
+
+/** One bar for the whole pool: each account's slice of the combined remaining, then what resets restore. */
 function PoolBar({
   pool,
   color,
@@ -525,43 +484,87 @@ function PoolBar({
   readonly now: number;
 }) {
   const restores = new Map(pool.resets.map((reset) => [reset.member.account.key, reset]));
-  const compact = pool.columns.some((column) => column.weight !== pool.columns[0]?.weight);
+  const segments = new Map(pool.segments.map((segment) => [segment.member.account.key, segment]));
+  const single = pool.columns.length === 1;
+  const [barRef, paceMark] = usePaceMark(pool.evenPacePercent);
+  const accountColor = (account: LimitAccount) =>
+    normalizeProviderAccentColor(account.accentColor) ?? color;
   return (
     <div className="@container/pool min-w-0">
-      <div
-        className="grid gap-x-1 gap-y-1"
-        style={{
-          gridTemplateColumns: pool.columns
-            .map((column) => `minmax(0, ${column.weight}fr)`)
-            .join(" "),
-        }}
-      >
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-y-1">
+        <div
+          ref={barRef}
+          aria-hidden
+          style={{ gridColumn: 1, gridRow: 1 }}
+          className="relative h-5 @2xl/pool:h-8"
+        >
+          <div className="absolute inset-0 overflow-hidden rounded-md">
+            <div className="absolute inset-0" style={paceMark?.gap}>
+              <div className="absolute inset-0 bg-muted" />
+              {pool.segments.map(({ member, start, width }) => (
+                <div
+                  key={member.account.key}
+                  className="absolute inset-y-0 opacity-35"
+                  style={{
+                    left: `${start}%`,
+                    width: `${width}%`,
+                    backgroundColor: accountColor(member.account),
+                  }}
+                />
+              ))}
+              {pool.refills.map(({ member, start, width }) => (
+                <div
+                  key={member.account.key}
+                  className="absolute inset-y-0 opacity-20"
+                  style={{
+                    left: `${start}%`,
+                    width: `${width}%`,
+                    backgroundImage: `repeating-linear-gradient(135deg, ${accountColor(member.account)} 0 1px, transparent 1px 5px)`,
+                  }}
+                />
+              ))}
+              {pool.segments
+                .slice(1)
+                .map(({ member, start, width }) =>
+                  width > 0 && start > 0 ? (
+                    <div
+                      key={member.account.key}
+                      className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-background"
+                      style={{ left: `${start}%` }}
+                    />
+                  ) : null,
+                )}
+            </div>
+          </div>
+          {paceMark ? (
+            <span
+              className="absolute inset-y-0.5 w-0.5 -translate-x-1/2 rounded-full bg-foreground"
+              style={paceMark.tick}
+            />
+          ) : null}
+        </div>
         {pool.columns.map((member, position) =>
           member.window ? (
-            <PoolSegment
+            <PoolAccount
               key={member.account.key}
               account={member.account}
               window={member.window}
               reset={restores.get(member.account.key)}
               accountAverage={pool.members.length > 1 && !pool.capacityWeighted}
-              refillPercent={member.refillPercent}
-              color={normalizeProviderAccentColor(member.account.accentColor) ?? color}
+              segment={segments.get(member.account.key) ?? { start: 0, width: 0 }}
+              color={accountColor(member.account)}
               now={now}
               index={position + 1}
-              showAccountName={pool.columns.length > 1}
-              compact={compact}
+              single={single}
             />
           ) : pool.kind === "monthly" && member.account.limits.zeroSpendCap ? (
             <div
               key={member.account.key}
-              style={{ gridColumn: position + 1, gridRow: 1 }}
-              className="flex h-5 min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-md border border-dashed border-border text-3xs whitespace-nowrap text-muted-foreground @2xl/pool:h-8 @2xl/pool:justify-start @2xl/pool:px-2 @2xl/pool:text-xs"
+              style={{ gridColumn: "1 / -1", gridRow: position + 2 }}
+              className="flex min-w-0 items-center gap-2 px-2 text-xs text-muted-foreground"
             >
-              <AccountName
-                account={member.account}
-                className="hidden min-w-0 truncate @2xl/pool:inline-flex"
-              />
-              $0 cap
+              <AccountName account={member.account} className="min-w-0 truncate" />
+              <span className="ms-auto shrink-0">$0 cap</span>
             </div>
           ) : null,
         )}

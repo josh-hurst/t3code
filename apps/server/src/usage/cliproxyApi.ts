@@ -74,6 +74,16 @@ const ClaudeWindow = Schema.Struct({
   utilization: Schema.Number,
   resets_at: Schema.NullOr(Schema.String),
 });
+const ClaudeProfile = Schema.Struct({
+  organization: Schema.optional(
+    Schema.NullOr(Schema.Struct({ rate_limit_tier: Schema.optional(Schema.String) })),
+  ),
+});
+const CLAUDE_PLAN_LABELS = new Map([
+  ["default_claude_ai", "Claude Pro Subscription"],
+  ["default_claude_max_5x", "Claude Max Subscription"],
+  ["default_claude_max_20x", "Claude Ultra Subscription"],
+]);
 const ClaudeUsage = Schema.Struct({
   five_hour: Schema.optional(Schema.NullOr(ClaudeWindow)),
   seven_day: Schema.optional(Schema.NullOr(ClaudeWindow)),
@@ -121,6 +131,7 @@ const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeApiResponse = Schema.decodeUnknownEffect(ApiResponse);
 const decodeCreditList = Schema.decodeUnknownEffect(Schema.fromJsonString(CreditList));
 const decodeClaudeUsage = Schema.decodeUnknownEffect(Schema.fromJsonString(ClaudeUsage));
+const decodeClaudeProfile = Schema.decodeUnknownEffect(Schema.fromJsonString(ClaudeProfile));
 const decodeCodexUsage = Schema.decodeUnknownEffect(Schema.fromJsonString(CodexUsage));
 const decodeGrokUsage = Schema.decodeUnknownEffect(Schema.fromJsonString(GrokUsageResponse));
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
@@ -311,6 +322,15 @@ const HUB_PROVIDERS = new Map<string, HubProvider>([
         const usage = yield* decodeClaudeUsage(
           yield* call("https://api.anthropic.com/api/oauth/usage"),
         );
+        const plan = yield* call("https://api.anthropic.com/api/oauth/profile").pipe(
+          Effect.flatMap(decodeClaudeProfile),
+          Effect.map(
+            (profile) =>
+              CLAUDE_PLAN_LABELS.get(profile.organization?.rate_limit_tier ?? "") ??
+              "Claude Subscription",
+          ),
+          Effect.orElseSucceed(() => "Claude Subscription"),
+        );
         const model_scoped = (usage.limits ?? []).flatMap((limit) =>
           limit.kind === "weekly_scoped" && limit.scope?.model && typeof limit.percent === "number"
             ? [
@@ -331,7 +351,7 @@ const HUB_PROVIDERS = new Map<string, HubProvider>([
         };
         return {
           ...listedIdentity(account),
-          plan: "Claude Subscription",
+          plan,
           usageLimits: claudeUsageResponseToLimits({
             checkedAt,
             response: { rate_limits_available: true, rate_limits: rateLimits },

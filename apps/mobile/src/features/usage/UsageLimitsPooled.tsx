@@ -113,14 +113,13 @@ function PaceGap({
   );
 }
 
-function AccountSegment({
-  remaining,
-  color,
-  refillPercent,
+/** The pool's combined fill: each account's slice of the remaining, then what its reset restores. */
+function PoolFill({
+  pool,
+  colorOf,
 }: {
-  readonly remaining: number;
-  readonly color: string;
-  readonly refillPercent: number;
+  readonly pool: LimitPoolWindow;
+  readonly colorOf: (account: LimitAccount) => string;
 }) {
   const patternId = useId().replace(/:/g, "");
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -139,21 +138,55 @@ function AccountSegment({
         // Numeric canvas dimensions clear Android SVG geometry cached before a segment resized.
         <Svg width={size.width} height={size.height} accessible={false}>
           <Defs>
-            <Pattern id={patternId} width={6} height={6} patternUnits="userSpaceOnUse">
-              <Path d="M-1 1L1 -1M0 6L6 0M5 7L7 5" stroke={color} strokeWidth={1} opacity={0.22} />
-            </Pattern>
+            {pool.refills.map(({ member }, index) => (
+              <Pattern
+                key={member.account.key}
+                id={`${patternId}-${index}`}
+                width={6}
+                height={6}
+                patternUnits="userSpaceOnUse"
+              >
+                <Path
+                  d="M-1 1L1 -1M0 6L6 0M5 7L7 5"
+                  stroke={colorOf(member.account)}
+                  strokeWidth={1}
+                  opacity={0.22}
+                />
+              </Pattern>
+            ))}
           </Defs>
-          {refillPercent > 0 ? (
+          {pool.refills.map(({ member, start, width }, index) => (
             <Rect
-              x={`${100 - Math.min(100 - remaining, refillPercent)}%`}
-              width={`${Math.min(100 - remaining, refillPercent)}%`}
+              key={member.account.key}
+              x={`${start}%`}
+              width={`${width}%`}
               height="100%"
-              fill={`url(#${patternId})`}
+              fill={`url(#${patternId}-${index})`}
             />
-          ) : null}
-          <Rect width={`${remaining}%`} height="100%" fill={color} opacity={0.35} />
+          ))}
+          {pool.segments.map(({ member, start, width }) => (
+            <Rect
+              key={member.account.key}
+              x={`${start}%`}
+              width={`${width}%`}
+              height="100%"
+              fill={colorOf(member.account)}
+              opacity={0.35}
+            />
+          ))}
         </Svg>
       ) : null}
+      {pool.segments
+        .slice(1)
+        .map(({ member, start, width }) =>
+          width > 0 && start > 0 ? (
+            <View
+              key={member.account.key}
+              className="absolute top-0 bottom-0 w-0.5 bg-grouped-card"
+              style={{ left: `${start}%`, marginLeft: -1 }}
+            />
+          ) : null,
+        )}
     </View>
   );
 }
@@ -177,13 +210,13 @@ function PoolWindowCard({
 }) {
   const navigation = useNavigation();
   const [barWidth, setBarWidth] = useState(0);
-  // Each segment needs room for its account, percent and reset to label itself.
-  const totalWeight = pool.columns.reduce((sum, column) => sum + column.weight, 0);
-  const segmentWidth =
-    (barWidth * Math.min(...pool.columns.map((column) => column.weight))) / totalWeight;
-  const inlineLabels = wide && segmentWidth >= 96;
-  const inlineReset = wide && segmentWidth >= 150;
-  const inlineName = wide && segmentWidth >= 220;
+  const single = pool.columns.length === 1;
+  // A lone account labels the bar itself when there is room for its percent and reset.
+  const inlineLabels = single && wide && barWidth >= 96;
+  const inlineReset = single && wide && barWidth >= 150;
+  const inlineName = single && wide && barWidth >= 220;
+  const colorOf = (account: LimitAccount) =>
+    normalizeProviderAccentColor(account.accentColor) ?? color;
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
   const accountAverage = pool.members.length > 1 && !pool.capacityWeighted;
   const openAccount = (account: LimitAccount) =>
@@ -229,21 +262,25 @@ function PoolWindowCard({
       ) : null}
     </>
   );
+  const segments = new Map(pool.segments.map((segment) => [segment.member.account.key, segment]));
   const bar = (
     <View
-      className="flex-row gap-1"
+      className={wide ? "h-9 rounded-md" : "h-7 rounded-md"}
       onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}
     >
+      <PaceGap timeLeft={pool.evenPacePercent}>
+        <View className="absolute inset-0 rounded-md bg-subtle" />
+        <View className="absolute inset-0 overflow-hidden rounded-md">
+          <PoolFill pool={pool} colorOf={colorOf} />
+        </View>
+      </PaceGap>
       {pool.columns.map((member, index) => {
-        if (!member.window)
-          return (
-            <View
-              key={member.account.key}
-              style={{ flex: member.weight }}
-              className={wide ? "h-9 min-w-0" : "h-7 min-w-0"}
-            />
-          );
+        if (!member.window) return null;
         const { account, window } = member;
+        const span = single
+          ? { start: 0, width: 100 }
+          : (segments.get(account.key) ?? { start: 0, width: 0 });
+        if (span.width <= 0) return null;
         const timeLeft = paceRemainingPercent(window, now);
         const credits = account.limits.resetCredits?.availableCount ?? 0;
         const resetsIn = formatResetsIn(window, now)?.replace("resets in ", "");
@@ -254,19 +291,9 @@ function PoolWindowCard({
             accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}`}
             accessibilityHint="Show account details"
             onPress={() => openAccount(account)}
-            style={{ flex: member.weight }}
-            className={wide ? "h-9 min-w-0 rounded-md" : "h-7 min-w-0 rounded-md"}
+            style={{ left: `${span.start}%`, width: `${span.width}%` }}
+            className="absolute top-0 bottom-0 rounded-md"
           >
-            <PaceGap timeLeft={timeLeft}>
-              <View className="absolute inset-0 rounded-md bg-subtle" />
-              <View className="absolute inset-0 overflow-hidden rounded-md">
-                <AccountSegment
-                  remaining={remainingPercent(window)}
-                  color={normalizeProviderAccentColor(account.accentColor) ?? color}
-                  refillPercent={window.resetsAt ? member.refillPercent : 0}
-                />
-              </View>
-            </PaceGap>
             {inlineLabels ? (
               <View
                 pointerEvents="none"
@@ -311,7 +338,7 @@ function PoolWindowCard({
                   </View>
                 ) : null}
               </View>
-            ) : (
+            ) : (barWidth * span.width) / 100 >= 14 ? (
               <View
                 pointerEvents="none"
                 className="absolute inset-0 items-center justify-center overflow-hidden rounded-md"
@@ -323,7 +350,7 @@ function PoolWindowCard({
                   {index + 1}
                 </Text>
               </View>
-            )}
+            ) : null}
           </Pressable>
         );
       })}
@@ -333,7 +360,7 @@ function PoolWindowCard({
     <View>
       {pool.columns.map(({ account, window }, index) => {
         if (!window) return null;
-        const segmentColor = normalizeProviderAccentColor(account.accentColor) ?? color;
+        const segmentColor = colorOf(account);
         const credits = account.limits.resetCredits?.availableCount ?? 0;
         const resetsIn = formatResetsIn(window, now);
         return (

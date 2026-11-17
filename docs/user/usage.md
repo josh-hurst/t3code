@@ -112,25 +112,26 @@ setting removes it from `settings.json`.
 
 **Usage → Limits** pools every subscription account it can see per provider, so with several Codex
 or Claude accounts across your enabled environments and hubs you read one number per window rather than a
-list. For known subscription tiers, the total, segment widths, pace, and reset contributions
+list. For known subscription tiers, the total, slice widths, pace, and reset contributions
 are weighted by plan allowance: Codex Plus, Pro 100, and Pro 200 use 1×, 5×, and 20×;
 Claude Pro, Max, and Ultra use 1×, 5×, and 10×. Each account's own percentage stays relative to
 its allowance. If a tier is unknown, the cards say **average left** and count accounts equally
 instead of presenting a combined allowance. Hubs that only report a generic subscription name
 use this account average.
 
-Each window has a bar with one segment per account, kept in the same column across windows.
-Accounts are ordered by their next 5-hour refill, soonest
-first. For an account with no weekly quota left, this is when its session becomes usable again.
-The first available window is used when no account reports a 5-hour limit. A gap means the
-account does not report that window. When the provider reports reset times, the card also says
-when the next reset lands and how much it hands back. The hatched
-part of a segment is what that reset restores. Tap a segment or account row for the account's plan,
-where it is signed in, and its reset time. On web, you can hover too. Codex and Claude accounts
-with banked reset credits show a ticket count and the **Use reset** action in the account details.
-Claude resets are not available when the server runs on macOS, where Claude keeps its login in the
-Keychain. On narrow screens, numbered rows below
-the bar show each account's quota, countdown, and credits. Tap a row to open its details.
+Each window has one bar for the whole pool. Its fill is the combined quota left, split into one
+numbered slice per account sized by that account's share, so an account with nothing left has no
+slice. The line on the bar is where even spending across the pool would be. When the provider
+reports reset times, the card also says when the next reset lands and how much it hands back, and
+the hatched space after the fill is what upcoming resets restore. Numbered rows below the bar show
+each account's own quota, countdown, and credits; an account keeps its number across windows.
+Accounts are ordered by their next 5-hour refill, soonest first. For an account with no weekly quota
+left, this is when its session becomes usable again. The first available window is used when no
+account reports a 5-hour limit. Tap a slice or account row for the account's plan, where it is
+signed in, and its reset time. On web, you can hover too. Codex and Claude accounts with banked
+reset credits show a ticket count and the **Use reset** action in the account details. Claude
+resets are not available when the server runs on macOS, where Claude keeps its login in the
+Keychain.
 
 The same account signed in on more than one environment, or reported by a hub as well, counts once.
 Filter with the environment dropdown to see what a single machine has.

@@ -435,6 +435,12 @@ export interface LimitPoolMember {
   readonly refillPercent: number;
 }
 
+export interface LimitPoolBarSpan {
+  readonly member: LimitPoolMember;
+  readonly start: number;
+  readonly width: number;
+}
+
 export interface LimitPoolWindow {
   readonly id: string;
   readonly kind: ServerProviderUsageWindow["kind"];
@@ -449,6 +455,12 @@ export interface LimitPoolWindow {
   readonly remainingPercent: number;
   readonly usedPercent: number;
   readonly pace: LimitPace | null;
+  /** Where the combined bar's even-pace mark sits, in percent of the bar. */
+  readonly evenPacePercent: number | null;
+  /** Each account's slice of the combined remaining, stacked from the left in column order. */
+  readonly segments: ReadonlyArray<LimitPoolBarSpan>;
+  /** Spent quota each account gets back at its reset, stacked after the remaining in reset order. */
+  readonly refills: ReadonlyArray<LimitPoolBarSpan>;
   readonly resets: ReadonlyArray<{
     readonly member: LimitPoolMember;
     readonly at: number;
@@ -552,7 +564,7 @@ const CODEX_PLAN_CAPACITY: Record<string, number> = {
   "ChatGPT Pro 200 Subscription": 20,
 };
 // Claude's published plan multipliers describe the session allowance only.
-const CLAUDE_SESSION_CAPACITY: Record<string, number> = { Pro: 1, Max: 5, Ultra: 20 };
+const CLAUDE_SESSION_CAPACITY: Record<string, number> = { Pro: 1, Max: 5, Ultra: 10 };
 
 function planCapacity(account: LimitAccount, kind: ServerProviderUsageWindow["kind"]) {
   if (!account.plan) return undefined;
@@ -685,6 +697,30 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
             ];
       })
       .sort((left, right) => left.at - right.at);
+    const share = (member: LimitPoolMember, percent: number) =>
+      (Math.max(0, Math.min(100, percent)) * weight(member.account)) / totalWeight;
+    const ordered = accounts.flatMap((account) => memberByAccount.get(account.key) ?? []);
+    const segments = stack(0, ordered, (member) => share(member, 100 - member.window.usedPercent));
+    const filled = segments.reduce((sum, segment) => sum + segment.width, 0);
+    const refills = stack(
+      filled,
+      resets.map((reset) => reset.member),
+      (member) => share(member, Math.min(member.window.usedPercent, member.refillPercent)),
+    );
+    // Accounts without a clock count as on pace, so only timed accounts move the mark.
+    const evenPacePercent =
+      timed.length === 0
+        ? null
+        : members.reduce((sum, member) => {
+            const elapsed = elapsedShare(member.window, now);
+            return (
+              sum +
+              share(
+                member,
+                elapsed === null ? 100 - member.window.usedPercent : 100 - elapsed * 100,
+              )
+            );
+          }, 0);
     return {
       id,
       kind: first.kind,
@@ -698,10 +734,26 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       usedPercent: Math.round(usedPercent),
       remainingPercent: Math.round(100 - usedPercent),
       pace: meanElapsed === null ? null : paceOfShares(timedUsed, meanElapsed),
+      evenPacePercent,
+      segments,
+      refills: refills.filter((refill) => refill.width > 0),
       resets,
     };
   });
   return pools.sort((left, right) => WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind]);
+}
+
+function stack(
+  from: number,
+  members: readonly LimitPoolMember[],
+  width: (member: LimitPoolMember) => number,
+): LimitPoolBarSpan[] {
+  let start = from;
+  return members.map((member) => {
+    const span = { member, start, width: width(member) };
+    start += span.width;
+    return span;
+  });
 }
 
 export function limitsNotice(limits: ServerProviderUsageLimits): string | null {

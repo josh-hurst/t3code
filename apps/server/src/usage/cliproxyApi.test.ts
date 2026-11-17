@@ -340,29 +340,41 @@ describe("CLIProxyAPI built-in management API", () => {
     }),
   );
 
-  it.effect("maps Claude scoped windows without a scheduler plugin", () =>
+  it.effect.each([
+    { tier: "default_claude_ai", status: 200, plan: "Claude Pro Subscription" },
+    { tier: "default_claude_max_5x", status: 200, plan: "Claude Max Subscription" },
+    { tier: "default_claude_max_20x", status: 200, plan: "Claude Ultra Subscription" },
+    { tier: "unknown", status: 200, plan: "Claude Subscription" },
+    { tier: undefined, status: 200, plan: "Claude Subscription" },
+    { tier: "default_claude_ai", status: 403, plan: "Claude Subscription" },
+    { tier: 42, status: 200, plan: "Claude Subscription" },
+  ])("maps Claude windows and profile tier $tier with status $status", ({ tier, status, plan }) =>
     Effect.gen(function* () {
       const test = fixture({
         accounts: [{ ...accounts[0]!, provider: "claude" }],
         // The usage endpoint answers 429 to requests without a Claude Code user agent.
-        upstream: (request) => ({
-          status: request.header?.["User-Agent"]?.startsWith("claude-code/") ? 200 : 429,
-          body: {
-            five_hour: { utilization: 10, resets_at: null },
-            seven_day: { utilization: 50, resets_at: "2099-01-01T00:00:00Z" },
-            limits: [
-              {
-                kind: "weekly_scoped",
-                percent: 80,
-                resets_at: null,
-                scope: { model: { display_name: "Fable" } },
+        upstream: (request) =>
+          request.url?.endsWith("/profile")
+            ? { status, body: { organization: { rate_limit_tier: tier } } }
+            : {
+                status: request.header?.["User-Agent"]?.startsWith("claude-code/") ? 200 : 429,
+                body: {
+                  five_hour: { utilization: 10, resets_at: null },
+                  seven_day: { utilization: 50, resets_at: "2099-01-01T00:00:00Z" },
+                  limits: [
+                    {
+                      kind: "weekly_scoped",
+                      percent: 80,
+                      resets_at: null,
+                      scope: { model: { display_name: "Fable" } },
+                    },
+                  ],
+                },
               },
-            ],
-          },
-        }),
       });
       const api = yield* test.api;
       const result = yield* api.readAccounts(config);
+      expect(result[0]?.plan).toBe(plan);
       expect(
         result[0]?.usageLimits.windows.map((window) => [window.id, window.usedPercent]),
       ).toEqual([
