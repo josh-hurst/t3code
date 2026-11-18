@@ -26,6 +26,7 @@ import {
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
+  IVORY_THEME,
   OCEAN_THEME,
 } from "../../themePalette";
 import {
@@ -56,6 +57,7 @@ import { ThemeWireframe } from "./ThemeWireframe";
 
 const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
   T3_CHAT_THEME,
+  IVORY_THEME,
   GROVE_THEME,
   OCEAN_THEME,
   EMBER_THEME,

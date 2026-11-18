@@ -11,6 +11,7 @@ import {
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
+  IVORY_THEME,
   OCEAN_THEME,
   T3_CHAT_THEME,
   T3_CODE_LIGHT_THEME_COLORS,
@@ -32,7 +33,15 @@ import {
 import { appAtomRegistry, subscribeAtomChanges } from "./rpc/atomRegistry";
 import { themeServerEnvironmentThemesAtom } from "./state/server";
 
-export { EMBER_THEME, GROVE_THEME, IRIS_THEME, OCEAN_THEME, T3_CHAT_THEME, THEME_COLOR_ROLES };
+export {
+  EMBER_THEME,
+  GROVE_THEME,
+  IRIS_THEME,
+  IVORY_THEME,
+  OCEAN_THEME,
+  T3_CHAT_THEME,
+  THEME_COLOR_ROLES,
+};
 export type { ThemeAppearance, ThemeColorRole, ThemeColors, ThemeDefinition, ThemeVariants };
 
 const T3_CHAT_THEME_ID = "t3-chat" as const;
@@ -406,8 +415,8 @@ export function getStandardThemeColors(appearance: ThemeAppearance): ThemeColors
 
 // index.css paints the light bubble a step darker than the shared palette mobile uses.
 const STANDARD_WEB_PAINTED_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
-  light: { canvas: "#f6f5f1", chrome: "#f6f5f1", sidebar: "#f4f3ef", messageSurface: "#ebebed" },
-  dark: { canvas: "#0a0a08", chrome: "#0a0a08", messageSurface: "#1e1e1e" },
+  light: { messageSurface: "#ebebed" },
+  dark: { canvas: "#000000", messageSurface: "#1e1e1e" },
 };
 
 /** The standard theme as index.css paints it, for solves that measure the page. */

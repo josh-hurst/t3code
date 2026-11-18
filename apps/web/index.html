@@ -12,20 +12,20 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <script>
       (() => {
-        const LIGHT_BACKGROUND = "#f6f5f1";
-        const DARK_BACKGROUND = "#0a0a08";
+        const LIGHT_BACKGROUND = "#ffffff";
+        const DARK_BACKGROUND = "#000000";
         const CUSTOM_THEMES_STORAGE_KEY = "t3code:themes:v1";
         const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";
         const THEME_APPEARANCE_MODE_STORAGE_KEY = "t3code:theme-appearance-mode";
         const THEME_HALVES_STORAGE_KEY = "t3code:theme-halves:v1";
         const SPLASH_COLORS = {
           light: {
-            background: "#f6f5f1",
+            background: "#ffffff",
             foreground: "#262626",
             accent: "#4f46e5",
           },
           dark: {
-            background: "#0a0a08",
+            background: "#000000",
             foreground: "#f5f5f5",
             accent: "#818cf8",
           },
@@ -63,6 +63,20 @@
               foreground: "oklch(0.980735 0.004092 301.426)",
               accent: "oklch(0.460685 0.185347 4.099)",
               chrome: "oklch(0.22813 0.020366 307.469)",
+            },
+          },
+          ivory: {
+            light: {
+              background: "#f6f5f1",
+              foreground: "#282726",
+              accent: "#1b4ed8",
+              chrome: "#f6f5f1",
+            },
+            dark: {
+              background: "#0a0a08",
+              foreground: "#f7f5ef",
+              accent: "#346bf1",
+              chrome: "#0a0a08",
             },
           },
           grove: {
@@ -133,6 +147,7 @@
           "light",
           "dark",
           "t3-chat",
+          "ivory",
           "grove",
           "ocean",
           "ember",
