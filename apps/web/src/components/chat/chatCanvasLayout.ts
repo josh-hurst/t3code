@@ -45,7 +45,8 @@ export function resolveChatCanvasLayout({
     ? detailsCard.left - DETAILS_CARD_CLEARANCE
     : container.width - padding;
   const normalWidth = Math.max(0, Math.min(centeredWidth, laneRight - padding));
-  const canvasCenterLeft = (container.width - normalWidth) / 2;
+  // Beside the details card, the chat centers in the space left of it rather than on the canvas.
+  const canvasCenterLeft = ((detailsCard ? detailsCard.left : container.width) - normalWidth) / 2;
   const normalLeft = Math.max(padding, Math.min(canvasCenterLeft, laneRight - normalWidth));
   let chat = {
     left: normalLeft,
