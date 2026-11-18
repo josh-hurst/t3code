@@ -185,6 +185,53 @@ export function threadCardRowLine(
   );
 }
 
+/** Strip markdown delimiters and line breaks from text shown under a thread title. */
+export function threadPreviewText(text: string): string | null {
+  return (
+    text
+      .replace(/\*\*|__|`+|^#+\s+|^>\s+/g, "")
+      .replace(/\s+/g, " ")
+      .trim() || null
+  );
+}
+
+function workingRunText(thread: EnvironmentThreadShell): string | null {
+  const { activityDescription, latestVisibleMessage, latestRunRequestedAt, latestRunId, activeRunId } = thread.source;
+  if (activityDescription !== undefined) return activityDescription;
+  // Older servers only have the thread-wide preview, which can belong to a queued or finished turn.
+  if (latestVisibleMessage === null || latestRunRequestedAt == null ||
+      (activeRunId !== null && activeRunId !== latestRunId) ||
+      latestVisibleMessage.id === thread.card?.messageId ||
+      DateTime.isLessThan(latestVisibleMessage.updatedAt, latestRunRequestedAt)) return null;
+  return latestVisibleMessage.text;
+}
+
+export function threadWorkingLine(
+  thread: EnvironmentThreadShell,
+  kind = threadStatusKind(thread),
+): string | null {
+  if (kind !== "working" && kind !== "connecting" && kind !== "waiting") return null;
+  if (kind === "waiting") {
+    const task = thread.pendingBackgroundTasks.find(
+      (task) => task.description && backgroundWorkHoldsCompletion([task]),
+    );
+    return (
+      threadPreviewText(task?.description ?? workingRunText(thread) ?? "") ??
+      (thread.blockedOnThreadWait ? "Waiting for another thread" : "Waiting for background work")
+    );
+  }
+  const text =
+    workingRunText(thread) ?? (thread.goal?.status === "active" ? thread.goal.objective : "");
+  return (
+    threadPreviewText(text) ??
+    (thread.runtime?.status === "preparing"
+      ? "Preparing the workspace"
+      : kind === "connecting"
+        ? "Starting the agent"
+        : "Processing the request")
+  );
+}
+
 /**
  * The question the thread's last reply leaves you, in its card's words. Only while the card is
  * about that reply: once you answer, or a newer reply has no card yet, there is nothing to show.

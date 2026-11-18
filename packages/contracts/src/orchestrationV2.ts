@@ -2284,6 +2284,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   latestRunBackgroundWake: Schema.optional(Schema.Boolean),
   activeRunId: Schema.NullOr(RunId),
   activityRunStartedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /** A working run's plan step or finished message. Null until it has text, absent on older servers. */
+  activityDescription: Schema.optional(Schema.NullOr(Schema.String)),
   activityRunStatus: Schema.optional(
     Schema.NullOr(Schema.Literals(["preparing", "starting", "running", "waiting"])),
   ),

@@ -1138,6 +1138,7 @@ type ShellThreadRow = {
   readonly active_run_status: string | null;
   readonly activity_run_status: string | null;
   readonly activity_run_started_at: string | null;
+  readonly activity_description: string | null;
   readonly last_error: string | null;
   readonly terminal_failure_payload_json: string | null;
   readonly blocking_run_id: string | null;
@@ -1733,8 +1734,15 @@ const linkCardStillAsks = (
 const LATEST_VISIBLE_MESSAGE_TEXT_LENGTH = 200;
 const LEADING_PREVIEW_WHITESPACE = /^[\t\n\r ]+/;
 
+// Code points, matching SQLite substr on the shell query.
+const previewText = (text: string) =>
+  Array.from(text.slice(0, LATEST_VISIBLE_MESSAGE_TEXT_LENGTH * 2))
+    .slice(0, LATEST_VISIBLE_MESSAGE_TEXT_LENGTH)
+    .join("");
+
 function latestVisibleMessageSummary(
   projection: Pick<OrchestrationV2ThreadProjection, "messages" | "runs">,
+  workingRunId?: RunId,
 ): OrchestrationV2LatestVisibleMessageSummary | null {
   const rolledBackRunIds = new Set(
     projection.runs.filter((run) => run.status === "rolled_back").map((run) => run.id),
@@ -1745,6 +1753,10 @@ function latestVisibleMessageSummary(
     if (
       message.role === "system" ||
       message.streaming ||
+      (workingRunId !== undefined &&
+        (message.runId !== workingRunId ||
+          message.notification !== undefined ||
+          message.workflowScript === true)) ||
       idleCompactionOf(message) !== undefined ||
       (message.runId !== null && rolledBackRunIds.has(message.runId))
     ) {
@@ -1766,12 +1778,34 @@ function latestVisibleMessageSummary(
   return {
     id: latest.id,
     role: latest.role,
-    // Code points, matching SQLite substr on the shell query.
-    text: Array.from(latestText.slice(0, LATEST_VISIBLE_MESSAGE_TEXT_LENGTH * 2))
-      .slice(0, LATEST_VISIBLE_MESSAGE_TEXT_LENGTH)
-      .join(""),
+    text: previewText(latestText),
     updatedAt: latest.updatedAt,
   };
+}
+
+function activityDescriptionForRun(projection: OrchestrationV2ThreadProjection, runId: RunId) {
+  const lists = projection.plans.filter(
+    (plan) => plan.runId === runId && plan.kind === "todo_list" && plan.status !== "superseded",
+  );
+  let todo = lists.at(-1);
+  if (lists.length > 1) {
+    // Plan ids are unordered. A replacement list takes its position from its turn item.
+    const byId = new Map(lists.map((plan) => [plan.id, plan]));
+    const latest = projection.turnItems.findLast(
+      (item) =>
+        item.runId === runId &&
+        item.type === "todo_list" &&
+        byId.get(item.planId)?.nodeId === item.nodeId,
+    );
+    if (latest?.type === "todo_list") todo = byId.get(latest.planId);
+  }
+  const step =
+    todo?.kind === "todo_list" && todo.status === "active"
+      ? todo.steps.find((step) => step.status === "running")
+      : undefined;
+  return step === undefined
+    ? latestVisibleMessageSummary(projection, runId)?.text
+    : previewText(step.text);
 }
 
 const decodeLatestVisibleMessageRow = Schema.decodeUnknownEffect(
@@ -1811,6 +1845,7 @@ export function threadShellFromProjection(
   const activityRun =
     runs.filter(isActivityRunForShell).toSorted((left, right) => right.ordinal - left.ordinal)[0] ??
     null;
+  const workingRun = activityRun ?? (latestRun?.status === "queued" ? latestRun : null);
   const liveRunIds = new Set(runs.filter(isActivityRunForShell).map((run) => run.id));
   let pendingRuntimeRequest = pendingRuntimeRequestSummary(
     projection.runtimeRequests
@@ -1911,6 +1946,7 @@ export function threadShellFromProjection(
     activeRunId: activeRun?.id ?? null,
     blockedOnThreadWait: deriveBlockedOnThreadWait({ activeRun, turnItems: projection.turnItems }),
     activityRunStatus: activityRun?.status ?? null,
+    ...(workingRun === null ? {} : { activityDescription: activityDescriptionForRun(projection, workingRun.id) ?? null }),
     activityRunStartedAt:
       activityRun === null ? null : orchestrationV2RunWorkStartedAt(activityRun),
     status: latestRun?.status ?? "idle",
@@ -2053,6 +2089,7 @@ type ShellThreadState = {
   readonly blockedOnThreadWait: boolean;
   readonly activityRunStatus: ShellActivityRunStatus | null;
   readonly activityRunStartedAt: DateTime.Utc | null;
+  readonly activityDescription: string | null;
   readonly lastError: string | null;
   readonly lastErrorClass: OrchestrationV2ThreadShell["lastErrorClass"];
   readonly lastErrorCode: OrchestrationV2ThreadShell["lastErrorCode"];
@@ -2224,6 +2261,9 @@ function shellFromState(input: {
     blockedOnThreadWait: input.state.blockedOnThreadWait,
     activityRunStatus: input.state.activityRunStatus,
     activityRunStartedAt: input.state.activityRunStartedAt,
+    ...(input.state.activityRunStatus === null && input.state.latestRunStatus !== "queued"
+      ? {}
+      : { activityDescription: input.state.activityDescription }),
     status: input.state.latestRunStatus,
     lastError: input.state.lastError,
     lastErrorClass: input.state.lastErrorClass,
@@ -7831,6 +7871,20 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       )`;
     };
 
+    const workingRunId = sql`COALESCE(activity.run_id, CASE WHEN presented.status = 'queued' THEN presented.run_id END)`;
+    const trimmedMessageText = sql`ltrim(json_extract(message.payload_json, '$.text'), char(9, 10, 13, 32))`;
+    const messagePrefix = sql`substr(${trimmedMessageText}, 1, ${LATEST_VISIBLE_MESSAGE_TEXT_LENGTH})`;
+    // Mirrors latestVisibleMessageSummary, including the order for messages with the same timestamp.
+    const latestMessagePreview = (select: Statement.Fragment, scope: Statement.Fragment) => sql`(
+      SELECT ${select}
+      FROM orchestration_v2_projection_messages message
+      WHERE ${scope}
+        AND message.role IN ('user', 'assistant') AND message.streaming = 0
+        AND NOT ${isIdleCompactionMessage("message")} AND ${trimmedMessageText} != ''
+      ORDER BY message.created_at DESC, message.message_id DESC
+      LIMIT 1
+    )`;
+
     const selectShellThreadRows = (
       threadId?: ThreadId,
       {
@@ -7866,33 +7920,33 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               ${isBackgroundWakeShellRun("presented")} AS latest_run_background_wake,
               active.run_id AS active_run_id,
               active.status AS active_run_status,
-              (
-                SELECT r.status
-                -- Read active runs by status. Walking the ordinal index to skip this sort
-                -- reads every run of a thread with none active.
-                FROM orchestration_v2_projection_runs r
-                  INDEXED BY orchestration_v2_projection_runs_thread_status_idx
-                WHERE r.thread_id = t.thread_id
-                  AND r.status IN ('preparing', 'starting', 'running', 'waiting')
-                  AND NOT ${isSilentShellRun("r")}
-                ORDER BY r.ordinal DESC, r.run_id DESC
-                LIMIT 1
-              ) AS activity_run_status,
-              (
-                -- Mirrors orchestrationV2RunWorkStartedAt.
-                SELECT COALESCE(
-                  json_extract(r.payload_json, '$.workStartedAt'),
-                  json_extract(r.payload_json, '$.startedAt'),
-                  r.requested_at
-                )
-                FROM orchestration_v2_projection_runs r
-                  INDEXED BY orchestration_v2_projection_runs_thread_status_idx
-                WHERE r.thread_id = t.thread_id
-                  AND r.status IN ('preparing', 'starting', 'running', 'waiting')
-                  AND NOT ${isSilentShellRun("r")}
-                ORDER BY r.ordinal DESC, r.run_id DESC
-                LIMIT 1
+              activity.status AS activity_run_status,
+              -- Mirrors orchestrationV2RunWorkStartedAt.
+              COALESCE(json_extract(activity.payload_json, '$.workStartedAt'),
+                json_extract(activity.payload_json, '$.startedAt'), activity.requested_at
               ) AS activity_run_started_at,
+              CASE WHEN ${workingRunId} IS NOT NULL THEN COALESCE(
+                (
+                  SELECT substr(json_extract(step.value, '$.text'), 1, ${LATEST_VISIBLE_MESSAGE_TEXT_LENGTH})
+                  FROM json_each((
+                    SELECT CASE WHEN list.status = 'active' THEN list.payload_json END
+                    FROM orchestration_v2_projection_plans list
+                    LEFT JOIN orchestration_v2_projection_turn_items todo
+                      INDEXED BY orchestration_v2_projection_turn_items_node_ordinal_idx
+                      ON todo.node_id = list.node_id AND todo.type = 'todo_list'
+                      AND todo.run_id = list.run_id AND json_extract(todo.payload_json, '$.planId') = list.plan_id
+                    WHERE list.run_id = ${workingRunId} AND list.kind = 'todo_list' AND list.status <> 'superseded'
+                    ORDER BY todo.ordinal DESC, todo.turn_item_id DESC, list.plan_id DESC LIMIT 1
+                  ), '$.steps') step
+                  WHERE json_extract(step.value, '$.status') = 'running' LIMIT 1
+                ),
+                ${latestMessagePreview(
+                  messagePrefix,
+                  sql`message.run_id = ${workingRunId}
+                  AND json_extract(message.payload_json, '$.notification') IS NULL
+                  AND json_extract(message.payload_json, '$.workflowScript') IS NOT 1`,
+                )}
+              ) END AS activity_description,
               (
                 SELECT json_extract(session.payload_json, '$.lastError')
                 -- Keep bindings outermost: one provider instance can hold every session.
@@ -8004,31 +8058,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_authored_message_at,
-              (
-                -- Mirrors latestVisibleMessageSummary.
-                SELECT json_object(
-                  'id', message.message_id,
-                  'role', message.role,
-                  'text', substr(
-                    ltrim(json_extract(message.payload_json, '$.text'), char(9, 10, 13, 32)),
-                    1,
-                    ${LATEST_VISIBLE_MESSAGE_TEXT_LENGTH}
-                  ),
-                  'updatedAt', message.updated_at
-                )
-                FROM orchestration_v2_projection_messages message
-                WHERE message.thread_id = t.thread_id
-                  AND message.role IN ('user', 'assistant')
-                  AND message.streaming = 0
-                  AND NOT ${isIdleCompactionMessage("message")}
-                  AND ltrim(json_extract(message.payload_json, '$.text'), char(9, 10, 13, 32)) != ''
-                  AND NOT EXISTS (
-                    SELECT 1 FROM orchestration_v2_projection_runs rolled_back
-                    WHERE rolled_back.run_id = message.run_id AND rolled_back.status = 'rolled_back'
-                  )
-                ORDER BY message.created_at DESC, message.message_id DESC
-                LIMIT 1
-              ) AS latest_visible_message_json,
+              ${latestMessagePreview(
+                sql`json_object('id', message.message_id, 'role', message.role,
+                  'text', ${messagePrefix}, 'updatedAt', message.updated_at)`,
+                sql`message.thread_id = t.thread_id AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs rolled_back
+                  WHERE rolled_back.run_id = message.run_id AND rolled_back.status = 'rolled_back')`,
+              )} AS latest_visible_message_json,
               EXISTS (
                 SELECT 1
                 FROM orchestration_v2_projection_plans plan
@@ -8049,6 +8084,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             )
             LEFT JOIN orchestration_v2_projection_runs presented
               ON presented.run_id = ${presentedShellRunId(sql.literal("t.thread_id"))}
+            LEFT JOIN orchestration_v2_projection_runs activity ON activity.run_id = (
+              SELECT r.run_id FROM orchestration_v2_projection_runs r
+                INDEXED BY orchestration_v2_projection_runs_thread_status_idx
+              WHERE r.thread_id = t.thread_id AND r.status IN ('preparing', 'starting', 'running', 'waiting')
+                AND NOT ${isSilentShellRun("r")}
+              ORDER BY r.ordinal DESC, r.run_id DESC LIMIT 1
+            )
             LEFT JOIN orchestration_v2_projection_runs blocked ON blocked.run_id = (
               SELECT candidate.run_id
               FROM orchestration_v2_projection_runs candidate
@@ -8683,6 +8725,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             row.activity_run_started_at === null
               ? null
               : DateTime.makeUnsafe(row.activity_run_started_at),
+          activityDescription: row.activity_description,
           activityRunStatus:
             row.activity_run_status === "preparing" ||
             row.activity_run_status === "starting" ||
