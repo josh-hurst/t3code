@@ -988,6 +988,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         },
       )
     : null;
+  const tideDone = tideLead?.lead?.kind === "status" && tideLead.lead.tone === "completed";
+  const brightTitle = tideDone || (props.tide && props.needsYou);
   const tideText = tideLead?.text ?? null;
   const tideTime = props.tide
     ? resolveTideRowTime({
@@ -1227,13 +1229,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       aria-hidden
       className={cn(
         "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none",
-        // In the new layout every Needs you title is bright; elsewhere titles recede as Trail rows do.
-        props.tide && props.needsYou
+        brightTitle
           ? "truncate font-medium text-foreground"
           : shouldRecede || (props.tide && !props.isActive && !isWoke)
             ? "font-normal"
             : "font-medium",
-        props.tide && props.needsYou
+        brightTitle
           ? null
           : variant !== "slim" && !props.tide
             ? cn(
@@ -1254,6 +1255,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       ? "text-muted-foreground"
                       : "text-secondary-label/70",
               ),
+        tideDone && "font-semibold",
         isRegeneratingTitle && "opacity-55",
       )}
       dir={textDirection(thread.title)}
@@ -1729,6 +1731,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 </>
               }
               label={label}
+              unreadCompletion={tideDone}
               text={
                 // Pinned and working rows without an outcome follow Thread row details.
                 tideText ??
@@ -2215,6 +2218,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
     ? resolveTideRowLead(thread, { showsStatus: !props.isSettled, isWoke: false })
     : null;
   const lead = tideLead?.lead ?? null;
+  const tideDone = lead?.kind === "status" && lead.tone === "completed";
   const tideLine = tideLead?.text ?? null;
   const matchHint = props.tide ? props.explain?.() : undefined;
   const laterLabel =
@@ -2352,6 +2356,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
                       ? "font-normal text-secondary-label/70 group-hover/sidebar-row:text-foreground"
                       : "font-medium text-foreground",
                     (props.isHighlighted || props.isRouteActive) && "text-foreground",
+                    tideDone && "font-semibold",
                     thread.titleRegeneration != null && "opacity-55",
                   )}
                 >
@@ -2375,6 +2380,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
                   <TideOwedLabel>{lead.word}</TideOwedLabel>
                 )
               }
+              unreadCompletion={tideDone}
               text={tideLine}
               maxLines={2}
               footer={

@@ -1047,11 +1047,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ? DONE_STATUS_LABEL
         : undefined);
   const recede = shouldRecedeThreadRow({ status, selected });
-  // Slim rows that are neither snoozed nor settled are the Trail; a finished one leads with Done until opened, as on web.
-  const trailDone =
-    variant === "slim" && !snoozedRow && thread.settledOverride !== "settled" && isUnread;
+  const showsDone =
+    statusLabel === DONE_STATUS_LABEL &&
+    !showsWoke &&
+    (variant === "card" || (!snoozedRow && thread.settledOverride !== "settled"));
   const isRegeneratingTitle = thread.titleRegeneration != null;
-  const rowAccessibilityLabel = `${thread.title}${trailDone ? ", done" : ""}${providerNameLabel ? `, ${providerNameLabel}` : ""}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
+  const rowAccessibilityLabel = `${thread.title}${showsDone ? ", done" : ""}${providerNameLabel ? `, ${providerNameLabel}` : ""}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
   const timeLabel = props.timeLabel;
 
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
@@ -1454,6 +1455,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const mailCard = props.selfFiling === true && !sidebarPane;
   const titleTextInset = !mailCard && props.project ? projectIconSize + 8 : 0;
   const rowBranch = nonMainlineBranchName(thread.branch);
+  const unreadDot = showsDone ? (
+    <View className="size-1.5 shrink-0 self-center rounded-full bg-adaptive-emerald-600-400" />
+  ) : null;
   const cardTrailing = (
     <View className="flex-row items-center gap-1.5" style={{ minHeight: titleLineHeight }}>
       {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
@@ -1691,6 +1695,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       {mailCard ? (
         <>
           <View className="flex-row items-start gap-2">
+            {unreadDot}
             {cardTitle}
             <View className="justify-center" style={{ height: titleLineHeight }}>
               {mailTrailing}
@@ -1727,6 +1732,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               />
             </View>
           ) : null}
+          {unreadDot}
           <Text
             className={cn(
               "flex-1 text-base",
@@ -1993,9 +1999,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           )}
         >
           <View className="flex-row items-center gap-2">
+            {unreadDot}
             <Text
               className={cn(
-                "min-w-0 flex-1 text-base font-t3-medium",
+                "min-w-0 flex-1 text-base",
+                showsDone ? "font-t3-semibold" : "font-t3-medium",
                 selected
                   ? selectedThreadRowColors.foregroundClassName
                   : rowAppearance.foregroundClassName,
@@ -2007,12 +2015,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </Text>
             {slimTrailing}
           </View>
-          {cardLine || trailDone ? (
+          {cardLine || showsDone ? (
             // Takes the provider line's place.
             <View className="mt-0.5">
               <ThreadRowStatusLine
                 lead={
-                  trailDone
+                  showsDone
                     ? {
                         icon: DONE_STATUS_LABEL.icon,
                         iconTintClassName: selected

@@ -87,6 +87,7 @@ export function TideRowBody(props: {
   // The time and, on hover, the row's actions in its place.
   time: ReactNode;
   title: ReactNode;
+  unreadCompletion?: boolean;
   titleTrailing?: ReactNode;
   label: ReactNode | null;
   text: string | null;
@@ -105,6 +106,9 @@ export function TideRowBody(props: {
       <div
         className={cn("flex h-5 min-w-0 items-center gap-1.5", props.project !== null && "mt-0.5")}
       >
+        {props.unreadCompletion ? (
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-success" />
+        ) : null}
         {props.title}
         {props.titleTrailing}
         {props.project === null ? (
