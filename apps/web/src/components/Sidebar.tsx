@@ -4303,9 +4303,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="working-shelf-header"
                                 marker="working-header"
-                                // Below a Trail, padding (which drags measure) sets Working apart;
-                                // only History is pushed to the bottom there.
-                                className={cn(tide ? "h-12 pt-4" : "mt-auto")}
+                                // Working leads the bottom stack; below a Trail, padding (which drags
+                                // measure) also sets it apart when the list is too long for a gap.
+                                className={cn("mt-auto", tide && "h-12 pt-4")}
                                 label="Working"
                                 count={workingThreads.length}
                                 toggle={{
@@ -4320,7 +4320,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="snoozed-shelf-header"
                                 marker="snoozed-header"
-                                className={cn((tide || workingThreads.length === 0) && "mt-auto")}
+                                className={cn(
+                                  workingThreads.length === 0 && "mt-auto",
+                                  tide && workingThreads.length === 0 && "h-12 pt-4",
+                                )}
                                 label={tide ? "Later" : "Snoozed"}
                                 count={snoozedThreads.length}
                                 toggle={{
@@ -4369,10 +4372,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 key="settled-shelf-header"
                                 marker="settled-header"
                                 className={cn(
-                                  (tide
-                                    ? snoozedThreads.length === 0
-                                    : workingThreads.length + snoozedThreads.length === 0) &&
-                                    "mt-auto",
+                                  workingThreads.length + snoozedThreads.length === 0 && "mt-auto",
                                 )}
                                 label={tide ? "History" : "Settled"}
                                 count={settledCount}

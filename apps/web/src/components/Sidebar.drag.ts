@@ -289,8 +289,8 @@ export function createSidebarSortingStrategy(input: {
       (item.section === "active" && (!trailKeys.has(item.key) || needsYouKeys.has(item.key)));
     for (const [index, item] of items.entries()) {
       if (item.kind === "marker") {
-        // Below a Trail, Working's header is taller by the space that sets it apart.
-        if (isShelfHeader(item) && !(hasTrail && item.marker === "working-header")) {
+        // Below a Trail, the bottom stack's first header is taller by the space that sets it apart.
+        if (hasTrail ? isMarker(item, "settled-header") : isShelfHeader(item)) {
           const height = rects[index]?.height;
           if (height) headerScale ??= height / 32;
         }
@@ -410,9 +410,8 @@ export function createSidebarSortingStrategy(input: {
             ? fallback
             : (rect?.height ?? fallback);
     });
-    // Only History is pushed to the bottom below a Trail; otherwise the first shelf is.
-    const isBottomAnchor = (item: SidebarListItem | undefined) =>
-      hasTrail ? isMarker(item, "settled-header") : isShelfHeader(item);
+    // The first shelf leads the stack pushed to the bottom.
+    const isBottomAnchor = isShelfHeader;
     const firstShelf = items.findIndex(isBottomAnchor);
     const shelfRect = rects[firstShelf];
     const beforeShelf = rects[firstShelf - 1];

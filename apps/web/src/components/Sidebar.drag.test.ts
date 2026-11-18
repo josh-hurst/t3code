@@ -836,22 +836,30 @@ describe("sidebar drag projection with a Trail", () => {
     expect(y(result, "t1")).toBe(-1);
   });
 
-  it("gives the gap above a bottom-anchored History to History alone", () => {
+  it("gives the gap above the bottom stack to Working, its first shelf", () => {
     const strategy = createSidebarSortingStrategy({
       ...base,
       activeOrder: ["n1", "t1", "t2"],
       activeZones: { needsYou: ["n1"], trail: ["t1", "t2"] },
     });
     const args = layout(items, "t1", "t2");
-    const historyIndex = items.indexOf(settledHeader);
-    const rects = args.rects.map((rect, index) =>
-      index < historyIndex ? rect : { ...rect, top: rect.top + 200, bottom: rect.bottom + 200 },
+    const workingIndex = items.findIndex(
+      (item) => sidebarListItemId(item) === sidebarMarkerId("working-header"),
     );
-    const at = (item: SidebarListItem) =>
-      strategy({ ...args, rects, index: items.indexOf(item) })?.y;
-    expect(at(items[3]!)).toBe(0);
-    expect(at(items[5]!)).toBe(0);
-    expect(at(settledHeader)).toBe(0);
+    const rects = args.rects.map((rect, index) =>
+      index < workingIndex ? rect : { ...rect, top: rect.top + 200, bottom: rect.bottom + 200 },
+    );
+    const at = (id: string) =>
+      strategy({
+        ...args,
+        rects,
+        index: items.findIndex((item) => sidebarListItemId(item) === id),
+      })?.y;
+    expect(at(sidebarMarkerId("trail-header"))).toBe(0);
+    expect(at("t1")).toBe(0);
+    expect(at(sidebarMarkerId("working-header"))).toBe(0);
+    expect(at("w1")).toBe(0);
+    expect(at(sidebarMarkerId("settled-header"))).toBe(0);
   });
 });
 
