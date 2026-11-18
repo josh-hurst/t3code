@@ -5,6 +5,7 @@ import {
   type RunId,
   THREAD_CARD_TOPICS_MAX,
   type ThreadCard,
+  type ThreadCardSettle,
   type ThreadCardSummary,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -16,12 +17,17 @@ export function threadCardGenerationEffect(input: {
   readonly commandId: CommandId;
   readonly threadId: ThreadId;
   readonly runId: RunId;
+  readonly workspaceChanged?: boolean | undefined;
 }): PendingOrchestrationEffectV2 {
   return {
     id: `effect:thread-card.generate:${input.runId}`,
     commandId: input.commandId,
     threadId: input.threadId,
-    request: { type: "thread-card.generate", runId: input.runId },
+    request: {
+      type: "thread-card.generate",
+      runId: input.runId,
+      ...(input.workspaceChanged === undefined ? {} : { workspaceChanged: input.workspaceChanged }),
+    },
   };
 }
 
@@ -74,6 +80,7 @@ export function nextThreadCard(input: {
   readonly line: ThreadCardSummary["line"];
   readonly topics: ThreadCardSummary["topics"];
   readonly open: ThreadCardSummary["open"];
+  readonly settle?: ThreadCardSettle | undefined;
   readonly at: string;
   /** The user has written since the reply, so its questions no longer wait on them. */
   readonly answered: boolean;
@@ -85,6 +92,7 @@ export function nextThreadCard(input: {
     messageId: input.messageId,
     at: input.at,
     runId: input.runId,
+    ...(input.settle === undefined ? {} : { settle: input.settle }),
   };
   return input.answered ? threadCardWithoutAsks(card) : card;
 }

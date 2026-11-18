@@ -617,7 +617,11 @@ export const layerExecutor: Layer.Layer<
                 ),
               );
           case "thread-card.generate":
-            return threadCards.execute({ threadId: effect.threadId, runId: effect.request.runId });
+            return threadCards.execute({
+              threadId: effect.threadId,
+              runId: effect.request.runId,
+              workspaceChanged: effect.request.workspaceChanged,
+            });
           case "thread-contents.regroup":
             return threadRegroups.execute({
               threadId: effect.threadId,

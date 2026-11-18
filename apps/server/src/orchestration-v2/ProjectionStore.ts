@@ -4,6 +4,7 @@ import {
   isListedThreadLineage,
   applyOrchestrationV2ThreadVisit,
   pendingGuestMessageCount,
+  type ThreadCard,
   type ThreadCardSummary,
   threadCardSummary,
   threadFollowUpSummary,
@@ -240,11 +241,16 @@ export type ProjectionSettlementCandidate = Pick<
   | "pendingGuestMessageCount"
   | "followUp"
   | "standingCheck"
+  | "lastVisitedAt"
+  | "opens"
 > &
   Pick<OrchestrationV2AppThread, "lastSnoozeWakeAt"> & {
     readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
-    /** Only its open items and time matter here, so a thread's card and a shell's summary both fit. */
-    readonly card?: Pick<ThreadCardSummary, "open" | "at"> | null | undefined;
+    /** A shell's summary fits too: without the run and verdict a card only holds its questions. */
+    readonly card?:
+      | (Pick<ThreadCardSummary, "open" | "at"> & Partial<Pick<ThreadCard, "runId" | "settle">>)
+      | null
+      | undefined;
   };
 
 /** A thread holding a follow-up, sent or not. */
@@ -296,6 +302,8 @@ export interface ProjectionCheckpointCaptureContext {
   readonly sideChat: boolean;
   /** False for subagents and side chats, which no thread list shows. */
   readonly listed: boolean;
+  /** An earlier checkpoint of the thread lists a file a run changed. */
+  readonly changedFiles: boolean;
 }
 
 const RollbackTargetAttempts = Schema.Array(
@@ -6090,21 +6098,32 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               runRows[0] === undefined
                 ? undefined
                 : yield* decodeRunPayload(runRows[0].payload_json);
-            const [nodeRows, scopeRows, providerRows, preservedRows] = yield* Effect.all([
-              sql<PayloadRow>`SELECT payload_json FROM orchestration_v2_projection_nodes
+            const [nodeRows, scopeRows, providerRows, preservedRows, changedRows] =
+              yield* Effect.all([
+                sql<PayloadRow>`SELECT payload_json FROM orchestration_v2_projection_nodes
             WHERE thread_id = ${threadId} AND node_id = ${run?.rootNodeId ?? null}`,
-              sql<PayloadRow>`SELECT payload_json FROM orchestration_v2_projection_checkpoint_scopes
+                sql<PayloadRow>`SELECT payload_json FROM orchestration_v2_projection_checkpoint_scopes
             WHERE thread_id = ${threadId} AND scope_id = ${target.scopeId}`,
-              sql<PayloadRow>`SELECT payload_json FROM orchestration_v2_projection_provider_threads
+                sql<PayloadRow>`SELECT payload_json FROM orchestration_v2_projection_provider_threads
             WHERE provider_thread_id = ${run?.providerThreadId ?? null}
               AND (thread_id = ${threadId}
                 OR owner_node_id IN (${nodesOwningProviderThreads(threadId)})
                 OR provider_thread_id IN (SELECT provider_thread_id FROM orchestration_v2_projection_subagents WHERE thread_id = ${threadId}))`,
-              sql<{ readonly ordinal: number }>`SELECT ordinal_within_scope AS ordinal
+                sql<{ readonly ordinal: number }>`SELECT ordinal_within_scope AS ordinal
             FROM orchestration_v2_projection_checkpoints
             WHERE thread_id = ${threadId} AND scope_id = ${target.scopeId}
               AND (status = 'ready' OR (status = 'missing' AND run_id IS NOT NULL))`,
-            ]);
+                // CASE fixes the order: a row that cannot be read counts as changed, never as an error.
+                sql<{ readonly found: number }>`SELECT 1 AS found
+            FROM orchestration_v2_projection_checkpoints
+            WHERE thread_id = ${threadId}
+              AND CASE
+                WHEN NOT json_valid(payload_json) THEN 1
+                WHEN json_type(payload_json, '$.files') = 'array'
+                  THEN json_array_length(payload_json, '$.files') > 0
+                ELSE 1 END
+            LIMIT 1`,
+              ]);
             return {
               run,
               rootNode:
@@ -6125,6 +6144,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 relationshipToParent: threadRows[0].relationship,
                 sideChat: threadRows[0].side_chat === 1,
               }),
+              changedFiles: changedRows.length > 0,
             };
           }),
         )

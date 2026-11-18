@@ -47,6 +47,8 @@ export interface SettlementPullRequest {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
+/** Inactivity that settles a thread whose last reply left nothing open. */
+const SOON_SETTLE_AFTER_MS = 4 * 60 * 60 * 1_000;
 const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 
 function toMillis(value: DateTime.Utc | null | undefined): number | null {
@@ -259,14 +261,33 @@ export function resolveAutoSettlementAt(input: {
     thread.branchPullRequest != null;
   if (input.autoSettleKeepPullRequests === true && hasPullRequest) return null;
   if (input.autoSettleAfterDays === null) return null;
+  // A standing thread stays one until a later card says otherwise; a failed run writes no card.
+  if (thread.card?.settle === "keep") return null;
   const snoozedUntilMs = toMillis(thread.snoozedUntil);
   const timerWakeAtMs =
     snoozedUntilMs !== null && snoozedUntilMs <= input.nowMs ? snoozedUntilMs : null;
   const inactivityAtMs =
     latestMillis([activityAtMs, toMillis(thread.lastSnoozeWakeAt), timerWakeAtMs]) ?? activityAtMs;
-  return inactivityAtMs < input.nowMs - input.autoSettleAfterDays * DAY_MS
-    ? DateTime.makeUnsafe(inactivityAtMs)
-    : null;
+  const windowMs = input.autoSettleAfterDays * DAY_MS;
+  const completedAtMs = toMillis(thread.latestRunCompletedAt);
+  const visitedAtMs = toMillis(thread.lastVisitedAt);
+  // Seen as the clients mark it, so a reply that lands overnight does not settle unread. That
+  // watermark is in the thread's own time; the last open says when the user actually looked.
+  const settlesSoon =
+    thread.card?.settle === "soon" &&
+    // "Nothing left to do" describes one reply, so a later run without a card voids it.
+    thread.card.runId === thread.latestRunId &&
+    // The parser drops soon beside an open item; one restored afterwards owes the user again.
+    thread.card.open.length === 0 &&
+    !hasPullRequest &&
+    completedAtMs !== null &&
+    visitedAtMs !== null &&
+    visitedAtMs >= completedAtMs;
+  const idleSinceMs = settlesSoon
+    ? Math.max(inactivityAtMs, thread.opens?.openedAt ?? inactivityAtMs)
+    : inactivityAtMs;
+  const waitMs = settlesSoon ? Math.min(windowMs, SOON_SETTLE_AFTER_MS) : windowMs;
+  return idleSinceMs < input.nowMs - waitMs ? DateTime.makeUnsafe(inactivityAtMs) : null;
 }
 
 export class ThreadSettlementServiceV2 extends Context.Service<

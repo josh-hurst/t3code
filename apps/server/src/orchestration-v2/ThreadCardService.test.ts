@@ -408,6 +408,38 @@ describe("ThreadCardService", () => {
     }),
   );
 
+  it.effect("keeps a soon verdict only for a run whose checkpoint shows no changed files", () =>
+    Effect.gen(function* () {
+      const cases = [
+        { workspaceChanged: false, settle: "soon" },
+        { workspaceChanged: true, settle: undefined },
+        // An effect queued by an older build says nothing about the run's files.
+        { workspaceChanged: undefined, settle: undefined },
+      ] as const;
+      for (const testCase of cases) {
+        const harness = makeHarness();
+        yield* Effect.gen(function* () {
+          const threadId = yield* createThread(`soon:${testCase.workspaceChanged}`);
+          const runId = yield* recordRun({
+            threadId,
+            run: `run:card:soon:${testCase.workspaceChanged}`,
+          });
+          harness.generate.mockReturnValueOnce(
+            Effect.succeed({
+              transcription: "line: Explained 401 versus 403\ntopics: http\nsettle: soon",
+            }),
+          );
+          yield* ThreadCardService.ThreadCardService.use((cards) =>
+            cards.execute({ threadId, runId, workspaceChanged: testCase.workspaceChanged }),
+          );
+          const card = (yield* readThread(threadId)).card;
+          assert.equal(card?.runId, runId);
+          assert.equal(card?.settle, testCase.settle);
+        }).pipe(Effect.provide(harness.layer));
+      }
+    }),
+  );
+
   it.effect("generates nothing for a run or thread that has no card to give", () =>
     Effect.gen(function* () {
       const cases: ReadonlyArray<{
@@ -553,7 +585,9 @@ describe("ThreadCardService", () => {
             ordinal: 2,
           });
           harness.generate.mockReturnValueOnce(
-            Effect.succeed({ transcription: `line: Done\ntopics: ${testCase.secondTopics}` }),
+            Effect.succeed({
+              transcription: `line: Done\ntopics: ${testCase.secondTopics}\nsettle: keep`,
+            }),
           );
           if (testCase.before !== undefined) yield* threads.dispatch(testCase.before(threadId));
           const before = yield* readThread(threadId);
@@ -564,6 +598,9 @@ describe("ThreadCardService", () => {
           const requestId = CommandId.make(`command:thread-card:${runId}`);
           const armed = yield* readThread(threadId);
           assert.equal(armed.card?.runId, runId, testCase.name);
+          // The verdict is the settlement sweep's alone, so the shell clients list leaves it out.
+          assert.equal(armed.card?.settle, "keep");
+          assert.notProperty((yield* threads.getThreadShell(threadId))?.card, "settle");
           assert.equal(armed.titleRegeneration?.requestId === requestId, testCase.retitles);
           assert.deepEqual(
             (yield* outbox.listByCommandId(requestId)).map((effect) => effect.request),

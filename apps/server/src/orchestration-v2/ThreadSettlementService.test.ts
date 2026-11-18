@@ -50,6 +50,7 @@ import * as ThreadSettlementService from "./ThreadSettlementService.ts";
 
 const NOW_MS = Date.parse("2026-06-10T12:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1_000;
+const HOUR_MS = 60 * 60 * 1_000;
 
 function at(offsetMs: number): DateTime.Utc {
   return DateTime.makeUnsafe(NOW_MS + offsetMs);
@@ -328,6 +329,84 @@ describe("resolveAutoSettlementAt", () => {
         autoSettleKeepPullRequests: false,
       }),
     ).toBeNull();
+  });
+
+  it("lets the latest run's card shorten or switch off the inactivity timer", () => {
+    const runId = RunId.make("run-1");
+    const replied = (
+      settle: "soon" | "keep" | undefined,
+      overrides: Partial<ProjectionStore.ProjectionSettlementCandidate> = {},
+    ): ProjectionStore.ProjectionSettlementCandidate => ({
+      ...shell({
+        status: "completed",
+        latestRunId: runId,
+        latestUserMessageAt: at(-6 * HOUR_MS),
+        latestRunCompletedAt: at(-5 * HOUR_MS),
+        lastVisitedAt: at(-5 * HOUR_MS),
+      }),
+      card: { open: [], at: DateTime.formatIso(at(-5 * HOUR_MS)), runId, settle },
+      ...overrides,
+    });
+    const resolve = (
+      thread: ProjectionStore.ProjectionSettlementCandidate,
+      overrides: Partial<
+        Parameters<typeof ThreadSettlementService.resolveAutoSettlementAt>[0]
+      > = {},
+    ) =>
+      ThreadSettlementService.resolveAutoSettlementAt({
+        thread,
+        pullRequest: null,
+        nowMs: NOW_MS,
+        autoSettleAfterDays: 1.5,
+        autoSettleOnMerge: true,
+        ...overrides,
+      });
+    expect(resolve(replied("soon"))).toEqual(at(-5 * HOUR_MS));
+    expect(resolve(replied(undefined))).toBeNull();
+    // The few hours count from the user's last look, and an unread reply keeps the full wait.
+    expect(
+      resolve(replied("soon", { opens: { openedAt: NOW_MS - HOUR_MS, score: 1, picks: [] } })),
+    ).toBeNull();
+    // Opened long ago and only now left: the read mark moves, the open does not, so it settles.
+    expect(
+      resolve(replied("soon", { opens: { openedAt: NOW_MS - 8 * HOUR_MS, score: 1, picks: [] } })),
+    ).toEqual(at(-5 * HOUR_MS));
+    expect(resolve(replied("soon", { lastVisitedAt: at(-6 * HOUR_MS) }))).toBeNull();
+    expect(resolve(replied("soon", { lastVisitedAt: null }))).toBeNull();
+    expect(
+      resolve(replied("soon", { pullRequests: [persistedLink("open", at(-DAY_MS))] })),
+    ).toBeNull();
+    expect(
+      resolve(
+        replied("soon", {
+          card: {
+            open: [{ kind: "verify", text: "Check the totals" }],
+            at: DateTime.formatIso(at(-5 * HOUR_MS)),
+            runId,
+            settle: "soon",
+          },
+        }),
+      ),
+    ).toBeNull();
+    // A card from an earlier run says nothing about the reply that followed it.
+    expect(resolve(replied("soon", { latestRunId: RunId.make("run-2") }))).toBeNull();
+    expect(resolve(replied("soon"), { autoSettleAfterDays: null })).toBeNull();
+
+    const stale = {
+      latestUserMessageAt: at(-9 * DAY_MS),
+      latestRunCompletedAt: at(-9 * DAY_MS),
+      lastVisitedAt: null,
+    };
+    expect(resolve(replied("soon", stale))).toEqual(at(-9 * DAY_MS));
+    expect(resolve(replied("keep", stale))).toBeNull();
+    // A failed or interrupted run writes no card, so the thread is still a standing one.
+    expect(resolve(replied("keep", { ...stale, latestRunId: RunId.make("run-2") }))).toBeNull();
+    // Only the inactivity timer is off: a merged pull request still settles the thread.
+    expect(
+      resolve(replied("keep", stale), {
+        pullRequest: { state: "merged", mergedAt: DateTime.formatIso(at(-1)) },
+      }),
+    ).toEqual(at(-9 * DAY_MS));
   });
 
   it("uses the latest activity time when the inactivity window elapses", () => {

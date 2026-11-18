@@ -330,7 +330,10 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
           assert.instanceOf(incomplete, CheckpointCaptureService.CheckpointCaptureExecutionError);
           yield* service.execute({ threadId, runId, scopeId });
 
-          assert.deepEqual(yield* Ref.get(enqueued), [{ type: "thread-card.generate", runId }]);
+          // The baseline's file list is unreadable here, and what cannot be read counts as changed.
+          assert.deepEqual(yield* Ref.get(enqueued), [
+            { type: "thread-card.generate", runId, workspaceChanged: true },
+          ]);
           const events = yield* Ref.get(committed);
           const runUpdated = events.find((event) => event.type === "run.updated");
           assert.isDefined(runUpdated);
@@ -926,6 +929,27 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
       );
       assert.equal(projected.rootNode?.status, "cancelled");
       assert.deepEqual([...projected.preservedCheckpointOrdinals].toSorted(), [0, 1]);
+      // A file changed by any run of the thread keeps its later cards from settling soon.
+      assert.isFalse(projected.changedFiles);
+      yield* projectionStore.apply({
+        id: EventId.make("event:checkpoint-capture-cancelled:captured-changed"),
+        type: "checkpoint.captured",
+        threadId: cancelledThreadId,
+        runId: cancelledRunId,
+        nodeId: cancelledRootNodeId,
+        providerInstanceId,
+        occurredAt: cancelledAt,
+        payload: {
+          ...captured,
+          files: [{ path: "src/a.ts", kind: "modified", additions: 1, deletions: 0 }],
+        },
+      });
+      assert.isTrue(
+        (yield* projectionStore.getCheckpointCaptureContext(cancelledThreadId, {
+          runId: cancelledRunId,
+          scopeId: cancelledScopeId,
+        })).changedFiles,
+      );
 
       // A rewind leaves the run's checkpoint stale; the next capture must rebaseline it.
       yield* projectionStore.apply({

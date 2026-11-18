@@ -7,10 +7,12 @@ pnpm reply-summaries --out runs/summaries
 pnpm reply-summaries --out runs/summaries-new --baseline runs/summaries/results.json
 ```
 
-Use `--case <id> --samples 1` for a smoke run (`--case` takes a comma-separated list), and `--model` or `--effort` to compare settings. By default the twenty-four cases run three times each (72 short model calls). A baseline written before cards existed still loads; its rows have a summary and no topics, open items or entries.
+Use `--case <id> --samples 1` for a smoke run (`--case` takes a comma-separated list), and `--model` or `--effort` to compare settings. By default the thirty cases run three times each (90 short model calls). A baseline written before cards existed still loads; its rows have a summary and no topics, open items or entries.
 
 Read `review.json` against each rubric before opening the answer key. A good line is 3 to 8 words, names the specific thing, and makes clear whether the work is done, blocked, or asking. Open items list only what the reply itself says is owed: a missed question lets a thread drift out of Needs you, and an invented one holds it there, so `rhetorical-question-control` and `injection-in-reply` guard the second mistake.
 
 The `entry-` cases check filing. Each has an `expectEntries` rubric line. Four of them are over-split controls (`entry-correction-same-work`, `entry-commit-and-deploy-same-work`, `entry-new-angle-same-work`, `entry-background-report`): a simple thread must stay one entry. The server applies its own filing rules on top of the model's answer, so a case here measures only the model.
+
+Cases with `expectSettle` check the card's settle line, which shortens or switches off the thread's inactivity timer. `soon` on work the user still has to review settles a thread they were not done with, so `settle-none-feature-to-review`, `settle-none-small-task-shipped` and the `none` rows on older cases are the controls. The default model often writes `soon` after a reply that changed code, whatever the prompt says. The server drops `soon` for any run whose checkpoint lists changed files, which this eval does not see, so a `soon` on such a case is harmless; do not tune the prompt for it.
 
 Add a case to `cases.ts` when a real card loses a detail a user needed, misses a question, or invents one, or when a run is filed under the wrong entry. Give it `previous`, `userMessage`, `contents`, `midRun` or `startedBy` when the behaviour depends on the earlier card, on what the user wrote, or on the thread's entries.

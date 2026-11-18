@@ -74,6 +74,20 @@ describe("parseThreadCard", () => {
     ]);
   });
 
+  it.each([
+    ["settle: soon", [], "soon"],
+    ["settle: **Keep**.", [], "keep"],
+    ["settle: keep\nverify: Check the totals", ["verify"], "keep"],
+    // A reply that still owes the user something has not closed the thread out.
+    ["settle: soon\ncommit: Two files uncommitted", ["commit"], undefined],
+    ["settle: soon\nfollowup: Re-check the build", ["followup"], undefined],
+    ["settle: in a while", [], undefined],
+  ])("reads %j as open %j with settle %j", (lines, kinds, settle) => {
+    const card = parseThreadCard(`line: Answered the 403 question\n${lines}`, NOW_MS);
+    expect(card?.open.map((item) => item.kind)).toEqual(kinds);
+    expect(card?.settle).toBe(settle);
+  });
+
   it("treats output with no labels as the line alone", () => {
     expect(parseThreadCard('"Merge PR 412 now?"\nCommit it when ready.', NOW_MS)).toEqual({
       line: "Merge PR 412 now?",
@@ -173,6 +187,17 @@ describe("buildThreadCardPrompt", () => {
     expect(prompt).toContain("[…]");
     expect(prompt.length).toBeLessThan(reply.length);
     expect(prompt).toContain("topics: login test\nfollowup 2030-03-04T08:00:00.000Z: Re-check CI");
+    // A standing thread stays standing; whether a reply closed the thread out is judged anew.
+    const previous = (settle: "soon" | "keep") =>
+      block(
+        buildThreadCardPrompt({
+          ...base,
+          previous: { line: "Notes updated", topics: ["notes"], open: [], settle },
+        }),
+        "previous_card",
+      );
+    expect(previous("keep")).toContain("topics: notes\nsettle: keep\n");
+    expect(previous("soon")).not.toContain("settle:");
     expect(prompt).toContain("<user_message>\nFix the login test\n</user_message>");
   });
 

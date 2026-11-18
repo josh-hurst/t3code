@@ -45,7 +45,12 @@ import { AuthMcpClientAccess } from "./auth.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
-import { ThreadCard, ThreadCardOpenKind, ThreadCardSummary } from "./threadCard.ts";
+import {
+  ThreadCard,
+  ThreadCardOpenKind,
+  ThreadCardSettle,
+  ThreadCardSummary,
+} from "./threadCard.ts";
 import {
   ContentsBackfillEstimate,
   ContentsBackfillEstimateInput,
@@ -3781,6 +3786,7 @@ const OrchestrationV2InternalCommand = Schema.Union([
     line: ThreadCardSummary.fields.line,
     topics: ThreadCardSummary.fields.topics,
     open: ThreadCardSummary.fields.open,
+    settle: Schema.optional(ThreadCardSettle),
     /** Absent: write the card only. */
     run: Schema.optional(
       Schema.Struct({

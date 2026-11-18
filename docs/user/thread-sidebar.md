@@ -310,6 +310,16 @@ but an old closed or merged pull request does not settle work you
 resumed after it closed. Only your own messages count as resuming. A turn that
 finished background work or a pull request watch starts on its own does not.
 
+When [thread summaries](#choose-what-shows-under-a-threads-title) are on, the summary of a
+thread's latest finished run can change that wait. In a thread where no run has changed
+a file, a reply that leaves you nothing to do, such as an answered question or a status
+report, settles the thread four hours after you last opened it, once you have read the
+reply and moved on. A thread you keep coming back to, such as a running log, is not
+settled for inactivity at all; a merged or closed pull request still settles it. A thread
+where a run changed files, a thread with a pull request, and a reply that still owes you
+a check, a commit, or a publish all keep the usual wait. Each finished run decides again,
+and **Un-settle thread** brings back one that went too early.
+
 To keep one thread out of the settled shelf no matter how long it sits idle, open its menu,
 choose **Auto-settle behavior**, and pick **Never**. The current option is checked. Pick
 **Follow settings** to return to the rules in **Settings → Threads**. While those rules are off,

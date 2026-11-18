@@ -22,6 +22,8 @@ interface Case {
   readonly rubric: string;
   /** How the run should be filed, for cases about entries. */
   readonly expectEntries?: string;
+  /** The settle line the card should carry, for cases about the inactivity timer. */
+  readonly expectSettle?: "soon" | "keep" | "none";
 }
 
 // Synthetic replies in the shapes agents end turns with. The spec example ("Fixed flaky login
@@ -34,6 +36,7 @@ export const cases: ReadonlyArray<Case> = [
 
 Ran the suite 50 times locally: 50/50 passes, down from about 1 in 8 failing before. No production code changed.`,
     rubric: "Names the login test, says it is fixed, and keeps a number (2 retries or 50/50).",
+    expectSettle: "none",
   },
   {
     id: "asks-a-question",
@@ -46,6 +49,7 @@ Ran the suite 50 times locally: 50/50 passes, down from about 1 in 8 failing bef
 Option 1 is simpler but changes who gets notified. Which do you want before I run the backfill?`,
     rubric:
       "Line reads as a question about the null owner_id rows (or 14k rows), assign vs hide. Exactly one ask item, asking that question.",
+    expectSettle: "none",
   },
   {
     id: "blocked",
@@ -79,6 +83,7 @@ Final result: moved 9 settings from client to server storage, added a one-time m
     reply: "Yes, `vp run dev --share` prints a pairing URL. Open it in an unpaired browser.",
     rubric:
       "Short, accurate restatement such as 'vp run dev --share prints pairing URL'. No invented work and no open items.",
+    expectSettle: "soon",
   },
   {
     id: "open-commit-and-ship",
@@ -88,6 +93,7 @@ Final result: moved 9 settings from client to server storage, added a one-time m
 I have not committed anything. Once you commit, the change still needs a publish before customers see it.`,
     rubric:
       "Line names the CSV export fix. One commit item and one ship item (the publish). No ask.",
+    expectSettle: "none",
   },
   {
     id: "followup-with-time",
@@ -95,6 +101,7 @@ I have not committed anything. Once you commit, the change still needs a publish
     reply: `The backfill is running against the replica and has done 2.1M of 9M rows. At this rate it finishes overnight, so the row counts will be readable tomorrow morning. Nothing else is needed from you until then.`,
     rubric:
       "Line says the backfill is running (2.1M of 9M). One followup item about checking the row counts, with a time on the morning after the current time. No ask.",
+    expectSettle: "none",
   },
   {
     id: "rhetorical-question-control",
@@ -394,5 +401,85 @@ On the date picker: it builds the month from \`new Date(year, month)\` in UTC bu
 Want me to add tests?`,
     rubric: "Line says the queue depth gauge is added. No ask item, no other open item.",
     expectEntries: "One entry line, e1.",
+  },
+  {
+    id: "settle-soon-explanation",
+    source: "Auto-settle timing: a question answered in full leaves the thread nothing to wait for",
+    userMessage: "what's the difference between a 401 and a 403?",
+    reply: `A 401 means the request has no valid credentials, so the client should authenticate and try again. A 403 means the server knows who you are but won't let you do this, so retrying with the same credentials won't help.`,
+    rubric: "Line states the 401 versus 403 difference. No open items.",
+    expectSettle: "soon",
+  },
+  {
+    id: "settle-none-small-task-shipped",
+    source:
+      "Auto-settle timing control: a reply that changed files gets no soon, even committed and pushed (the server would drop it anyway)",
+    userMessage: "bump the node version in .nvmrc to 24.13.1 and push it",
+    reply: `Bumped \`.nvmrc\` to 24.13.1, committed as 4e1f9a2 and pushed to main. CI is green.`,
+    rubric: "Line says .nvmrc is on 24.13.1 and pushed. No open items.",
+    expectSettle: "none",
+  },
+  {
+    id: "settle-soon-status-report",
+    source: "Auto-settle timing: a status question answered, with nothing changed and nothing owed",
+    contents: {
+      entries: [
+        {
+          ref: "e1",
+          title: "Nightly report job",
+          outcome: "Empty-region fix shipped",
+          open: false,
+        },
+      ],
+      previousRefs: ["e1"],
+    },
+    userMessage: "did last night's report run ok?",
+    reply: `Yes. Last night's run finished in 4 minutes with no errors, including the two regions that had no orders.`,
+    rubric: "Line says last night's report ran clean (4 minutes, no errors). No open items.",
+    expectEntries: "One entry line, e1.",
+    expectSettle: "soon",
+  },
+  {
+    id: "settle-none-feature-to-review",
+    source: "Auto-settle timing control: finished work the user will review keeps the full wait",
+    userMessage: "add rate limiting to the public API",
+    reply: `Rate limiting is in: a token bucket per API key in \`middleware/rateLimit.ts\`, 120 requests a minute by default and configurable per plan. Added 11 tests, all passing, and committed on \`feat/rate-limit\` as 7c2d1e0. I opened PR #733 against main.`,
+    rubric: "Line says rate limiting was added and PR #733 is open.",
+    expectSettle: "none",
+  },
+  {
+    id: "settle-keep-running-log",
+    source: "Auto-settle timing: a standing thread the user keeps coming back to",
+    userMessage:
+      "I'm going to use this thread as a running log of prod incidents. Each time I paste one, add it to docs/incidents.md with the date. First one: checkout latency spike, 14:02 to 14:20 UTC, cause was a cold cache after deploy.",
+    reply: `Logged it in \`docs/incidents.md\` under today's date: checkout latency spike, 14:02 to 14:20 UTC, cold cache after deploy. Committed as a91c3f0. Paste the next incident here whenever it happens and I'll append it the same way.`,
+    rubric: "Line says the checkout latency incident was logged.",
+    expectSettle: "keep",
+  },
+  {
+    id: "settle-keep-carried",
+    source: "Auto-settle timing: a standing thread stays standing on its next reply",
+    previous: {
+      line: "Logged checkout latency incident",
+      topics: ["incident log"],
+      open: [],
+      settle: "keep",
+    },
+    contents: {
+      entries: [
+        {
+          ref: "e1",
+          title: "Prod incident log",
+          outcome: "Checkout latency spike logged",
+          open: false,
+        },
+      ],
+      previousRefs: ["e1"],
+    },
+    userMessage: "next one: search indexer fell behind by 40 minutes on Tuesday, disk was full",
+    reply: `Added Tuesday's incident to \`docs/incidents.md\`: search indexer 40 minutes behind, disk full. Committed as c07b12d.`,
+    rubric: "Line says the search indexer incident was logged.",
+    expectEntries: "One entry line, e1.",
+    expectSettle: "keep",
   },
 ];
