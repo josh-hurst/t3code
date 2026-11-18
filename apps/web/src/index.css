@@ -1114,7 +1114,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 :root {
   color-scheme: light;
   --radius: 0.5rem;
-  --background: var(--color-zinc-25);
+  --background: #f6f5f1;
   --app-chrome-background: var(--background);
   --toolbar-background: var(--app-chrome-background);
   --toolbar-foreground: var(--foreground);
@@ -1169,7 +1169,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --update-foreground: var(--primary);
   /* Keep every sidebar primitive on the same light surface hierarchy, including
      portaled mobile sheets and settings navigation outside the app sidebar. */
-  --sidebar: var(--color-zinc-50);
+  --sidebar: #f4f3ef;
   --sidebar-foreground: var(--foreground);
   --sidebar-muted-foreground: var(--muted-foreground);
   --sidebar-control-surface: var(--color-zinc-100);
@@ -1187,10 +1187,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   @variant dark {
     color-scheme: dark;
-    /* The canvas is true black, matching the sidebar. Raised surfaces keep the tone they had
+    /* The canvas is near-black, as on mobile. Raised surfaces keep the tone they had
        over neutral-950, so cards, popovers, and the composer still lift. Borders and hover
        states provide separation without milky gray fills. */
-    --background: #000;
+    --background: #0a0a08;
     --surface-raised: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
     --foreground: var(--color-neutral-100);
     --card: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
@@ -1247,10 +1247,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 /* Keep both sidebar implementations (default and legacy) on the same quiet
-   zinc hierarchy: zinc-50 navigation, zinc-25 hover, and white selected/raised
+   hierarchy: ivory navigation, zinc-25 hover, and white selected/raised
    surfaces. */
 [data-app-sidebar] {
-  --background: var(--color-zinc-25);
+  --background: #f6f5f1;
   --foreground: var(--color-zinc-900);
   --card: var(--color-white);
   --card-foreground: var(--color-zinc-900);
@@ -1260,7 +1260,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --muted-foreground: var(--color-zinc-500);
   --border: var(--color-zinc-200);
   --input: var(--color-zinc-300);
-  --sidebar: var(--color-zinc-50);
+  --sidebar: #f4f3ef;
   --sidebar-foreground: var(--color-zinc-900);
   --sidebar-muted-foreground: var(--color-zinc-500);
   --sidebar-control-surface: var(--color-zinc-100);
