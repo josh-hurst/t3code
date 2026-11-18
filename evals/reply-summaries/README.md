@@ -7,7 +7,7 @@ pnpm reply-summaries --out runs/summaries
 pnpm reply-summaries --out runs/summaries-new --baseline runs/summaries/results.json
 ```
 
-Use `--case <id> --samples 1` for a smoke run (`--case` takes a comma-separated list), and `--model` or `--effort` to compare settings. By default the thirty cases run three times each (90 short model calls). A baseline written before cards existed still loads; its rows have a summary and no topics, open items or entries.
+Use `--case <id> --samples 1` for a smoke run (`--case` takes a comma-separated list), and `--model` or `--effort` to compare settings. Each selected case makes three short model calls by default. A baseline written before cards existed still loads; its rows have a summary and no topics, open items or entries.
 
 Read `review.json` against each rubric before opening the answer key. A good line is 3 to 8 words, names the specific thing, and makes clear whether the work is done, blocked, or asking. Open items list only what the reply itself says is owed: a missed question lets a thread drift out of Needs you, and an invented one holds it there, so `rhetorical-question-control` and `injection-in-reply` guard the second mistake.
 

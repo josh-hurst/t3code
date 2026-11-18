@@ -78,16 +78,6 @@ export function hasUnseenCompletion(
   return completedAt > lastVisitedAt;
 }
 
-/** Unopened threads' failures still count as unseen, unlike completions. */
-function hasUnseenFailure(thread: Pick<ThreadStatusInput, "latestRun" | "lastVisitedAt">): boolean {
-  if (thread.latestRun?.status !== "failed") return false;
-  if (!thread.lastVisitedAt) return true;
-  const completedAt = Date.parse(thread.latestRun.completedAt ?? "");
-  const lastVisitedAt = Date.parse(thread.lastVisitedAt);
-  if (Number.isNaN(completedAt) || Number.isNaN(lastVisitedAt)) return true;
-  return completedAt > lastVisitedAt;
-}
-
 /** The single decision behind the web status pill and both clients' Needs you. */
 export function threadStatusKind(thread: ThreadStatusInput): ThreadStatusKind | null {
   if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
@@ -115,7 +105,7 @@ export function threadStatusKind(thread: ThreadStatusInput): ThreadStatusKind | 
   if (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) {
     return "waiting";
   }
-  if (hasUnseenFailure(thread)) return "failed";
+  if (thread.latestRun?.status === "failed") return "failed";
   if (
     !thread.hasPendingUserInput &&
     thread.interactionMode === "plan" &&

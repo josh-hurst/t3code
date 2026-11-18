@@ -125,6 +125,14 @@ describe("threadNeedsYou", () => {
       true,
     ],
     ["unseen failure", { latestRun: run("failed", T2) }, "failed", true, true],
+    ["visited failure", { latestRun: run("failed", T0) }, "failed", true, true],
+    [
+      "retry starting after a failure",
+      { latestRun: run("failed", T0), runtime: runtime("starting") },
+      "connecting",
+      false,
+      false,
+    ],
     [
       "plan ready",
       { interactionMode: "plan", hasActionableProposedPlan: true, latestRun: run("completed", T0) },

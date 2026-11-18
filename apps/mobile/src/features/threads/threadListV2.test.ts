@@ -2203,13 +2203,12 @@ describe("self-filing list", () => {
     });
     const ids = (layout: ThreadListV2Layout) => layout.items.map((item) => item.thread.id);
 
-    // An unseen failure needs you until the thread is opened.
-    const unseen = finishedUnseen("finished", 9);
-    const finished = { ...unseen, latestRun: { ...unseen.latestRun!, status: "failed" as const } };
+    const pending = { ...touched("approval", localIso(9)), hasPendingApprovals: true };
+    const answered = { ...visit(pending), hasPendingApprovals: false };
     const other = touched("other", localIso(10));
-    expect(layoutWith([finished, other], "finished").needsYouCount).toBe(1);
-    expect(layoutWith([visit(finished), other], "finished").needsYouCount).toBe(1);
-    expect(layoutWith([visit(finished), other], null).needsYouCount).toBe(0);
+    expect(layoutWith([pending, other], "approval").needsYouCount).toBe(1);
+    expect(layoutWith([answered, other], "approval").needsYouCount).toBe(1);
+    expect(layoutWith([answered, other], null).needsYouCount).toBe(0);
 
     const old = touched("old", localIso(8));
     expect(ids(layoutWith([old, other], "old"))).toEqual(["other", "old"]);

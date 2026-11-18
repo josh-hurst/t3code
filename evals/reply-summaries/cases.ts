@@ -86,6 +86,70 @@ Final result: moved 9 settings from client to server storage, added a one-time m
     expectSettle: "soon",
   },
   {
+    id: "audit-report-on-separate-branch",
+    source:
+      "Reported thread status: a completed audit on its own branch acquired Check and Publish",
+    userMessage: "Audit the order service for bugs and write up the findings on a separate branch.",
+    reply: `Committed the audit report to the local branch review/orders as a1b2c3d. The branch is unmerged and contains only the report.
+
+I reproduced a duplicate refund on retry and would fix it first. I couldn't verify the failover timeout locally. The report lists the staging checks needed to confirm that finding.`,
+    rubric:
+      "Line reports the completed audit or its findings. No open items. The staging caveat is part of the report and the requested branch is the deliverable.",
+  },
+  {
+    id: "audit-report-explicit-handoff",
+    source: "Control: an audit report with a specific manual check and merge handed to the user",
+    userMessage: "Prepare the order service audit for inclusion in the handbook.",
+    reply: `Committed the audit report to review/orders and opened PR #87. Please confirm the refund screenshot in the handbook preview, then merge PR #87 to publish the report.`,
+    rubric:
+      "Exactly one verify item naming the refund screenshot and one ship item naming PR #87. No commit or other open item.",
+  },
+  {
+    id: "finished-push-unrelated-checkout",
+    source:
+      "Still open history: a completed push kept a Commit label after the user stopped the build",
+    previous: {
+      line: "Invoice fixes ready to push",
+      topics: ["invoice fixes"],
+      open: [{ kind: "commit", text: "Push the invoice fixes" }],
+    },
+    userMessage: "Push the invoice fixes. Skip the build.",
+    reply: `The two invoice commits are on origin/invoices. I stopped the packaging job. The receipt layout edits in a different checkout are still uncommitted. Those belong to another session. When you're ready for a build, the release script is available.`,
+    rubric:
+      "No open items. The push is complete, the build was declined and the other edits belong to a different task.",
+  },
+  {
+    id: "agent-owns-scheduled-check",
+    source:
+      "Still open history: a scheduled agent re-check was presented to the user as a follow-up",
+    userMessage: "Watch the indexing rollout and let me know how it goes.",
+    reply: `Indexing looks healthy through the first 12,000 requests. I've scheduled my next check for tomorrow at 09:00. I'll read the error counts and report back here automatically. If you'd like a separate breakdown by region, which regions should I compare?`,
+    rubric:
+      "Line or outcome mentions the scheduled check. No followup or verify for the user, and no ask about the optional regional analysis.",
+    expectSettle: "none",
+  },
+  {
+    id: "usage-and-undo-advice",
+    source:
+      "Still open history: operating advice and undo instructions became checks and follow-ups",
+    userMessage: "Enable offline mode for this tablet.",
+    reply: `Offline mode is on and all 12 maps are downloaded. While using it, check the storage gauge if you add routes. It reads 81% full. To undo this after your trip, run maps offline off. It stays enabled until you change it.`,
+    rubric: "Line says offline mode is on. No open items for using or undoing the setting.",
+  },
+  {
+    id: "release-handoff-survives-status",
+    source: "Control: a release the user took responsibility for stays open across a status update",
+    previous: {
+      line: "Handbook ready for your Friday publish",
+      topics: ["handbook release"],
+      open: [{ kind: "ship", text: "Publish the handbook release on Friday" }],
+    },
+    userMessage: "Did the handbook link check pass?",
+    reply: "Yes, all 48 handbook links passed.",
+    rubric:
+      "Answers the link check and keeps exactly the existing ship item in its original words.",
+  },
+  {
     id: "open-commit-and-ship",
     source: "Tide design: a finished reply that leaves a commit and a publish to the user",
     reply: `The export button now streams the CSV instead of building it in memory, so the 80 MB report no longer times out. I changed \`reports/export.ts\` and \`reports/export.test.ts\`; all 14 export tests pass.

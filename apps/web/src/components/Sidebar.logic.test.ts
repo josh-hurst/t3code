@@ -797,7 +797,7 @@ describe("resolveThreadStatusPill", () => {
     ).toMatchObject({ label: "Failed" });
   });
 
-  it("drops the failed pill once the failure has been seen", () => {
+  it("keeps the failed pill after the thread has been visited", () => {
     expect(
       resolveThreadStatusPill({
         thread: {
@@ -808,7 +808,7 @@ describe("resolveThreadStatusPill", () => {
           runtime: { ...baseThread.runtime, status: "failed", activeRunId: null },
         },
       }),
-    ).toBeNull();
+    ).toMatchObject({ label: "Failed" });
   });
 });
 

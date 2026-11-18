@@ -162,12 +162,13 @@ own choice.
 ### Threads that need you
 
 **Needs you** gathers threads waiting on an approval, an answer, or a
-guest, with a plan ready, with a question you have not answered, or with a failed run you
-haven't opened. A finished run stays in the Trail, marked **Done** until you leave the thread
+guest, with a plan ready, with a question you have not answered, or whose latest run failed.
+Opening a failed thread keeps **Failed** visible. Starting another run shows its new status.
+A finished run stays in the Trail, marked **Done** until you leave the thread
 or send it a message, with anything it still owes, such as a commit or a publish, at the start of its line. The thread that
 has waited longest comes first. Pinned threads stay pinned and working threads stay in Working.
 
-A thread leaves Needs you once you've opened it and moved on, answered it, or settled it. The
+Answering a request or settling the thread takes it out of Needs you. The
 thread you have open stays where it was until you leave it, and moves once you send it a
 message. A reply that arrives while the thread is on screen counts as read only when you leave.
 
@@ -348,9 +349,9 @@ it will make, and runs only when you press **Start**, one call at a time, on the
 model. It leaves those threads' summaries, open items and order alone, and you can cancel
 it; starting it again picks up where it stopped. Long threads only is the cheaper choice.
 
-**Still open** shows only topics that still owe something, each with its items: a question,
-a check, a commit, a publish or a follow-up. Its count is the one the
-[Focus](#focus-on-one-project) row shows. An item clears when a later reply says it is done,
+**Still open** lists questions, checks, commits, publishes and follow-ups that a reply leaves
+for you, including those on settled threads. The [Focus](#focus-on-one-project) row shows
+the same count. An item clears when a later reply says it is done,
 when you answer a question, when you press **Done** on it, or, for a commit, when the
 thread's checkout has no uncommitted changes after a turn or when you open Still open.
 After you publish, choose a project and press **Mark published**, or run

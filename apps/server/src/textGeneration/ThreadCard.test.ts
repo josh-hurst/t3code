@@ -37,11 +37,13 @@ describe("parseThreadCard", () => {
       [
         "line: Fixed flaky login test; 2 retries removed.",
         "topics: login test, **session cookie**, Login Test, ",
-        "ask: Use Clerk or Auth0 for login?",
+        "ask: offer | Which extra sign-in providers would you like?",
+        "ask: blocking | Use Clerk or Auth0 for login?",
         "- verify: Check the redirect on a phone",
         "commit: auth/login.test.ts is uncommitted",
         "ship: Waiting on a publish",
-        "followup 2030-03-04T09:00+01:00: Re-check the nightly build",
+        "followup 2030-03-04T09:00+01:00: agent | Report the error rate",
+        "followup 2030-03-04T09:00+01:00: user | Re-check the nightly build",
         "Some trailing prose the model added.",
       ].join("\n"),
       NOW_MS,
@@ -81,6 +83,7 @@ describe("parseThreadCard", () => {
     // A reply that still owes the user something has not closed the thread out.
     ["settle: soon\ncommit: Two files uncommitted", ["commit"], undefined],
     ["settle: soon\nfollowup: Re-check the build", ["followup"], undefined],
+    ["settle: soon\nfollowup: agent | Report back on deployment", [], undefined],
     ["settle: in a while", [], undefined],
   ])("reads %j as open %j with settle %j", (lines, kinds, settle) => {
     const card = parseThreadCard(`line: Answered the 403 question\n${lines}`, NOW_MS);
@@ -88,11 +91,19 @@ describe("parseThreadCard", () => {
     expect(card?.settle).toBe(settle);
   });
 
-  it("treats output with no labels as the line alone", () => {
+  it("accepts a bare headline and keeps any labelled fields after it", () => {
     expect(parseThreadCard('"Merge PR 412 now?"\nCommit it when ready.', NOW_MS)).toEqual({
       line: "Merge PR 412 now?",
       topics: [],
       open: [],
+      entries: [],
+    });
+    expect(
+      parseThreadCard("Push is waiting on a remote\ntopics: release\nask: Which remote?", NOW_MS),
+    ).toEqual({
+      line: "Push is waiting on a remote",
+      topics: ["release"],
+      open: [{ kind: "ask", text: "Which remote?" }],
       entries: [],
     });
     expect(parseThreadCard("topics: login\nask: Merge it?", NOW_MS)).toBeNull();
