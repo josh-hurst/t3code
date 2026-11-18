@@ -531,6 +531,13 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
   -webkit-mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
 
+  @variant md {
+    mask-image:
+      linear-gradient(to bottom, black 0%, black 55%, transparent 92%),
+      linear-gradient(to right, black var(--workspace-titlebar-content-left), transparent);
+    mask-composite: intersect;
+  }
+
   &::after {
     content: "";
     position: absolute;

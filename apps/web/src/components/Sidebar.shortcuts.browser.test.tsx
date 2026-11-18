@@ -115,7 +115,7 @@ it("leaves thread shortcuts and their hints to the preview when their rules excl
   await whileHoldingControl(() => expect(jumpHint()).not.toBeNull());
 });
 
-it("jumps by the drawn order: what needs you, then the Trail by last message sent", async () => {
+it("jumps through Needs you, then Recent in last-message order", async () => {
   using _environment = installFakeEnvironment([first, second, failed]);
   using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
   __setClientSettingsForTests({
@@ -131,7 +131,7 @@ it("jumps by the drawn order: what needs you, then the Trail by last message sen
     // AppRoot brings its own router.
     router: false,
   });
-  await expect.element(page.getByText(`Thread ${failed.id}`).first()).toBeVisible();
+  await expect.element(page.getByText("Recent", { exact: true })).toBeVisible();
 
   await userEvent.keyboard("{Control>}2{/Control}");
   await vi.waitFor(() =>

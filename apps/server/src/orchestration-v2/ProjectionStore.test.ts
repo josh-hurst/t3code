@@ -6435,11 +6435,12 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     }),
   );
 
-  it.effect("previews the start of the latest finished message on the shell", () =>
+  it.effect("previews the latest finished message and the current run's work on the shell", () =>
     Effect.gen(function* () {
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
       const now = yield* DateTime.now;
       const threadId = ThreadId.make("thread:message-preview");
+      const runId = RunId.make("run:message-preview");
       yield* projectionStore.apply({
         id: EventId.make("event:message-preview:thread"),
         type: "thread.created",
@@ -6487,7 +6488,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             creationSource: input.role === "user" ? "web" : "provider",
             id: MessageId.make(`message:message-preview:${input.suffix}`),
             threadId,
-            runId: input.runId ?? null,
+            runId: input.runId ?? runId,
             nodeId: null,
             role: input.role,
             text: input.text,
@@ -6503,6 +6504,40 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         )?.latestVisibleMessage;
         return message ? { role: message.role, text: message.text } : null;
       });
+      const workingLines = Effect.gen(function* () {
+        const stored = yield* projectionStore.getThreadShell(threadId);
+        const projected = ProjectionStore.threadShellFromProjection(
+          yield* projectionStore.getThreadProjection(threadId),
+        );
+        return [stored?.activityDescription, projected.activityDescription];
+      });
+      const run = {
+        id: runId,
+        threadId,
+        ordinal: 1,
+        providerInstanceId,
+        modelSelection,
+        providerThreadId: null,
+        userMessageId: MessageId.make("message:message-preview:prompt"),
+        rootNodeId: null,
+        activeAttemptId: null,
+        status: "running" as const,
+        requestedAt: now,
+        startedAt: now,
+        completedAt: null,
+        checkpointId: null,
+        contextHandoffId: null,
+      };
+      yield* projectionStore.apply({
+        id: EventId.make("event:message-preview:running"),
+        type: "run.created",
+        threadId,
+        runId,
+        driver,
+        occurredAt: now,
+        payload: run,
+      });
+      assert.deepEqual(yield* workingLines, [null, null]);
 
       yield* applyMessage({
         suffix: "prompt",
@@ -6512,6 +6547,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         seconds: 0,
       });
       assert.deepEqual(yield* preview, { role: "user", text: "Fix the sidebar" });
+      assert.deepEqual(yield* workingLines, ["Fix the sidebar", "Fix the sidebar"]);
 
       yield* applyMessage({
         suffix: "reply",
@@ -6521,6 +6557,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         seconds: 1,
       });
       assert.deepEqual(yield* preview, { role: "user", text: "Fix the sidebar" });
+      assert.deepEqual(yield* workingLines, ["Fix the sidebar", "Fix the sidebar"]);
 
       yield* applyMessage({
         suffix: "reply",
@@ -6543,21 +6580,15 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         providerInstanceId,
         occurredAt: DateTime.add(now, { seconds: 2 }),
         payload: {
+          ...run,
           id: rolledBackRunId,
-          threadId,
-          ordinal: 1,
-          providerInstanceId,
-          modelSelection,
-          providerThreadId: null,
+          ordinal: 2,
           userMessageId: MessageId.make("message:message-preview:undone"),
           rootNodeId,
-          activeAttemptId: null,
           status: "rolled_back",
           requestedAt: DateTime.add(now, { seconds: 2 }),
           startedAt: DateTime.add(now, { seconds: 2 }),
           completedAt: DateTime.add(now, { seconds: 2 }),
-          checkpointId: null,
-          contextHandoffId: null,
         },
       });
       yield* applyMessage({
@@ -6576,6 +6607,80 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         ).latestVisibleMessage?.text,
         "y".repeat(200),
       );
+      const queuedRunId = RunId.make("run:message-preview:queued");
+      yield* projectionStore.apply({
+        id: EventId.make("event:message-preview:queued"),
+        type: "run.created",
+        threadId,
+        runId: queuedRunId,
+        occurredAt: now,
+        payload: {
+          ...run,
+          id: queuedRunId,
+          ordinal: 3,
+          status: "queued",
+          startedAt: null,
+          userMessageId: MessageId.make("message:message-preview:next"),
+        },
+      });
+      yield* applyMessage({
+        suffix: "next",
+        role: "user",
+        text: "Next request",
+        streaming: false,
+        seconds: 3,
+        runId: queuedRunId,
+      });
+      assert.deepEqual(yield* preview, { role: "user", text: "Next request" });
+      assert.deepEqual(yield* workingLines, ["y".repeat(200), "y".repeat(200)]);
+      const todo = {
+        id: PlanId.make("plan:sidebar"),
+        kind: "todo_list" as const,
+        threadId,
+        runId,
+        nodeId: NodeId.make("node:sidebar-todo"),
+      };
+      for (const status of ["running", "completed"] as const) {
+        yield* projectionStore.apply({
+          id: EventId.make(`event:sidebar-todo:${status}`),
+          type: "plan.updated",
+          threadId,
+          runId,
+          occurredAt: now,
+          payload: {
+            ...todo,
+            status: status === "running" ? "active" : "completed",
+            steps: [{ id: "tests", text: "Check sidebar navigation", status }],
+          },
+        });
+        const expected = status === "running" ? "Check sidebar navigation" : "y".repeat(200);
+        assert.deepEqual(yield* workingLines, [expected, expected]);
+      }
+      yield* projectionStore.apply({
+        id: EventId.make("event:message-preview:complete"),
+        type: "run.updated",
+        threadId,
+        runId,
+        occurredAt: now,
+        payload: { ...run, status: "completed", completedAt: now },
+      });
+      assert.deepEqual(yield* workingLines, ["Next request", "Next request"]);
+      yield* projectionStore.apply({
+        id: EventId.make("event:message-preview:stop-queue"),
+        type: "run.updated",
+        threadId,
+        runId: queuedRunId,
+        occurredAt: now,
+        payload: {
+          ...run,
+          id: queuedRunId,
+          ordinal: 3,
+          status: "cancelled",
+          startedAt: null,
+          completedAt: now,
+        },
+      });
+      assert.deepEqual(yield* workingLines, [undefined, undefined]);
     }),
   );
 
@@ -6779,10 +6884,18 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       const activeRunLookups = plan.filter(
         (detail) => detail.startsWith("SEARCH r ") && detail.includes("(thread_id=?"),
       );
-      assert.lengthOf(activeRunLookups, 4);
+      assert.lengthOf(activeRunLookups, 3);
       for (const lookup of activeRunLookups) {
         assert.include(lookup, "orchestration_v2_projection_runs_thread_status_idx");
       }
+      assert.include(
+        plan.find((detail) => detail.startsWith("SEARCH list ")),
+        "plans_run_idx (run_id=?)",
+      );
+      assert.include(
+        plan.find((detail) => detail.startsWith("SEARCH todo ")),
+        "turn_items_node_ordinal_idx (node_id=?)",
+      );
       const lastExecutedIndex = plan.findIndex((detail) =>
         detail.includes("orchestration_v2_projection_runs_last_executed_idx"),
       );

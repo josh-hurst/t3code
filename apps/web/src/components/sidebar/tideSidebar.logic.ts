@@ -16,6 +16,7 @@ import {
   threadStatusKind,
   threadStatusWord,
   threadWaitingSince,
+  threadWorkingLine,
   trailDayLabel,
   type ThreadStatusKind,
 } from "@t3tools/client-runtime/state/thread-zones";
@@ -246,7 +247,7 @@ export function resolveTideRowTime(input: {
   }
   if (input.tideTimeAt === null) return null;
   return {
-    label: input.needsYou ? "Waiting on you since" : "Last opened or written",
+    label: input.needsYou ? "Waiting on you since" : "Started or last messaged",
     at: new Date(input.tideTimeAt).toISOString(),
   };
 }
@@ -290,6 +291,7 @@ export function resolveTideRowLead(
   if (later !== null) {
     return { lead: { kind: "owed", word: later.word }, text: later.text ?? line(false), running };
   }
+  const workingLine = threadWorkingLine(thread, kind);
   // A finished run leads with Done; what it still owes starts the text.
   if (kind === "completed" && options.showsStatus) {
     return {
@@ -309,10 +311,11 @@ export function resolveTideRowLead(
           });
     return {
       lead: { kind: "status", tone: limited ? "limited" : kind, word },
-      text: line(!running),
+      text: workingLine ?? line(!running),
       running,
     };
   }
+  if (workingLine !== null) return { lead: null, text: workingLine, running };
   const owed = threadCardOwedLabel(thread.card);
   return { lead: owed === null ? null : { kind: "owed", word: owed }, text: line(false), running };
 }

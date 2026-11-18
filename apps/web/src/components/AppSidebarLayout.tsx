@@ -17,7 +17,7 @@ import {
   threadUndoClaimsShortcut,
   undoLatestThreadAction,
 } from "../hooks/showThreadUndoNotice";
-import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
+import { readLocalStorageValue, removeLocalStorageItem } from "../hooks/useLocalStorage";
 import {
   isRichTextBoldShortcut,
   resolveShortcutCommand,
@@ -40,16 +40,17 @@ import {
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import ThreadSidebar from "./Sidebar";
-import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
+import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { ThreadSidebarWindow, useThreadSidebarPosition } from "./sidebar/ThreadSidebarWindow";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import {
   clampThreadSidebarWidth,
-  resolveInitialThreadSidebarWidth,
   resolveThreadSidebarMaximumWidth,
   resolveThreadSidebarMinimumWidth,
   THREAD_MAIN_CONTENT_MIN_WIDTH,
+  THREAD_SIDEBAR_DEFAULT_WIDTH,
   THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
 } from "./threadSidebarWidth";
 import {
@@ -115,15 +116,11 @@ function readWindowFullscreen(): boolean {
 }
 
 function readInitialThreadSidebarWidth(): number {
-  try {
-    return resolveInitialThreadSidebarWidth(
-      getLocalStorageItem(THREAD_SIDEBAR_WIDTH_STORAGE_KEY, Schema.Finite),
-      window.innerWidth,
-    );
-  } catch (error) {
-    console.error("Could not read persisted thread sidebar width.", error);
-    return resolveInitialThreadSidebarWidth(null, window.innerWidth);
-  }
+  return readLocalStorageValue(
+    THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+    THREAD_SIDEBAR_DEFAULT_WIDTH,
+    Schema.Finite,
+  );
 }
 
 function readUsagePageOpen(router: AnyRouter) {
@@ -426,18 +423,21 @@ export function AppSidebarLayout({
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
+  const [sidebarPosition, setSidebarPosition] = useThreadSidebarPosition();
   // A clamped drag may not change width, so viewport changes need a separate subscription.
   const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);
   const [brandWidth, setBrandWidth] = useState(0);
   const sidebarMinimumWidth = resolveThreadSidebarMinimumWidth(brandWidth);
-  const sidebarMaximumWidth = resolveThreadSidebarMaximumWidth(viewportWidth, sidebarMinimumWidth);
+  const sidebarMaximumWidth = sidebarPosition
+    ? viewportWidth
+    : resolveThreadSidebarMaximumWidth(viewportWidth, sidebarMinimumWidth);
   const resetSidebarWidth = () => {
     try {
       removeLocalStorageItem(THREAD_SIDEBAR_WIDTH_STORAGE_KEY);
     } catch (error) {
       console.error("Could not clear persisted thread sidebar width.", error);
     }
-    setSidebarWidth(resolveInitialThreadSidebarWidth(null, viewportWidth));
+    setSidebarWidth(THREAD_SIDEBAR_DEFAULT_WIDTH);
   };
   const isWindowFullscreen = useSyncExternalStore(
     subscribeToWindowFullscreen,
@@ -450,6 +450,7 @@ export function AppSidebarLayout({
   ) as CSSProperties;
   const sidebarProviderStyle = {
     "--sidebar-width": `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
+    "--sidebar-chrome-width": `${sidebarMinimumWidth}px`,
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
     ...windowControlsInsetStyle,
   } as CSSProperties;
@@ -459,6 +460,7 @@ export function AppSidebarLayout({
       <SidebarProvider
         className="h-dvh! min-h-0!"
         data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
+        data-sidebar-floating={sidebarPosition !== null}
         storageKey="chat_thread_sidebar_open"
         style={sidebarProviderStyle}
       >
@@ -467,6 +469,8 @@ export function AppSidebarLayout({
             <SidebarBrandWidthProbe isElectron={isElectron} onWidthChange={setBrandWidth} />
             <Sidebar
               side="left"
+              variant="frameless"
+              overlay={sidebarPosition !== null}
               collapsible="offcanvas"
               data-app-sidebar=""
               {...sidebarArea}
@@ -476,6 +480,7 @@ export function AppSidebarLayout({
                 maxWidth: sidebarMaximumWidth,
                 minWidth: sidebarMinimumWidth,
                 shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+                  sidebarPosition !== null ||
                   nextWidth <= currentWidth ||
                   wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
                 storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
@@ -483,8 +488,11 @@ export function AppSidebarLayout({
               }}
               style={windowControlsInsetStyle}
             >
-              <ThreadSidebar routeReveal={sidebarRouteReveal} />
-              <SidebarRail onDoubleClick={resetSidebarWidth} />
+              <SidebarChromeHeader isElectron={isElectron} />
+              <ThreadSidebarWindow position={sidebarPosition} onPositionChange={setSidebarPosition}>
+                <ThreadSidebar routeReveal={sidebarRouteReveal} />
+                <SidebarRail onDoubleClick={resetSidebarWidth} />
+              </ThreadSidebarWindow>
             </Sidebar>
           </>
         ) : null}

@@ -281,6 +281,7 @@ function resolveSidebarResizable({
 function Sidebar({
   side = "left",
   variant = "sidebar",
+  overlay = false,
   collapsible = "offcanvas",
   resizable = false,
   className,
@@ -288,7 +289,8 @@ function Sidebar({
   ...props
 }: React.ComponentProps<"div"> & {
   side?: "left" | "right";
-  variant?: "sidebar" | "floating" | "inset";
+  variant?: "sidebar" | "floating" | "inset" | "frameless";
+  overlay?: boolean;
   collapsible?: "offcanvas" | "icon" | "none";
   resizable?: boolean | SidebarResizableOptions;
 }) {
@@ -385,6 +387,7 @@ function Sidebar({
         <div
           className={cn(
             "relative w-(--sidebar-width) bg-transparent",
+            overlay && "hidden",
             "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
             "group-data-[collapsible=offcanvas]:w-0",
             "group-data-[side=right]:rotate-180",
@@ -397,20 +400,27 @@ function Sidebar({
         <div
           className={cn(
             "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
+            variant === "frameless" && "z-(--z-sheet)",
             "[[data-panel-animations=true]_&]:transition-[left,right,width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
               : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
             variant === "floating" || variant === "inset"
               ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
-              : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
+              : variant === "frameless"
+                ? "pointer-events-none"
+                : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
             className,
           )}
           data-slot="sidebar-container"
           {...props}
         >
           <div
-            className="flex h-full w-full flex-col bg-sidebar surface-grain group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
+            className={cn(
+              "flex h-full w-full flex-col",
+              variant !== "frameless" && "bg-sidebar surface-grain",
+              variant === "floating" && "rounded-lg border border-sidebar-border shadow-sm/5",
+            )}
             data-sidebar="sidebar"
             data-slot="sidebar-inner"
           >
@@ -483,15 +493,14 @@ function SidebarRail({
 
     const side = sidebarInstance?.side ?? "left";
     let width = clampSidebarWidth(sidebarContainer.getBoundingClientRect().width, options);
-    // Write width only to gap/container during drag; inherited --sidebar-width restyles the whole app, so
-    // update it at commit.
+    // Publishing the width on the wrapper would restyle the whole workspace on every drag frame.
     const widthTargets = [
       sidebarRoot.querySelector<HTMLElement>("[data-slot='sidebar-gap']"),
       sidebarContainer,
     ].filter((element): element is HTMLElement => element !== null);
     const setTargetWidth = (value: number) => {
       widthTargets.forEach((element) => {
-        element.style.setProperty("width", `${value}px`);
+        element.style.setProperty("--sidebar-width", `${value}px`);
       });
     };
     widthTargets.forEach((element) => {
@@ -533,7 +542,7 @@ function SidebarRail({
       },
       cleanup() {
         widthTargets.forEach((element) => {
-          element.style.removeProperty("width");
+          element.style.removeProperty("--sidebar-width");
           element.style.removeProperty("transition-duration");
         });
       },
@@ -664,6 +673,7 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       className={cn(
         "flex flex-col gap-2 px-[var(--sidebar-content-inset)] pt-1 pb-[var(--sidebar-content-inset)]",
+        "group-data-[variant=frameless]:border-t group-data-[variant=frameless]:border-sidebar-border/70 group-data-[variant=frameless]:py-1.5",
         className,
       )}
       data-sidebar="footer"
@@ -690,7 +700,7 @@ function SidebarContent({
         // Rows provide keyboard access; exclude the viewport from tab order to flatten VoiceOver's WebKit
         // interaction boundary.
         viewportTabIndex={-1}
-        className="h-auto min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:0.75rem]"
+        className="grid h-auto min-h-0 flex-1 grid-rows-[minmax(0,1fr)] [&>[data-slot=scroll-area-viewport]]:[--fade-size:0.75rem]"
       >
         <div
           className={cn(

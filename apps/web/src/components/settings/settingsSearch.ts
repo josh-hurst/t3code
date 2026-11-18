@@ -488,7 +488,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "classic-sidebar",
     title: "Classic sidebar",
     to: "/settings/general",
-    searchTerms: ["old previous layout hand order manual inbox trail needs you working folders"],
+    searchTerms: [
+      "old previous layout hand order manual inbox recent trail needs you working folders",
+    ],
   },
   {
     id: "working-shelf",

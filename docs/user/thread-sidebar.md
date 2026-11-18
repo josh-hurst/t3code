@@ -3,6 +3,16 @@
 Use a new thread for a separate task. Choose **New worktree** when its code changes
 need a separate branch and working directory.
 
+## Move the Threads window
+
+On desktop and wide browser windows, Threads starts pinned beside the chat. Drag its title
+to move it anywhere in the workspace, or click the pin to give the chat the full width.
+Click the pin again to return Threads to the left. Drag the right edge to resize it.
+Your device remembers its size and position.
+
+To move it with the keyboard, focus the Threads title, press Space, use the arrow keys,
+then press Space to drop it or Escape to cancel.
+
 ## Start a thread
 
 On web and desktop, **New thread** opens the project picker when you have more than one
@@ -63,15 +73,15 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 Pin a thread from its menu to keep it above your active work.
 
 On web and desktop, the rest of the sidebar files itself. Below your pins come
-**Needs you**, the **Trail**, **Working**, **Later**, and **History**, and each section
+**Needs you**, **Recent**, **Working**, **Later**, and **History**, and each section
 keeps its own order, so there is nothing to arrange by hand. Dragging still pins, unpins,
 settles, un-settles, and wakes a thread; a thread you drop below the pins goes to Needs
-you or the Trail, wherever it belongs; an older thread can land under the Trail's
-**more** row. The drag labels use these names, so the settled section reads **History**
+you or Recent, wherever it belongs. An older thread can land under **more** in Recent.
+The drag labels use these names, so the settled section reads **History**
 and the snoozed one **Later**. To order active threads yourself, turn on
 [the classic sidebar](#use-the-classic-sidebar). The mobile app files its list the same
-way, and **Clear** on its Trail header settles the Trail behind one **Undo**; for the
-hand-ordered list there, turn on **Settings → General → Classic thread list**.
+way. **Clear** in Recent settles all its threads except the open one. One **Undo**
+brings them back. For the hand-ordered list on mobile, turn on **Settings → General → Classic thread list**.
 
 On web and desktop, unpinning, settling, snoozing, and archiving a thread each show
 a notification with **Undo** for five seconds. Undo restores the thread's previous
@@ -164,7 +174,7 @@ own choice.
 **Needs you** gathers threads waiting on an approval, an answer, or a
 guest, with a plan ready, with a question you have not answered, or whose latest run failed.
 Opening a failed thread keeps **Failed** visible. Starting another run shows its new status.
-A finished run stays in the Trail, marked **Done** until you leave the thread
+A finished run stays in Recent, marked **Done** until you leave the thread
 or send it a message, with anything it still owes, such as a commit or a publish, at the start of its line. The thread that
 has waited longest comes first. Pinned threads stay pinned and working threads stay in Working.
 
@@ -174,7 +184,7 @@ message. A reply that arrives while the thread is on screen counts as read only 
 
 **Next** on the Needs you header, or `thread.nextNeedsYou` (`mod+shift+u`), opens the next
 thread that needs you, starting again from the top after the last one. Pinned threads that
-need you come after the section's own, then **Done** threads in the Trail. It is also in the
+need you come after the section's own, then **Done** threads in Recent. It is also in the
 command palette.
 
 In the classic sidebar, **Settings → General → Needs you section** chooses where the
@@ -183,25 +193,25 @@ threads in Needs you** decides whether a finished run you haven't opened counts.
 Working section off, threads below Needs you keep your order and can still be dragged; the
 Needs you rows hold their place.
 
-### Later and the Trail
+<a id="later-and-the-trail"></a>
+
+### Later and Recent
 
 **Later** holds threads you [put off](#snooze-until-later) and says what each waits for: a
 wake time, a re-check and its reason, **Set aside**, or **Standing check**. Threads with a
 time come first, soonest first.
 
-The **Trail** holds every other unsettled thread, ordered by when you last sent it a message,
+**Recent** holds every other unsettled thread, ordered by when you last sent it a message,
 most recent first. Opening a thread or an agent working in it never reorders it. It shows the
 eight most recent threads, plus any finished run you haven't opened, marked **Done**. Click the
-row below them, such as **5 more today, 3 earlier**, to see the rest:
-today's first, then earlier days under a date. While those rows or History are open, **By day**
-in the Trail's header switches them to **By project**, and back; the first eight always stay in
-the order you touched them. A Trail row's time is when you last
-wrote to it, so the times read in order; hover a row to see the exact time, or in
-Needs you, how long it has waited.
+row below them, such as **5 more today, 3 earlier**, to see the rest grouped by day.
+While those rows or History are open, use **By day** in the Recent header to switch
+between day and project groups. The first eight keep their order. Hover a time in
+Recent to see exactly when you last wrote to the thread, or in Needs you to see how long it has waited.
 
-**Clear** in the Trail's header, or `thread.clearTrail` (`mod+alt+s`), settles every thread
-in the Trail except the one you have open, including the ones under **more**. One **Undo** brings them all back. It leaves
-Needs you, Working, Later, and your pins alone, and is also in the command palette.
+**Clear** in the Recent header, or `thread.clearTrail` (`mod+alt+s`), moves every thread
+in Recent except the open one to History, including those under **more**. One **Undo**
+brings them all back. In the command palette, choose **Clear recent threads**.
 
 ### Focus on one project
 
@@ -227,7 +237,7 @@ again. Each device keeps its own hidden projects.
 ### Group threads by project (beta)
 
 Project folders belong to [the classic sidebar](#use-the-classic-sidebar); otherwise, use
-**By day** on the [Trail](#later-and-the-trail). With the classic sidebar on, turn
+**By day** in [Recent](#later-and-recent). With the classic sidebar on, turn
 on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
 threads in a folder for each project. Pinned projects come first. A project with no active
 threads has no folder unless it is pinned or you pick it in the project filter. An archived
@@ -252,7 +262,7 @@ Turn on **Settings → Threads → Text generation → Summarize latest reply** 
 one-line summary of what its latest finished run did, such as "Fixed flaky login test; 2 retries
 removed". It shows under the thread's title on web, desktop, and mobile. Each row names its
 project above the title (left out when the sidebar shows one project or the rows are grouped by
-project). On Trail, Later, and History rows the summary follows what is still to do, such as
+project). On Recent, Later, and History rows the summary follows what is still to do, such as
 **Check**, **Commit**, **Publish**, or **Follow up**; hover a row for the full summary and each
 item. In Needs you, the summary follows why the thread is there, such as **Approval** or
 **Question**: an approval shows the command or change it asks to make, and a thread with an open
@@ -261,18 +271,21 @@ summary once per finished run with the **Reply summary model** chosen there, so 
 short generation on that provider. A thread with no summary yet looks as before, and the
 mobile **Classic thread list** does not show summaries.
 
-**Settings → General → Thread row details** sets the line under the title for threads without
-a summary on web and desktop: its **Branch**, the start of its **Latest message**, or **Both**.
-In [the classic sidebar](#use-the-classic-sidebar) it decides for every row, and the summary
-shows in place of the latest reply when the setting includes the latest message. It also
-applies to two-line folder rows in the boring sidebar. A thread started in your project's own
-checkout without picking a branch has no branch to show. While a run is going, the preview
-updates when the run ends.
+While a thread works, its subtitle shows the plan step in progress. If the agent has no
+current step, the subtitle shows its latest progress update or the request it is working on.
+You can follow the work from the sidebar even with reply summaries turned off.
+
+For other threads without a summary on web and desktop, **Settings → General → Thread row
+details** lets you choose **Branch**, **Latest message**, or **Both**. In
+[the classic sidebar](#use-the-classic-sidebar), choosing the latest message shows its
+reply summary when one is available. The setting also applies to two-line folder rows in the
+boring sidebar. A thread started in your project's own
+checkout without picking a branch has no branch to show.
 
 ## Settle finished work
 
-Settling is optional on web and desktop: a thread you leave alone drops down the
-[Trail](#later-and-the-trail) and settles itself. Settled threads are listed under
+Settling is optional on web and desktop. A thread you leave alone moves down
+[Recent](#later-and-recent) and settles itself. Settled threads are listed under
 **History**, grouped by the day they were settled. History starts collapsed and loads
 older threads as you ask for more.
 

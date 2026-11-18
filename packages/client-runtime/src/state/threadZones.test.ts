@@ -31,6 +31,7 @@ import {
   threadRowProjectName,
   threadStatusKind,
   threadStatusWord,
+  threadWorkingLine,
   trailDayLabel,
   trailMoreLabel,
   type ThreadStatusKind,
@@ -186,6 +187,32 @@ describe("threadCardRowLine", () => {
     expect(threadCardRowLine(card("ask"), { needsYou: true, request: {} })).toBe("ask");
     expect(threadCardRowLine(card("ask"), { needsYou: false, request })).toBe("Line");
   });
+});
+
+it("uses an older server's message preview only while it belongs to the working turn", () => {
+  const active = RunId.make("active");
+  const line = (overrides: Partial<OrchestrationV2ThreadShell>) =>
+    threadWorkingLine(
+      shell("t", {
+        status: "running",
+        activityRunStatus: "running",
+        latestRunId: active,
+        activeRunId: active,
+        latestRunRequestedAt: DateTime.makeUnsafe(T1),
+        latestVisibleMessage: {
+          id: MessageId.make("update"),
+          role: "assistant",
+          text: "Checking the sidebar",
+          updatedAt: DateTime.makeUnsafe(T2),
+        },
+        goal: { status: "active", objective: "Fix navigation" },
+        ...overrides,
+      }),
+    );
+  expect(line({})).toBe("Checking the sidebar");
+  expect(line({ latestRunRequestedAt: DateTime.makeUnsafe(T3) })).toBe("Fix navigation");
+  expect(line({ latestRunId: RunId.make("queued") })).toBe("Fix navigation");
+  expect(line({ activityDescription: null })).toBe("Fix navigation");
 });
 
 describe("threadAwaitingAsk", () => {

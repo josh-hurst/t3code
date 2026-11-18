@@ -1822,10 +1822,10 @@ function OpenCommandPaletteDialog(props: {
       },
       {
         command: "thread.clearTrail",
-        title: "Clear the Trail",
+        title: "Clear recent threads",
         description:
-          "Settles every Trail thread except the open one into History. Undo restores them",
-        searchTerms: ["trail", "settle all", "clear", "tidy", "sidebar"],
+          "Moves all threads in Recent except the open one to History. Undo restores them",
+        searchTerms: ["recent", "clear the trail", "settle all", "clear", "tidy", "sidebar"],
         icon: <ListChecksIcon className={ITEM_ICON_CLASS} />,
       },
       {

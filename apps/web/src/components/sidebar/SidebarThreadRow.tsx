@@ -129,6 +129,7 @@ import type { SearchMatchHint } from "@t3tools/shared/paletteSearch";
 import {
   threadCardOpenItemLabel,
   threadLaterLabel,
+  threadWorkingLine,
 } from "@t3tools/client-runtime/state/thread-zones";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -966,12 +967,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const isRemote = thread.environmentId !== props.currentEnvironmentId;
   const showsScratchMachine = !checkoutThread.branch && props.scratchMachineLabel !== null;
   const showsBranch = props.rowDetail !== "message";
-  const messagePreview = sidebarRowMessagePreview({
-    thread,
-    rowDetail: props.rowDetail,
-    showCardLine: props.tide,
-    needsYou: props.needsYou,
-  });
+  const workingLine = props.tide ? null : threadWorkingLine(thread);
+  const messagePreview =
+    workingLine ??
+    sidebarRowMessagePreview({
+      thread,
+      rowDetail: props.rowDetail,
+      showCardLine: props.tide,
+      needsYou: props.needsYou,
+    });
   const showsBranchDetail = showsBranch && (Boolean(checkoutThread.branch) || showsScratchMachine);
   // With the meta line given to the message, an off-main branch rides beside the project name.
   const projectLineBranch = showsBranch ? null : nonMainlineBranchName(checkoutThread.branch);
@@ -1694,6 +1698,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 data-sidebar-row={threadKey}
                 data-sidebar-parent={props.navigationParent}
                 aria-label={tideAccessibility.label}
+                aria-description={tideLead?.running ? (tideText ?? undefined) : undefined}
                 aria-current={tideAccessibility.current}
                 data-testid={isCardRow ? "sidebar-row-card" : "sidebar-row-slim"}
                 aria-busy={isRegeneratingTitle || undefined}
@@ -1733,7 +1738,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               label={label}
               unreadCompletion={tideDone}
               text={
-                // Pinned and working rows without an outcome follow Thread row details.
+                // Pinned rows without an outcome follow Thread row details.
                 tideText ??
                 (isCardRow && !props.needsYou
                   ? (messagePreview ?? (showsBranch ? (checkoutThread.branch ?? null) : null))
@@ -1754,8 +1759,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   }
 
   if (variant !== "card") {
-    const multiline = variant === "folder-multiline";
-    const inFolder = variant === "folder" || multiline;
+    const inFolder = variant === "folder" || variant === "folder-multiline";
+    const multiline = variant === "folder-multiline" || workingLine !== null;
     return (
       <li
         data-thread-item={threadKey}
@@ -1782,6 +1787,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 data-sidebar-row={threadKey}
                 data-sidebar-parent={props.navigationParent}
                 aria-label={accessibility.label}
+                aria-description={workingLine ?? undefined}
                 aria-current={accessibility.current}
                 data-testid={inFolder ? "sidebar-row-folder" : "sidebar-row-slim"}
                 aria-busy={isRegeneratingTitle || undefined}
@@ -1978,6 +1984,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               data-sidebar-row={threadKey}
               data-sidebar-parent={props.navigationParent}
               aria-label={accessibility.label}
+              aria-description={workingLine ?? undefined}
               aria-current={accessibility.current}
               data-testid="sidebar-row-card"
               aria-busy={isRegeneratingTitle || undefined}
@@ -2220,6 +2227,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
   const lead = tideLead?.lead ?? null;
   const tideDone = lead?.kind === "status" && lead.tone === "completed";
   const tideLine = tideLead?.text ?? null;
+  const classicWorkingLine = props.tide ? null : threadWorkingLine(thread);
   const matchHint = props.tide ? props.explain?.() : undefined;
   const laterLabel =
     props.tide && !props.isSettled && lead?.kind !== "status"
@@ -2437,6 +2445,11 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
                     <RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />
                   </span>
                 </span>
+                {classicWorkingLine ? (
+                  <span className="truncate text-xs text-secondary-label">
+                    {classicWorkingLine}
+                  </span>
+                ) : null}
                 {props.searchMatch ? (
                   <ThreadSearchMatchExcerpt
                     match={{

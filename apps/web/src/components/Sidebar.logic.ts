@@ -5,6 +5,7 @@ import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import {
   hasUnseenCompletion,
   threadCardRowLine,
+  threadPreviewText,
   threadStatusKind,
   type ThreadStatusInput,
   type ThreadStatusKind,
@@ -639,15 +640,12 @@ export async function deleteSelectedThreadEntries<
   return { deletedThreadKeys, firstFailure };
 }
 
-// Markdown emphasis and code markers read as noise in a one-line preview.
-const PREVIEW_MARKDOWN_NOISE = /\*\*|__|`+|^#+\s+|^>\s+/g;
-
 export function sidebarMessagePreview(
   message: SidebarThreadSummary["source"]["latestVisibleMessage"],
 ): string | null {
   if (message === null) return null;
-  const text = message.text.replace(PREVIEW_MARKDOWN_NOISE, "").replace(/\s+/g, " ").trim();
-  if (text === "") return null;
+  const text = threadPreviewText(message.text);
+  if (text === null) return null;
   return message.role === "user" ? `You: ${text}` : text;
 }
 

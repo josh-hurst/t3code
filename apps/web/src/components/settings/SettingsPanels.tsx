@@ -943,7 +943,7 @@ export function GeneralSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("classic-sidebar")}
-          description="Use the earlier sidebar: one active list you order by hand or by project folder, with Snoozed and Settled shelves in place of Later, Trail and History."
+          description="Switch from Recent to an active list you can order by hand or by project folder. Later and History appear as Snoozed and Settled."
           resetAction={
             settings.sidebarClassicEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarClassicEnabled ? (
               <SettingResetButton

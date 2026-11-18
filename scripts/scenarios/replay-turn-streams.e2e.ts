@@ -12,6 +12,7 @@ test(
     await screen.getByRole("textbox").fill("Give me a short tour");
     await screen.getByRole("textbox").press("Enter");
     const stop = screen.getByRole("button", "Stop generation");
+    await expect(screen.getByTestId("sidebar-row-card")).toContainText("Add a clamp helper");
     await expect(
       screen.getByText("The project has a single math module", { exact: false }),
     ).toBeVisible();

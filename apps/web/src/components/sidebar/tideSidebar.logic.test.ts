@@ -288,6 +288,7 @@ describe("resolveTideRowLead", () => {
       createdAt: at(hoursAgo(1)),
       description: "Run: npm publish",
     },
+    activityDescription: "Preparing the release",
   });
   const limited = (() => {
     const shell = finished({ status: "failed", card: card() });
@@ -295,6 +296,19 @@ describe("resolveTideRowLead", () => {
   })();
 
   it.each([
+    [
+      "a working thread on its current step",
+      thread("t", 2, {
+        latestRunId: RunId.make("run:t"),
+        status: "running",
+        card: card("ship"),
+        activityDescription: "Checking the **sidebar**\n navigation",
+      }),
+      true,
+      false,
+      { kind: "status", tone: "working", word: "Working" },
+      "Checking the sidebar navigation",
+    ],
     [
       "a plan in Needs you",
       finished({ interactionMode: "plan", hasActionableProposedPlan: true, card: card() }),

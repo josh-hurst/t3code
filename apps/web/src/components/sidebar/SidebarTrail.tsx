@@ -8,9 +8,9 @@ import { SortableSidebarMarker } from "./SidebarListMarkers";
 export function SidebarTrailHeader(props: {
   count: number;
   groupByProject: boolean;
-  // Null while no row it regroups is shown: the Trail's first rows always keep last-touch order.
+  // The first eight rows in Recent always keep last-touch order.
   onToggleGroupByProject: (() => void) | null;
-  // Null when nothing in the Trail can be cleared, such as only the open thread.
+  // Null when Recent contains only the open thread or is empty.
   onClear: (() => void) | null;
   clearShortcutLabel: string | null;
   dragging: boolean;
@@ -32,7 +32,7 @@ export function SidebarTrailHeader(props: {
               : "text-sidebar-muted-foreground",
         )}
       >
-        <span className="min-w-0 flex-1 truncate">Trail</span>
+        <span className="min-w-0 flex-1 truncate">Recent</span>
         {props.onToggleGroupByProject ? (
           <Tooltip>
             <TooltipTrigger
@@ -54,8 +54,8 @@ export function SidebarTrailHeader(props: {
             </TooltipTrigger>
             <TooltipPopup side="top">
               {props.groupByProject
-                ? "Rows past the Trail's first eight, and History, are grouped by project. Click to group by day."
-                : "Rows past the Trail's first eight, and History, are grouped by day. Click to group by project."}
+                ? "History and rows past the first eight in Recent are grouped by project. Click to group by day."
+                : "History and rows past the first eight in Recent are grouped by day. Click to group by project."}
             </TooltipPopup>
           </Tooltip>
         ) : null}
@@ -67,7 +67,7 @@ export function SidebarTrailHeader(props: {
                   type="button"
                   size="micro"
                   variant="ghost-muted"
-                  aria-label="Clear the Trail"
+                  aria-label="Clear recent threads"
                   onClick={props.onClear}
                 />
               }
@@ -75,7 +75,7 @@ export function SidebarTrailHeader(props: {
               Clear
             </TooltipTrigger>
             <TooltipPopup side="top">
-              Settle every Trail thread except the open one into History
+              Move all threads in Recent except the open one to History
               {props.clearShortcutLabel ? ` (${props.clearShortcutLabel})` : ""}. Undo brings them
               all back.
             </TooltipPopup>

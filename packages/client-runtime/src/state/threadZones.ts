@@ -196,13 +196,25 @@ export function threadPreviewText(text: string): string | null {
 }
 
 function workingRunText(thread: EnvironmentThreadShell): string | null {
-  const { activityDescription, latestVisibleMessage, latestRunRequestedAt, latestRunId, activeRunId } = thread.source;
+  const {
+    activityDescription,
+    latestVisibleMessage,
+    latestRunRequestedAt,
+    latestRunId,
+    activeRunId,
+  } = thread.source;
   if (activityDescription !== undefined) return activityDescription;
   // Older servers only have the thread-wide preview, which can belong to a queued or finished turn.
-  if (latestVisibleMessage === null || latestRunRequestedAt == null ||
-      (activeRunId !== null && activeRunId !== latestRunId) ||
-      latestVisibleMessage.id === thread.card?.messageId ||
-      DateTime.isLessThan(latestVisibleMessage.updatedAt, latestRunRequestedAt)) return null;
+  if (
+    latestVisibleMessage === null ||
+    latestRunRequestedAt == null ||
+    (activeRunId !== null && activeRunId !== latestRunId) ||
+    (thread.source.activityRunStatus != null &&
+      thread.source.activityRunStatus !== thread.source.status) ||
+    latestVisibleMessage.id === thread.card?.messageId ||
+    DateTime.isLessThan(latestVisibleMessage.updatedAt, latestRunRequestedAt)
+  )
+    return null;
   return latestVisibleMessage.text;
 }
 
@@ -216,7 +228,7 @@ export function threadWorkingLine(
       (task) => task.description && backgroundWorkHoldsCompletion([task]),
     );
     return (
-      threadPreviewText(task?.description ?? workingRunText(thread) ?? "") ??
+      threadPreviewText(task?.description ?? thread.source.activityDescription ?? "") ??
       (thread.blockedOnThreadWait ? "Waiting for another thread" : "Waiting for background work")
     );
   }

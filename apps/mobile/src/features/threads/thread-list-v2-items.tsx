@@ -39,7 +39,7 @@ import {
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { nonMainlineBranchName } from "@t3tools/shared/git";
-import { threadCardOwedLabel } from "@t3tools/client-runtime/state/thread-zones";
+import { threadCardOwedLabel, threadWorkingLine } from "@t3tools/client-runtime/state/thread-zones";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useMemo, useState, type ComponentProps, type ReactNode } from "react";
@@ -964,7 +964,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   } = props;
   const snoozedRow = props.snoozed === true;
   const pinnedRow = props.pinned === true;
-  const cardLine = props.cardLine ?? null;
+  const workingLine = snoozedRow ? null : threadWorkingLine(thread);
+  const cardLine = workingLine ?? props.cardLine ?? null;
   const projectLine = props.projectLine ?? null;
   const dormant = useSwipeRowDormant(props.activationKey);
 
@@ -1052,7 +1053,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     !showsWoke &&
     (variant === "card" || (!snoozedRow && thread.settledOverride !== "settled"));
   const isRegeneratingTitle = thread.titleRegeneration != null;
-  const rowAccessibilityLabel = `${thread.title}${showsDone ? ", done" : ""}${providerNameLabel ? `, ${providerNameLabel}` : ""}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
+  const rowAccessibilityLabel = `${thread.title}${workingLine ? `, ${workingLine}` : ""}${showsDone ? ", done" : ""}${providerNameLabel ? `, ${providerNameLabel}` : ""}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
   const timeLabel = props.timeLabel;
 
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });

@@ -251,7 +251,7 @@ export function WorkingSectionSettings() {
       <Text className="px-2 text-sm text-foreground-muted">
         {classic
           ? "Order active threads by hand. Fold working and monitoring threads into a Working section; they return to the top of the list when they need you. While Working is on, active threads are ordered by time and cannot be moved."
-          : "Threads file themselves: Needs you, the Trail of threads you opened or wrote to most recently, Working, then Later. Turn on Classic thread list to order active threads by hand."}
+          : "Threads are grouped into Needs you, Recent, Working, Later, and History. Recent lists threads by when you last sent a message. Turn on Classic thread list to order active threads by hand."}
       </Text>
     </View>
   );

@@ -497,7 +497,7 @@ export interface ThreadListV2SettledShelfListItem {
 export interface ThreadListV2SectionHeaderListItem {
   readonly type: "v2-section-header";
   readonly key: "v2-needs-you-header" | "v2-trail-header";
-  readonly title: "Needs you" | "Trail";
+  readonly title: "Needs you" | "Recent";
   readonly count: number;
   /** What the header's Clear settles; on the item so a recycled cell never settles an old set. */
   readonly clearThreads: ReadonlyArray<EnvironmentThreadShell> | null;
@@ -835,7 +835,7 @@ export function buildThreadListV2ListItems(input: {
     result.push({
       type: "v2-section-header",
       key: "v2-trail-header",
-      title: "Trail",
+      title: "Recent",
       count: tide.trailCount,
       clearThreads: tide.trailClearThreads.length > 0 ? tide.trailClearThreads : null,
       disabled: shelfDisabled,

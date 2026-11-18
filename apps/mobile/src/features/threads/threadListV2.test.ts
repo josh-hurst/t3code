@@ -1947,7 +1947,7 @@ describe("self-filing list", () => {
             : `[${item.type}]`,
     );
 
-  it("files Pinned, Needs you, the Trail, Working, Later, then History", () => {
+  it("files Pinned, Needs you, Recent, Working, Later, then History", () => {
     const card = (line: string, ask?: string) => ({
       line,
       topics: [],
@@ -2006,10 +2006,10 @@ describe("self-filing list", () => {
       "pinned",
       "[Needs you]",
       "waited-less",
-      "[Trail]",
+      "[Recent]",
       "trail-newer",
       "trail-older",
-      // A finished run that owes a commit waits in the Trail, not Needs you.
+      // A finished run that owes a commit waits in Recent.
       "finished-owing",
       "[v2-working-shelf]",
       "working",
@@ -2022,10 +2022,10 @@ describe("self-filing list", () => {
     expect(items.find((item) => item.key === "v2-thread:environment-1:trail-newer")).toMatchObject({
       // What is still to do leads, so truncation keeps it.
       item: { variant: "slim", cardLine: "Publish · Fixed the login test" },
-      // The Trail's time is the last touch it is ordered by, not the latest activity.
+      // Recent shows the time of the last user message.
       timeLabel: relativeTime(localIso(11)),
     });
-    // Working follows the Trail but keeps its own time, not the Trail's last touch.
+    // Working follows Recent and shows its own status time.
     expect(items.find((item) => item.key === "v2-thread:environment-1:working")).toMatchObject({
       timeLabel: "",
     });
@@ -2033,7 +2033,7 @@ describe("self-filing list", () => {
     expect(layout.items.map((item) => [item.thread.id, item.cardLine])).toEqual(
       expect.arrayContaining([
         ["waited-less", "Which branch?"],
-        // In the Trail what is still owed leads the outcome.
+        // In Recent, what is still owed leads the outcome.
         ["finished-owing", "Commit · Fixed it"],
       ]),
     );
@@ -2152,7 +2152,7 @@ describe("self-filing list", () => {
     ]);
   });
 
-  it("shows eight Trail rows, folds the rest behind an expander, and clears all but the open one", () => {
+  it("shows eight Recent rows, folds the rest behind an expander, and clears all but the open one", () => {
     const trail = [
       ...Array.from({ length: 10 }, (_, index) => touched(`today-${index}`, localIso(11 - index))),
       touched("yesterday-0", localIso(20, -1)),
@@ -2161,7 +2161,7 @@ describe("self-filing list", () => {
     const selectedThreadKey = `${environmentId}:yesterday-1`;
     const collapsed = build(trail, { selectedThreadKey });
     expect(names(collapsed.items)).toEqual([
-      "[Trail]",
+      "[Recent]",
       ...trail.slice(0, 8).map((thread) => thread.id),
       "yesterday-1",
       "[2 more today, 2 earlier]",
@@ -2174,7 +2174,7 @@ describe("self-filing list", () => {
 
     const expanded = build(trail, { selectedThreadKey }, true);
     expect(names(expanded.items)).toEqual([
-      "[Trail]",
+      "[Recent]",
       ...trail.map((thread) => thread.id),
       "[Show less]",
     ]);
@@ -2183,7 +2183,7 @@ describe("self-filing list", () => {
     );
   });
 
-  it("keeps the open thread in Needs you until it is left, and Trail rows put when opened", () => {
+  it("keeps the open thread in Needs you until it is left, and Recent rows in place when opened", () => {
     const placementHold = createOpenThreadPlacementHold();
     const layoutWith = (threads: EnvironmentThreadShell[], openId: string | null) => {
       const key = openId === null ? null : `${environmentId}:${openId}`;
@@ -2216,7 +2216,7 @@ describe("self-filing list", () => {
     const held = layoutWith([visited, other], "old");
     expect(ids(held)).toEqual(["other", "old"]);
     expect(held.items[1]?.thread).toBe(visited);
-    // Leaving it does not move it either: only sending to a thread moves it in the Trail.
+    // Only sending a message moves a thread in Recent.
     expect(ids(layoutWith([visited, other], null))).toEqual(["other", "old"]);
   });
 

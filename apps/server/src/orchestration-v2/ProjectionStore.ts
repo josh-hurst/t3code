@@ -1946,7 +1946,9 @@ export function threadShellFromProjection(
     activeRunId: activeRun?.id ?? null,
     blockedOnThreadWait: deriveBlockedOnThreadWait({ activeRun, turnItems: projection.turnItems }),
     activityRunStatus: activityRun?.status ?? null,
-    ...(workingRun === null ? {} : { activityDescription: activityDescriptionForRun(projection, workingRun.id) ?? null }),
+    ...(workingRun === null
+      ? {}
+      : { activityDescription: activityDescriptionForRun(projection, workingRun.id) ?? null }),
     activityRunStartedAt:
       activityRun === null ? null : orchestrationV2RunWorkStartedAt(activityRun),
     status: latestRun?.status ?? "idle",
