@@ -149,7 +149,7 @@ describe("chat canvas layout", () => {
     for (const [width, cardLeft] of [
       [1344, 1052],
       [2200, 1876],
-    ]) {
+    ] as const) {
       const { chat } = resolveChatCanvasLayout({
         container: { width, height: 988 },
         maxChatWidth: 736,
