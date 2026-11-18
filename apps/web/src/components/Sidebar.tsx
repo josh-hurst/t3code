@@ -4184,6 +4184,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             )
                           : null;
                       const placeholderRows = tide ? visibleTrailThreads : activeThreads;
+                      const firstShelfMarker =
+                        workingThreads.length > 0
+                          ? "working-header"
+                          : snoozedThreads.length > 0
+                            ? "snoozed-header"
+                            : "settled-header";
                       const listKeys = sidebarListItems.map((item) =>
                         item.kind === "thread" && item.section === "active" ? item.key : "",
                       );
@@ -4252,6 +4258,22 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           );
                           continue;
                         }
+                        const startsShelves = item.marker === firstShelfMarker;
+                        if (tide && startsShelves) {
+                          items.push(
+                            <li
+                              key="recent-shelf-divider"
+                              aria-hidden="true"
+                              className="pointer-events-none mx-2 hidden h-12 shrink-0 items-end pb-2 group-data-[variant=frameless]:flex"
+                            >
+                              <span className="w-full border-t border-sidebar-border" />
+                            </li>,
+                          );
+                        }
+                        const shelfHeaderClassName = cn(
+                          startsShelves && "mt-auto",
+                          startsShelves && tide && item.marker !== "settled-header" && "h-12 pt-4",
+                        );
                         switch (item.marker) {
                           case "pinned-header":
                             items.push(
@@ -4303,7 +4325,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 marker="working-header"
                                 // Working leads the bottom stack; below a Trail, padding (which drags
                                 // measure) also sets it apart when the list is too long for a gap.
-                                className={cn("mt-auto", tide && "h-12 pt-4")}
+                                className={shelfHeaderClassName}
                                 label="Working"
                                 count={workingThreads.length}
                                 toggle={{
@@ -4318,10 +4340,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="snoozed-shelf-header"
                                 marker="snoozed-header"
-                                className={cn(
-                                  workingThreads.length === 0 && "mt-auto",
-                                  tide && workingThreads.length === 0 && "h-12 pt-4",
-                                )}
+                                className={shelfHeaderClassName}
                                 label={tide ? "Later" : "Snoozed"}
                                 count={snoozedThreads.length}
                                 toggle={{
@@ -4369,9 +4388,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="settled-shelf-header"
                                 marker="settled-header"
-                                className={cn(
-                                  workingThreads.length + snoozedThreads.length === 0 && "mt-auto",
-                                )}
+                                className={shelfHeaderClassName}
                                 label={tide ? "History" : "Settled"}
                                 count={settledCount}
                                 dragging={from !== null}
