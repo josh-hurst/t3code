@@ -515,6 +515,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarClassicEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarClassicEnabled
       ? ["Classic sidebar"]
       : []),
+    ...(settings.sidebarFloatingEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarFloatingEnabled
+      ? ["Floating sidebar"]
+      : []),
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
       : []),
@@ -710,6 +713,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarClassicEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarClassicEnabled,
+      sidebarFloatingEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarFloatingEnabled,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarRowDetail: DEFAULT_UNIFIED_SETTINGS.sidebarRowDetail,
       sidebarNeedsYouPlacement: DEFAULT_UNIFIED_SETTINGS.sidebarNeedsYouPlacement,
@@ -866,6 +870,31 @@ export function GeneralSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="sidebar" title={gt("Sidebar")}>
+        <SettingsRow
+          {...setting("floating-sidebar")}
+          description={
+            <T>On wide screens, show Threads in a window you can move or pin beside chat.</T>
+          }
+          resetAction={
+            settings.sidebarFloatingEnabled ? (
+              <SettingResetButton
+                label="floating sidebar"
+                onClick={() =>
+                  updateSettings({
+                    sidebarFloatingEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarFloatingEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarFloatingEnabled}
+              onCheckedChange={(checked) => updateSettings({ sidebarFloatingEnabled: checked })}
+              aria-label={gt("Floating sidebar")}
+            />
+          }
+        />
         <SettingsRow
           {...setting("project-grouping")}
           description={<T>Combine matching repositories across environments.</T>}

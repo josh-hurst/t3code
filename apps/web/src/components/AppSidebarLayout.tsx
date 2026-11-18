@@ -31,7 +31,7 @@ import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { useEnvironmentIdentificationMode } from "../hooks/useSettings";
+import { useClientSettings, useEnvironmentIdentificationMode } from "../hooks/useSettings";
 import {
   PanelAnimationSuppressionProvider,
   usePanelAnimationSettings,
@@ -423,12 +423,14 @@ export function AppSidebarLayout({
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
+  const floatingSidebarEnabled = useClientSettings((settings) => settings.sidebarFloatingEnabled);
   const [sidebarPosition, setSidebarPosition] = useThreadSidebarPosition();
+  const sidebarOverlaysChat = floatingSidebarEnabled && sidebarPosition !== null;
   // A clamped drag may not change width, so viewport changes need a separate subscription.
   const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);
   const [brandWidth, setBrandWidth] = useState(0);
   const sidebarMinimumWidth = resolveThreadSidebarMinimumWidth(brandWidth);
-  const sidebarMaximumWidth = sidebarPosition
+  const sidebarMaximumWidth = sidebarOverlaysChat
     ? viewportWidth
     : resolveThreadSidebarMaximumWidth(viewportWidth, sidebarMinimumWidth);
   const resetSidebarWidth = () => {
@@ -454,13 +456,19 @@ export function AppSidebarLayout({
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
     ...windowControlsInsetStyle,
   } as CSSProperties;
+  const sidebarContent = (
+    <>
+      <ThreadSidebar routeReveal={sidebarRouteReveal} />
+      <SidebarRail onDoubleClick={resetSidebarWidth} />
+    </>
+  );
 
   return (
     <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
       <SidebarProvider
         className="h-dvh! min-h-0!"
         data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
-        data-sidebar-floating={sidebarPosition !== null}
+        data-sidebar-floating={sidebarOverlaysChat}
         storageKey="chat_thread_sidebar_open"
         style={sidebarProviderStyle}
       >
@@ -469,8 +477,8 @@ export function AppSidebarLayout({
             <SidebarBrandWidthProbe isElectron={isElectron} onWidthChange={setBrandWidth} />
             <Sidebar
               side="left"
-              variant="frameless"
-              overlay={sidebarPosition !== null}
+              variant={floatingSidebarEnabled ? "frameless" : "sidebar"}
+              overlay={sidebarOverlaysChat}
               collapsible="offcanvas"
               data-app-sidebar=""
               {...sidebarArea}
@@ -480,7 +488,7 @@ export function AppSidebarLayout({
                 maxWidth: sidebarMaximumWidth,
                 minWidth: sidebarMinimumWidth,
                 shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-                  sidebarPosition !== null ||
+                  sidebarOverlaysChat ||
                   nextWidth <= currentWidth ||
                   wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
                 storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
@@ -489,10 +497,16 @@ export function AppSidebarLayout({
               style={windowControlsInsetStyle}
             >
               <SidebarChromeHeader isElectron={isElectron} />
-              <ThreadSidebarWindow position={sidebarPosition} onPositionChange={setSidebarPosition}>
-                <ThreadSidebar routeReveal={sidebarRouteReveal} />
-                <SidebarRail onDoubleClick={resetSidebarWidth} />
-              </ThreadSidebarWindow>
+              {floatingSidebarEnabled ? (
+                <ThreadSidebarWindow
+                  position={sidebarPosition}
+                  onPositionChange={setSidebarPosition}
+                >
+                  {sidebarContent}
+                </ThreadSidebarWindow>
+              ) : (
+                sidebarContent
+              )}
             </Sidebar>
           </>
         ) : null}

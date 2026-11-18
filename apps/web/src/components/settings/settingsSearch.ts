@@ -485,6 +485,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset recover continue"],
   },
   {
+    id: "floating-sidebar",
+    title: msg("Floating sidebar"),
+    to: "/settings/general",
+    searchTerms: ["threads window move drag pin dock overlay"],
+  },
+  {
     id: "classic-sidebar",
     title: "Classic sidebar",
     to: "/settings/general",

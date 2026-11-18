@@ -5,8 +5,9 @@ need a separate branch and working directory.
 
 ## Move the Threads window
 
-On desktop and wide browser windows, Threads starts pinned beside the chat. Drag its title
-to move it anywhere in the workspace, or click the pin to give the chat the full width.
+Threads opens in a full-height sidebar beside the chat by default. To use a movable window
+on desktop or in a wide browser, turn on **Settings → General → Sidebar → Floating sidebar**.
+Drag its title to move it around the workspace, or click the pin to give the chat the full width.
 Click the pin again to return Threads to the left. Drag the right edge to resize it.
 Your device remembers its size and position.
 

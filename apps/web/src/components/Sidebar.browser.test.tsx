@@ -12,19 +12,24 @@ import {
 } from "@t3tools/contracts";
 import { isMacPlatform } from "@t3tools/shared/keybindings";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, fakeTimers, render } from "../../test/render";
 import { openCommandPalette } from "../commandPaletteBus";
 import { makeThreadFixture } from "../test-fixtures";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSettings";
+import {
+  __setClientSettingsForTests,
+  getClientSettings,
+  persistClientSettingsPatch,
+} from "../hooks/useSettings";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { useProjects, useServerConfigs, useQuietThreadShells } from "../state/entities";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import type { Project } from "../types";
+import { AppSidebarLayout } from "./AppSidebarLayout";
 import Sidebar from "./Sidebar";
 import { THREAD_JUMP_HINT_SHOW_DELAY_MS } from "./Sidebar.logic";
 import { SortableThreadRow } from "./sidebar/SidebarThreadRow";
@@ -55,9 +60,44 @@ vi.mock("../commandPaletteBus", () => ({
   isCommandPaletteOpen: () => false,
 }));
 vi.mock("./sidebar/SidebarChrome", () => ({
+  SidebarBrandWidthProbe: () => null,
   SidebarChromeHeader: () => null,
   SidebarChromeFooter: () => null,
 }));
+
+it("reserves space for the regular sidebar until the floating window is enabled", async () => {
+  await page.viewport(1200, 800);
+  using cleanup = new DisposableStack();
+  const previousSettings = getClientSettings();
+  cleanup.defer(() => __setClientSettingsForTests(previousSettings));
+  __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+  const key = "chat_thread_sidebar_position";
+  const previousPosition = localStorage.getItem(key);
+  cleanup.defer(() => {
+    if (previousPosition === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, previousPosition);
+  });
+  localStorage.setItem(key, JSON.stringify({ x: 180, y: 80 }));
+
+  await using screen = await render(
+    <AppSidebarLayout>
+      <style>{appCss}</style>
+    </AppSidebarLayout>,
+  );
+  const gap = screen.container.querySelector<HTMLElement>('[data-slot="sidebar-gap"]')!;
+  const move = screen.getByRole("button", { name: "Move Threads window" });
+  expect(gap.offsetWidth).toBeGreaterThan(0);
+  await expect.element(move).not.toBeInTheDocument();
+
+  const toggleFloating = (enabled: boolean) =>
+    act(() => persistClientSettingsPatch({ sidebarFloatingEnabled: enabled }, async () => {}));
+  await toggleFloating(true);
+  await expect.element(move).toBeVisible();
+  expect(gap.offsetWidth).toBe(0);
+  await toggleFloating(false);
+  await expect.element(move).not.toBeInTheDocument();
+  expect(gap.offsetWidth).toBeGreaterThan(0);
+});
 
 function project(id: string): Project {
   return {
