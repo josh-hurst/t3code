@@ -1,6 +1,7 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { ActivityIcon, AlarmClockIcon, HistoryIcon } from "lucide-react";
 import { type ReactNode, useLayoutEffect } from "react";
 import { cn } from "~/lib/utils";
 import {
@@ -110,24 +111,27 @@ export function SidebarDragBoundary(props: {
   );
 }
 
+const shelves = {
+  "working-header": { id: "working", Icon: ActivityIcon },
+  "snoozed-header": { id: "snoozed", Icon: AlarmClockIcon },
+  "settled-header": { id: "settled", Icon: HistoryIcon },
+} as const;
+
 export function SidebarSectionHeader(props: {
-  marker: "working-header" | "snoozed-header" | "settled-header";
+  marker: keyof typeof shelves;
   label: string;
   /** A muted trailing count. */
   count: number;
-  className?: string;
+  first: boolean;
+  tide: boolean;
   dragging?: boolean;
   isDropTarget?: boolean;
   toggle: { expanded: boolean; onToggle: () => void };
   /** A control beside the label, outside the toggle, such as History's "All". */
   action?: ReactNode;
 }) {
-  const shelf =
-    props.marker === "working-header"
-      ? "working"
-      : props.marker === "snoozed-header"
-        ? "snoozed"
-        : "settled";
+  const { id: shelf, Icon } = shelves[props.marker];
+  const belowRecent = props.first && props.tide;
   const header = (
     <CollapsibleSectionHeader
       data-sidebar-row={`shelf:${shelf}`}
@@ -137,6 +141,12 @@ export function SidebarSectionHeader(props: {
       data-testid={`sidebar-${shelf}-shelf-toggle`}
       accessory={<span className="font-normal tabular-nums">{props.count}</span>}
     >
+      {props.tide && (
+        <Icon
+          aria-hidden
+          className="me-1.5 hidden size-3.5 align-[-0.15rem] group-data-[variant=frameless]:inline"
+        />
+      )}
       {props.label}
     </CollapsibleSectionHeader>
   );
@@ -144,8 +154,19 @@ export function SidebarSectionHeader(props: {
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
-      className={cn("relative mx-0.5 h-8", props.className)}
+      className={cn(
+        "relative mx-0.5 h-8",
+        props.first && "mt-auto",
+        belowRecent && shelf !== "settled" && "h-12 pt-4",
+        belowRecent && "group-data-[variant=frameless]:h-16 group-data-[variant=frameless]:pt-8",
+      )}
     >
+      {belowRecent && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -inset-x-[calc(var(--sidebar-content-inset)+0.125rem)] top-6 hidden border-t border-sidebar-border/70 group-data-[variant=frameless]:block"
+        />
+      )}
       {props.action ? (
         <div className="flex h-8 items-center">
           <div className="min-w-0 flex-1">{header}</div>
