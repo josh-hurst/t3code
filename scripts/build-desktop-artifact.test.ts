@@ -38,6 +38,7 @@ import {
   MissingMacPasskeyProvisioningProfileError,
   packWindowsServerAsar,
   preflightWindowsDesktopBuild,
+  renderMacEntitlements,
   renderMacPasskeyEntitlements,
   resolveMacFileExclusions,
   resolveMacWebAuthnEntitlements,
@@ -569,15 +570,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(official.productName, "T3 Code (Beta)");
       assert.equal(official.artifactName, "T3-Code-${version}-${arch}.${ext}");
 
-      const fork = yield* createBuildConfig(
-        "mac",
-        "dmg",
-        "0.1.7001",
-        false,
-        false,
-        undefined,
-        undefined,
-      ).pipe(
+      const fork = yield* createBuildConfig("mac", "dmg", "0.1.7001", false, false, undefined, {
+        entitlementsPath: "/tmp/entitlements.mac.plist",
+        provisioningProfilePath: undefined,
+      }).pipe(
         Effect.provide(
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
@@ -593,6 +589,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(fork.productName, "T3 Code");
       assert.equal(fork.artifactName, "T3-Code-${version}-${arch}.${ext}");
       assert.equal((fork.dmg as { title: string }).title, "T3 Code 0.1.7001 Installer");
+      const forkMac = fork.mac as Record<string, unknown>;
+      assert.equal(forkMac.entitlements, "/tmp/entitlements.mac.plist");
+      assert.notProperty(forkMac, "provisioningProfile");
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
@@ -1637,6 +1636,14 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.match(entitlements, /<key>com\.apple\.security\.device\.audio-input<\/key>\s*<true\/>/u);
     assert.notInclude(entitlements, "keychain-access-groups");
     assert.notInclude(entitlements, "com.apple.developer.web-browser.public-key-credential");
+
+    const forkEntitlements = renderMacEntitlements();
+    assert.match(forkEntitlements, /<key>com\.apple\.security\.device\.camera<\/key>\s*<true\/>/u);
+    assert.match(
+      forkEntitlements,
+      /<key>com\.apple\.security\.device\.audio-input<\/key>\s*<true\/>/u,
+    );
+    assert.notInclude(forkEntitlements, "com.apple.developer");
   });
 
   it("grants in-app browser passkey entitlements only when the provisioning profile does", () => {
