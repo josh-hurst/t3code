@@ -1873,6 +1873,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
     Effect.gen(function* () {
       yield* TestClock.setTime(Date.parse(NOW));
       const fixture = yield* makeHarness({
+        settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 7 },
         snapshot: makeSnapshot([
           makeThread("active-branch", {
             branch: "feature",
@@ -1947,6 +1948,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
         const releaseRead = yield* Deferred.make<void>();
         if (!mergeDuringRead) yield* Deferred.succeed(releaseRead, undefined);
         const fixture = yield* makeHarness({
+          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 7 },
           snapshot: makeSnapshot([thread]),
           pullRequestSummary: (input) =>
             Deferred.succeed(readStarted, undefined).pipe(
@@ -1996,7 +1998,10 @@ describe("ThreadSettlementServiceV2 worker", () => {
         branch: "old-feature",
         latestUserMessageAt: DateTime.makeUnsafe(Date.parse(NOW) - 2 * DAY_MS),
       });
-      const fixture = yield* makeHarness({ snapshot: makeSnapshot([recent, old]) });
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot([recent, old]),
+        settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 7 },
+      });
       const branches = Ref.get(fixture.branchCalls).pipe(
         Effect.map((calls) => calls.map((call) => call.branch).sort()),
       );
