@@ -159,6 +159,29 @@ describe("release-fork", () => {
     );
   });
 
+  it("publishes an Intel-only release without making it the update feed", async () => {
+    using release = fixture();
+    for (const name of ["latest.yml", "T3-Code-0.1.7001-x64.exe", "T3-Code-0.1.7001-arm64.zip"]) {
+      NodeFS.rmSync(NodePath.join(release.directory, name));
+    }
+    NodeFS.writeFileSync(NodePath.join(release.directory, "T3-Code-0.1.7001-x64.zip"), "intel");
+    release.remote.assets = NodeFS.readdirSync(release.directory).map((name) => ({
+      name,
+      digest: `sha256:${NodeCrypto.createHash("sha256")
+        .update(NodeFS.readFileSync(NodePath.join(release.directory, name)))
+        .digest("hex")}`,
+    }));
+    const staged = await stageForkRelease(
+      release.directory,
+      { ...candidate, macArch: "x64" },
+      release.execute,
+    );
+    assert.equal(forkReleaseMacArchive(staged), "T3-Code-0.1.7001-x64.zip");
+
+    await publishForkRelease(release.directory, release.execute);
+    assert.include(release.calls[2]!, "--latest=false");
+  });
+
   it("refuses to stage an incomplete build", async () => {
     using release = fixture();
     NodeFS.rmSync(NodePath.join(release.directory, "latest.yml"));

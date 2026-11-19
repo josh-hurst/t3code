@@ -1,9 +1,13 @@
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off
 // Stages signed macOS and unsigned Windows fork builds for testing before publication.
-//   vp run release:fork [--install]
+//   vp run release:fork [--install] [--arch x64]
 //   vp run release:fork install <version> [--app /Applications/Example.app]
 //   vp run release:fork publish <version>
 //   vp run release:fork rollback [--app /Applications/Example.app]
+//
+// --arch x64 builds only an Intel Mac release. It is published without becoming
+// the latest release, because installed apps update from the latest one and it
+// serves neither Apple silicon nor Windows.
 //
 // HEAD must be committed and pushed to the fork. Settings come from the shell
 // or the gitignored .env:
@@ -47,6 +51,8 @@ const ForkRelease = Schema.Struct({
   commit: Schema.String,
   appId: Schema.String,
   productName: Schema.String,
+  // Absent in candidates staged before Intel builds existed.
+  macArch: Schema.optional(Schema.Literals(["arm64", "x64"])),
   assets: Schema.Record(Schema.String, Schema.String),
 });
 const decodeForkRelease = Schema.decodeUnknownSync(Schema.fromJsonString(ForkRelease));
@@ -72,6 +78,10 @@ async function digest(file: string) {
 const assetEnding = (assets: Readonly<Record<string, string>>, ending: string) =>
   Object.keys(assets).find((name) => name.endsWith(ending));
 
+// Only a release that serves Apple silicon and Windows may become the update feed.
+const isFullRelease = (release: typeof ForkRelease.Type) =>
+  (release.macArch ?? "arm64") === "arm64";
+
 export async function stageForkRelease(
   directory: string,
   candidate: Omit<typeof ForkRelease.Type, "assets">,
@@ -83,12 +93,17 @@ export async function stageForkRelease(
       assets[name] = await digest(NodePath.join(directory, name));
     }
   }
-  for (const required of ["latest-mac.yml", "latest.yml", "-arm64.zip", ".dmg", ".exe"]) {
-    if (!assetEnding(assets, required)) {
-      throw new Error(`The build did not produce a ${required} file in ${directory}.`);
+  const macArch = candidate.macArch ?? "arm64";
+  const required =
+    macArch === "arm64"
+      ? ["latest-mac.yml", "latest.yml", "-arm64.zip", ".dmg", ".exe"]
+      : ["latest-mac.yml", `-${macArch}.zip`, ".dmg"];
+  for (const name of required) {
+    if (!assetEnding(assets, name)) {
+      throw new Error(`The build did not produce a ${name} file in ${directory}.`);
     }
   }
-  const release = { ...candidate, assets };
+  const release = { ...candidate, macArch, assets };
   NodeFS.writeFileSync(
     NodePath.join(directory, "candidate.json"),
     JSON.stringify(release, null, 2),
@@ -104,7 +119,9 @@ export async function stageForkRelease(
     "--title",
     `${release.productName} ${release.version}`,
     "--notes",
-    `Built from ${release.commit.slice(0, 12)}. Windows: run ${assetEnding(assets, ".exe")}; it is not code-signed, so if Windows shows "Windows protected your PC", click More info, then Run anyway. macOS (Apple Silicon): open the DMG and drag ${release.productName} to Applications. Installed apps update themselves.`,
+    isFullRelease(release)
+      ? `Built from ${release.commit.slice(0, 12)}. Windows: run ${assetEnding(assets, ".exe")}; it is not code-signed, so if Windows shows "Windows protected your PC", click More info, then Run anyway. macOS (Apple Silicon): open the DMG and drag ${release.productName} to Applications. Installed apps update themselves.`
+      : `Built from ${release.commit.slice(0, 12)}. macOS (Intel) only: open the DMG and drag ${release.productName} to Applications.`,
     "--draft",
     ...Object.keys(assets).map((name) => NodePath.join(directory, name)),
   ]);
@@ -130,7 +147,7 @@ export async function readForkRelease(directory: string) {
 }
 
 export const forkReleaseMacArchive = (release: typeof ForkRelease.Type) =>
-  assetEnding(release.assets, "-arm64.zip")!;
+  assetEnding(release.assets, `-${release.macArch ?? "arm64"}.zip`)!;
 
 export async function publishForkRelease(
   directory: string,
@@ -165,7 +182,7 @@ export async function publishForkRelease(
     "--repo",
     release.repository,
     "--draft=false",
-    "--latest",
+    isFullRelease(release) ? "--latest" : "--latest=false",
   ]);
 }
 
@@ -208,11 +225,16 @@ export function nextForkReleaseIndex(baseVersion: string, tags: ReadonlyArray<st
 async function main() {
   const { positionals, values } = NodeUtil.parseArgs({
     allowPositionals: true,
-    options: { install: { type: "boolean" }, app: { type: "string" }, help: { type: "boolean" } },
+    options: {
+      install: { type: "boolean" },
+      app: { type: "string" },
+      arch: { type: "string" },
+      help: { type: "boolean" },
+    },
   });
   if (values.help) {
     console.log(
-      "Usage: vp run release:fork [--install]\n       vp run release:fork install <version> [--app <path>]\n       vp run release:fork publish <version>\n       vp run release:fork rollback [--app <path>]",
+      "Usage: vp run release:fork [--install] [--arch arm64|x64]\n       vp run release:fork install <version> [--app <path>]\n       vp run release:fork publish <version>\n       vp run release:fork rollback [--app <path>]",
     );
     return;
   }
@@ -224,6 +246,9 @@ async function main() {
       ? !versionArg || !/^\d+\.\d+\.\d+$/.test(versionArg)
       : versionArg !== undefined) ||
     (values.install && action !== "build") ||
+    (values.arch !== undefined &&
+      (action !== "build" || !["arm64", "x64"].includes(values.arch))) ||
+    (values.arch === "x64" && values.install) ||
     (values.app && (action === "publish" || (action === "build" && !values.install)))
   ) {
     fail("Use --help for the build, install, publish, and rollback commands.");
@@ -294,6 +319,18 @@ async function main() {
     );
   }
 
+  // Without these the app builds fine but silently hides T3 Connect sign-in (0.1.9022).
+  const missingConnectConfig = [
+    "VITE_CLERK_PUBLISHABLE_KEY",
+    "VITE_CLERK_JWT_TEMPLATE",
+    "VITE_T3CODE_RELAY_URL",
+  ].filter((key) => !env[key]?.trim());
+  if (missingConnectConfig.length > 0) {
+    fail(
+      `T3 Connect config is missing (${missingConnectConfig.join(", ")}). Set T3CODE_CLERK_PUBLISHABLE_KEY, T3CODE_CLERK_JWT_TEMPLATE and T3CODE_RELAY_URL in .env or .env.local.`,
+    );
+  }
+
   const notarizes =
     (env.APPLE_API_KEY && env.APPLE_API_KEY_ID && env.APPLE_API_ISSUER) ||
     (env.APPLE_ID && env.APPLE_APP_SPECIFIC_PASSWORD && env.APPLE_TEAM_ID);
@@ -322,7 +359,7 @@ async function main() {
     ["clang-cl", ["--version"]],
     ["arch", ["-x86_64", "/usr/bin/true"]],
   ] as const;
-  for (const [command, args] of windowsToolchain) {
+  for (const [command, args] of values.arch === "x64" ? [] : windowsToolchain) {
     const probe = NodeChildProcess.spawnSync(command, args, {
       env: { ...env, PATH: crossToolPath },
       stdio: "ignore",
@@ -403,32 +440,35 @@ async function main() {
     if (build.status !== 0) fail(`The desktop build (${args.join(" ")}) failed.`);
   };
 
-  buildDesktop(["--platform", "mac", "--target", "dmg", "--arch", "arm64", "--signed"]);
+  const macArch = values.arch === "x64" ? "x64" : "arm64";
+  buildDesktop(["--platform", "mac", "--target", "dmg", "--arch", macArch, "--signed"]);
 
-  // The build script's own cargo call cannot link MSVC binaries off Windows,
-  // so the resource monitor is built with cargo-xwin first, as CI does.
-  const monitor = NodeChildProcess.spawnSync(
-    "cargo",
-    [
-      "xwin",
-      "build",
-      "--locked",
-      "--release",
-      "--manifest-path",
-      "native/resource-monitor/Cargo.toml",
-      "--target",
-      "x86_64-pc-windows-msvc",
-    ],
-    { cwd: root, stdio: "inherit", env: { ...env, PATH: crossToolPath } },
-  );
-  if (monitor.status !== 0) fail("Building the Windows resource monitor failed.");
-  buildDesktop(["--platform", "win", "--target", "nsis", "--arch", "x64"], {
-    T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "1",
-  });
+  if (macArch === "arm64") {
+    // The build script's own cargo call cannot link MSVC binaries off Windows,
+    // so the resource monitor is built with cargo-xwin first, as CI does.
+    const monitor = NodeChildProcess.spawnSync(
+      "cargo",
+      [
+        "xwin",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "native/resource-monitor/Cargo.toml",
+        "--target",
+        "x86_64-pc-windows-msvc",
+      ],
+      { cwd: root, stdio: "inherit", env: { ...env, PATH: crossToolPath } },
+    );
+    if (monitor.status !== 0) fail("Building the Windows resource monitor failed.");
+    buildDesktop(["--platform", "win", "--target", "nsis", "--arch", "x64"], {
+      T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "1",
+    });
+  }
 
   const release = await stageForkRelease(
     outputDir,
-    { version, repository: repository!, commit, appId, productName },
+    { version, repository: repository!, commit, appId, productName, macArch },
     gh,
   );
   console.log(
