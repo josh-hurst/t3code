@@ -51,6 +51,7 @@ import {
 import { EnvironmentSigningKey } from "../cloud/environmentKeys.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
 
@@ -321,20 +322,6 @@ const waitingApprovalId = (thread: AgentAwarenessThread | null) =>
     ? thread.pendingRuntimeRequest?.id
     : undefined;
 
-/**
- * A run that ended while its thread was snoozed: a quiet re-check, a standing check, or a thread
- * the user snoozed. Its completion must not ring the phone; questions and failures still do.
- */
-function completedWhileSnoozed(thread: AgentAwarenessThread): boolean {
-  const completedAt = thread.latestRunCompletedAt;
-  return (
-    completedAt != null &&
-    thread.snoozedUntil != null &&
-    DateTime.isGreaterThan(thread.snoozedUntil, completedAt) &&
-    (thread.snoozedAt == null || !DateTime.isGreaterThan(thread.snoozedAt, completedAt))
-  );
-}
-
 function resolveAgentAwarenessRelayPublishSnapshot(input: {
   readonly environmentId: EnvironmentId;
   readonly thread: Option.Option<AgentAwarenessThread>;
@@ -375,13 +362,28 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
   const childDrivesWait =
     input.pendingSubagentRequest !== null &&
     state?.phase !== projectThreadAwarenessV2(awarenessInput)?.phase;
-  const quiet = state?.phase === "completed" && completedWhileSnoozed(input.thread.value);
   return {
     projectId: input.thread.value.projectId,
-    state: quiet ? null : sanitizeRelayAgentActivityState(state),
+    state: snoozedCompletion(input.thread.value, state)
+      ? null
+      : sanitizeRelayAgentActivityState(state),
     subagentWait: childDrivesWait ? input.pendingSubagentRequest : null,
     reason: "snapshot",
   };
+}
+
+// A quiet re-check, a standing check, or a thread the user snoozed: its completion must not ring
+// the phone. Checked at completion time, so a completion processed after the wake stays silent too.
+function snoozedCompletion(
+  thread: AgentAwarenessThread,
+  state: { readonly phase: string } | null,
+): boolean {
+  if (state?.phase !== "completed" || thread.latestRunCompletedAt == null) return false;
+  const completedAt = DateTime.toEpochMillis(thread.latestRunCompletedAt);
+  if (thread.snoozedAt != null && completedAt < DateTime.toEpochMillis(thread.snoozedAt)) {
+    return false;
+  }
+  return isSnoozed(thread, completedAt);
 }
 
 function terminalWorkSinceStart(thread: AgentAwarenessThread, startedAt: number): boolean {

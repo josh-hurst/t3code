@@ -24,16 +24,19 @@ const NativeControls = requireNativeModule<{
     identifier: string,
   ): Promise<void>;
   dismissFile(identifier: string): Promise<void>;
+  isFilePreviewFinished(identifier: string): boolean;
 }>("T3NativeControls");
 
 function NativeFilePreview(props: {
   readonly source: ResolvedFilePreviewDocument;
   readonly onRequestClose: () => void;
   readonly onOpenError?: (error: unknown) => void;
+  readonly onPresent?: (isFinished: () => boolean) => void;
 }) {
   const identifier = useId();
   const { uri, name, sourceIdentifier } = props.source;
   const onRequestClose = useEffectEvent(props.onRequestClose);
+  const onPresent = useEffectEvent((isFinished: () => boolean) => props.onPresent?.(isFinished));
   const onOpenError = useEffectEvent((error: unknown) => {
     if (props.onOpenError) props.onOpenError(error);
     else Dialog.alert("Could not open preview", "The file could not be loaded. Please try again.");
@@ -43,6 +46,7 @@ function NativeFilePreview(props: {
   useEffect(() => {
     let canceled = false;
     // Files download first so Quick Look can refuse a format the caller should share instead.
+    onPresent(() => NativeControls.isFilePreviewFinished(identifier));
     void NativeControls.presentFile(uri, name ?? "Preview", sourceIdentifier ?? "", identifier)
       .catch((error: unknown) => {
         if (!canceled) onOpenError(error);

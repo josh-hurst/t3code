@@ -569,6 +569,7 @@ export function layerWithRegistry<Error>(
         layerThreadRegroupTest,
         layerServerSettings,
         layerThreadManagementProvided,
+        layerStores,
       ),
     ),
   );

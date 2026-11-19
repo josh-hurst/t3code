@@ -1,6 +1,6 @@
 // @effect-diagnostics globalTimers:off globalDate:off - The tracker runs in atom subscriptions, outside an Effect runtime.
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { type AtomCommand, runAtomCommand } from "./runtime.ts";
@@ -27,6 +27,7 @@ interface VisitedShell {
 
 export interface ThreadVisitTrackerOptions {
   readonly threadShellAtom: (ref: ScopedThreadRef) => Atom.Atom<VisitedShell | null>;
+  readonly sessionGenerationAtom: (environmentId: EnvironmentId) => Atom.Atom<number>;
   readonly visit: AtomCommand<
     { readonly environmentId: EnvironmentId; readonly input: VisitThreadInput },
     unknown,
@@ -64,8 +65,13 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
       // activity already seen, or kept unread by a mark-unread made while here.
       let seenAt: string | null = null;
       let keepUnreadThroughMs = Number.NaN;
+      const sessionGenerationAtom = options.sessionGenerationAtom(ref.environmentId);
+      // A failed open waits for a new session, so streaming updates cannot spin on it.
+      let openFailedGeneration: number | null = null;
+      let active = true;
 
-      const sendVisit = (visitedAt: string, opened: boolean) =>
+      const sendVisit = (visitedAt: string, opened: boolean) => {
+        const generation = registry.get(sessionGenerationAtom);
         void runAtomCommand(
           registry,
           options.visit,
@@ -74,9 +80,25 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
             input: { threadId: ref.threadId, visitedAt, ...(opened ? { opened: true } : {}) },
           },
           { reportFailure: false },
-        );
+        ).then((result) => {
+          if (!opened || !active || !AsyncResult.isFailure(result)) return;
+          openPending = true;
+          openFailedGeneration = generation;
+          sendPendingOpen();
+        });
+      };
+
+      // The open rides on the first visit the server hears, however late
+      // the shell arrives, so it still counts toward search ranking.
+      const sendPendingOpen = () => {
+        if (!openPending || shell === null || shell.lastVisitedAt === undefined) return;
+        if (openFailedGeneration === registry.get(sessionGenerationAtom)) return;
+        openPending = false;
+        sendVisit(openVisitedAt(shell), true);
+      };
 
       get.addFinalizer(() => {
+        active = false;
         if (shell === null || seenAt === null) return;
         const seenAtMs = Date.parse(seenAt);
         if (seenAtMs <= keepUnreadThroughMs) return;
@@ -100,12 +122,7 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
         if (seenAt === null || Date.parse(activityAt) > Date.parse(seenAt)) seenAt = activityAt;
 
         if (next.lastVisitedAt === undefined) return;
-        // The open rides on the first visit the server hears, however late
-        // the shell arrives, so it still counts toward search ranking.
-        if (openPending) {
-          openPending = false;
-          sendVisit(openVisitedAt(next), true);
-        }
+        sendPendingOpen();
         // A watermark that moved back is a mark-unread; leaving keeps it.
         const lastVisitedAtMs = next.lastVisitedAt ? Date.parse(next.lastVisitedAt) : NaN;
         const previousVisitedAtMs = previous?.lastVisitedAt
@@ -117,6 +134,7 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
       // `subscribe`, not `get`: a rebuild would reset the open and the seen
       // watermark, and run the finalizer as if the user had left.
       get.subscribe(options.threadShellAtom(ref), onShell, { immediate: true });
+      get.subscribe(sessionGenerationAtom, sendPendingOpen);
     }).pipe(Atom.withLabel(`thread-visit-tracker:${key}`));
   });
   return (ref: ScopedThreadRef | null) => (ref === null ? IDLE_TRACKER : family(threadKey(ref)));

@@ -1,34 +1,30 @@
-import * as Arr from "effect/Array";
-import * as Order from "effect/Order";
 import { useMemo } from "react";
 
 import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 
 import { useProjects } from "../../state/entities";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useWorkspaceState } from "../../state/workspace";
-import { buildHomeListFilterMenuItems } from "./home-list-filter-menu";
+import { buildHomeListFilterMenuItems, homeListFilterEnvironments } from "./home-list-filter-menu";
 import { useHomeListOptions } from "./home-list-options";
-import { buildHomeProjectScopes, resolveHomeProjectFilterScope } from "./homeThreadList";
+import {
+  buildHomeProjectScopes,
+  resolveHomeProjectFilterScope,
+  sortHomeProjectScopes,
+} from "./homeThreadList";
 
-/** The thread list's environment and project filter, shared by the list and its bar's filter menu. */
-export function useHomeListFilter() {
+const NO_THREADS: ReadonlyArray<EnvironmentThreadShell> = [];
+
+/**
+ * The thread list's environment and project filter, shared by the list and its bar's filter menu.
+ * Projects list most recently active first; without threads they fall back to project activity.
+ */
+export function useHomeListFilter(threads = NO_THREADS) {
   const projects = useProjects();
   const { environments: workspaceEnvironments } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
-  const connectionStateByEnvironmentId = new Map(
-    workspaceEnvironments.map(
-      (environment) => [environment.environmentId, environment.connectionState] as const,
-    ),
-  );
-  const environments = Arr.sort(
-    Object.values(savedConnectionsById).map((connection) => ({
-      environmentId: connection.environmentId,
-      label: connection.environmentLabel,
-      connectionState: connectionStateByEnvironmentId.get(connection.environmentId) ?? "available",
-    })),
-    Order.mapInput(Order.String, (environment: { readonly label: string }) => environment.label),
-  );
+  const environments = homeListFilterEnvironments(workspaceEnvironments);
   const availableEnvironmentIds = useMemo(
     () => new Set(environments.map((environment) => environment.environmentId)),
     [environments],
@@ -50,11 +46,18 @@ export function useHomeListFilter() {
   );
   const projectFilterOptions = useMemo(
     () =>
-      pickableProjectGroups(projectScopes).map((scope) => ({
+      pickableProjectGroups(
+        sortHomeProjectScopes({
+          scopes: projectScopes,
+          threads,
+          pendingTasks: [],
+          projectSortOrder: "updated_at",
+        }),
+      ).map((scope) => ({
         key: scope.key,
         label: scope.title,
       })),
-    [projectScopes],
+    [projectScopes, threads],
   );
   const selectedProjectKey =
     resolveHomeProjectFilterScope(projectScopes, projects, listOptions)?.key ?? null;

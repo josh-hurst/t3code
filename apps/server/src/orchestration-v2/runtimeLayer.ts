@@ -396,6 +396,7 @@ const layerEffectExecutorProvided = EffectWorker.layerExecutor.pipe(
       layerThreadCardProvided,
       layerThreadRegroupProvided,
       layerThreadManagementProvided,
+      ProjectionStore.layer,
     ),
   ),
 );

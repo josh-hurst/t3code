@@ -107,7 +107,7 @@ export function HomeRouteScreen() {
     setSelectedProjectKey,
     activeLabels,
     menuItems,
-  } = useHomeListFilter();
+  } = useHomeListFilter(threads);
 
   if (layout.usesSplitView && !nativePrimaryColumn) {
     return (
