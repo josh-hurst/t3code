@@ -1,11 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off
-// Stages signed macOS and unsigned Windows fork builds for testing before publication.
+// Stages signed macOS (Apple silicon and Intel) and unsigned Windows fork builds
+// for testing before publication.
 //   vp run release:fork [--install] [--arch x64]
 //   vp run release:fork install <version> [--app /Applications/Example.app]
 //   vp run release:fork publish <version>
 //   vp run release:fork rollback [--app /Applications/Example.app]
 //
-// --arch x64 builds only an Intel Mac release. It is published without becoming
+// --arch x64 builds only an Intel Mac release, as a stopgap. It is published without becoming
 // the latest release, because installed apps update from the latest one and it
 // serves neither Apple silicon nor Windows.
 //
@@ -36,6 +37,11 @@ import * as Schema from "effect/Schema";
 
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { prepareForkApplicationInstall } from "./install-fork-release.ts";
+import {
+  mergePlatformUpdateManifests,
+  parsePlatformUpdateManifest,
+  serializePlatformUpdateManifest,
+} from "./merge-update-manifests.ts";
 
 const root = NodePath.resolve(import.meta.dirname, "..");
 const OFFICIAL_REPOSITORY = "pingdotgg/t3code";
@@ -96,11 +102,21 @@ export async function stageForkRelease(
   const macArch = candidate.macArch ?? "arm64";
   const required =
     macArch === "arm64"
-      ? ["latest-mac.yml", "latest.yml", "-arm64.zip", ".dmg", ".exe"]
+      ? ["latest-mac.yml", "latest.yml", "-arm64.zip", "-x64.zip", "-arm64.dmg", "-x64.dmg", ".exe"]
       : ["latest-mac.yml", `-${macArch}.zip`, ".dmg"];
   for (const name of required) {
     if (!assetEnding(assets, name)) {
       throw new Error(`The build did not produce a ${name} file in ${directory}.`);
+    }
+  }
+  // Installed Macs pick their arch's file from latest-mac.yml; a missing one
+  // fails with ERR_UPDATER_NO_FILES_PROVIDED (0.1.9022 on Intel).
+  if (macArch === "arm64") {
+    const feed = NodeFS.readFileSync(NodePath.join(directory, "latest-mac.yml"), "utf8");
+    for (const ending of ["-arm64.zip", "-x64.zip"]) {
+      if (!feed.includes(assetEnding(assets, ending)!)) {
+        throw new Error(`latest-mac.yml does not list the ${ending.slice(1)} build.`);
+      }
     }
   }
   const release = { ...candidate, macArch, assets };
@@ -120,7 +136,7 @@ export async function stageForkRelease(
     `${release.productName} ${release.version}`,
     "--notes",
     isFullRelease(release)
-      ? `Built from ${release.commit.slice(0, 12)}. Windows: run ${assetEnding(assets, ".exe")}; it is not code-signed, so if Windows shows "Windows protected your PC", click More info, then Run anyway. macOS (Apple Silicon): open the DMG and drag ${release.productName} to Applications. Installed apps update themselves.`
+      ? `Built from ${release.commit.slice(0, 12)}. Windows: run ${assetEnding(assets, ".exe")}; it is not code-signed, so if Windows shows "Windows protected your PC", click More info, then Run anyway. macOS: open the arm64 DMG on Apple silicon or the x64 DMG on Intel, and drag ${release.productName} to Applications. Installed apps update themselves.`
       : `Built from ${release.commit.slice(0, 12)}. macOS (Intel) only: open the DMG and drag ${release.productName} to Applications.`,
     "--draft",
     ...Object.keys(assets).map((name) => NodePath.join(directory, name)),
@@ -424,7 +440,11 @@ async function main() {
     T3CODE_DESKTOP_PRODUCT_NAME: productName,
     T3CODE_DESKTOP_UPDATE_REPOSITORY: repository,
   };
-  const buildDesktop = (args: ReadonlyArray<string>, extraEnv: Record<string, string> = {}) => {
+  const buildDesktop = (
+    args: ReadonlyArray<string>,
+    extraEnv: Record<string, string> = {},
+    directory = outputDir,
+  ) => {
     const build = NodeChildProcess.spawnSync(
       "node",
       [
@@ -433,7 +453,7 @@ async function main() {
         "--build-version",
         version,
         "--output-dir",
-        outputDir,
+        directory,
       ],
       { cwd: root, stdio: "inherit", env: { ...buildEnv, ...extraEnv } },
     );
@@ -444,6 +464,38 @@ async function main() {
   buildDesktop(["--platform", "mac", "--target", "dmg", "--arch", macArch, "--signed"]);
 
   if (macArch === "arm64") {
+    // Both Mac builds write latest-mac.yml, so Intel builds aside and its
+    // feed is merged in, arm64 first, as the official release does.
+    const intelDir = NodePath.join(outputDir, "x64");
+    buildDesktop(
+      ["--platform", "mac", "--target", "dmg", "--arch", "x64", "--signed"],
+      {},
+      intelDir,
+    );
+    const feedPath = NodePath.join(outputDir, "latest-mac.yml");
+    const intelFeedPath = NodePath.join(intelDir, "latest-mac.yml");
+    NodeFS.writeFileSync(
+      feedPath,
+      serializePlatformUpdateManifest(
+        "mac",
+        mergePlatformUpdateManifests(
+          "mac",
+          parsePlatformUpdateManifest("mac", NodeFS.readFileSync(feedPath, "utf8"), feedPath),
+          parsePlatformUpdateManifest(
+            "mac",
+            NodeFS.readFileSync(intelFeedPath, "utf8"),
+            intelFeedPath,
+          ),
+        ),
+      ),
+    );
+    for (const name of NodeFS.readdirSync(intelDir)) {
+      if (/-x64\.(dmg|zip)(\.blockmap)?$/.test(name)) {
+        NodeFS.renameSync(NodePath.join(intelDir, name), NodePath.join(outputDir, name));
+      }
+    }
+    NodeFS.rmSync(intelDir, { recursive: true });
+
     // The build script's own cargo call cannot link MSVC binaries off Windows,
     // so the resource monitor is built with cargo-xwin first, as CI does.
     const monitor = NodeChildProcess.spawnSync(

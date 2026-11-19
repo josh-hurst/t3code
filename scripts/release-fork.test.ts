@@ -17,14 +17,19 @@ import {
 function fixture() {
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-release-"));
   for (const name of [
-    "latest-mac.yml",
     "latest.yml",
     "T3-Code-0.1.7001-arm64.zip",
     "T3-Code-0.1.7001-arm64.dmg",
+    "T3-Code-0.1.7001-x64.zip",
+    "T3-Code-0.1.7001-x64.dmg",
     "T3-Code-0.1.7001-x64.exe",
   ]) {
     NodeFS.writeFileSync(NodePath.join(directory, name), name);
   }
+  NodeFS.writeFileSync(
+    NodePath.join(directory, "latest-mac.yml"),
+    "files:\n  - url: T3-Code-0.1.7001-arm64.zip\n  - url: T3-Code-0.1.7001-x64.zip\n",
+  );
   const calls: Array<ReadonlyArray<string>> = [];
   const remote = {
     isDraft: true,
@@ -32,7 +37,9 @@ function fixture() {
     targetCommitish: "abcdef",
     assets: NodeFS.readdirSync(directory).map((name) => ({
       name,
-      digest: `sha256:${NodeCrypto.createHash("sha256").update(name).digest("hex")}`,
+      digest: `sha256:${NodeCrypto.createHash("sha256")
+        .update(NodeFS.readFileSync(NodePath.join(directory, name)))
+        .digest("hex")}`,
     })),
   };
   const execute = (args: ReadonlyArray<string>) => {
@@ -161,16 +168,17 @@ describe("release-fork", () => {
 
   it("publishes an Intel-only release without making it the update feed", async () => {
     using release = fixture();
-    for (const name of ["latest.yml", "T3-Code-0.1.7001-x64.exe", "T3-Code-0.1.7001-arm64.zip"]) {
+    for (const name of [
+      "latest.yml",
+      "T3-Code-0.1.7001-x64.exe",
+      "T3-Code-0.1.7001-arm64.zip",
+      "T3-Code-0.1.7001-arm64.dmg",
+    ]) {
       NodeFS.rmSync(NodePath.join(release.directory, name));
     }
-    NodeFS.writeFileSync(NodePath.join(release.directory, "T3-Code-0.1.7001-x64.zip"), "intel");
-    release.remote.assets = NodeFS.readdirSync(release.directory).map((name) => ({
-      name,
-      digest: `sha256:${NodeCrypto.createHash("sha256")
-        .update(NodeFS.readFileSync(NodePath.join(release.directory, name)))
-        .digest("hex")}`,
-    }));
+    release.remote.assets = release.remote.assets.filter((asset) =>
+      NodeFS.existsSync(NodePath.join(release.directory, asset.name)),
+    );
     const staged = await stageForkRelease(
       release.directory,
       { ...candidate, macArch: "x64" },
@@ -187,6 +195,19 @@ describe("release-fork", () => {
     NodeFS.rmSync(NodePath.join(release.directory, "latest.yml"));
     await expect(stageForkRelease(release.directory, candidate, release.execute)).rejects.toThrow(
       /latest.yml/,
+    );
+    assert.equal(release.calls.length, 0);
+  });
+
+  it("refuses to stage a full release whose Mac update feed strands Intel Macs", async () => {
+    using release = fixture();
+    // The shape 0.1.9022 shipped: Intel installs found no file for their arch.
+    NodeFS.writeFileSync(
+      NodePath.join(release.directory, "latest-mac.yml"),
+      "files:\n  - url: T3-Code-0.1.7001-arm64.zip\n",
+    );
+    await expect(stageForkRelease(release.directory, candidate, release.execute)).rejects.toThrow(
+      /x64/,
     );
     assert.equal(release.calls.length, 0);
   });
