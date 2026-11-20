@@ -516,6 +516,20 @@ export function displayLimitWindows(pool: LimitPool) {
     .sort((left, right) => cursorUsageWindowRank(left.id) - cursorUsageWindowRank(right.id));
 }
 
+/** Antigravity's Gemini 5-hour and weekly pools are the ones that bind; clients shrink the rest to one line. */
+export function isMinorLimitWindow(
+  driver: LimitPool["driver"],
+  window: Pick<LimitPoolWindow, "id" | "kind">,
+): boolean {
+  return (
+    driver === "antigravity" &&
+    !(
+      /^gemini-(?!argon-|carbon-)/.test(window.id) &&
+      (window.kind === "session" || window.kind === "weekly")
+    )
+  );
+}
+
 const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
   session: 0,
   weekly: 1,

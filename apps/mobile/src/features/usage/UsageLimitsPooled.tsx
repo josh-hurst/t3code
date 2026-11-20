@@ -7,6 +7,7 @@ import {
   collectLimitAccounts,
   collectLimitPools,
   displayLimitWindows,
+  isMinorLimitWindow,
   paceRemainingPercent,
   remainingPercent,
   type LimitAccount,
@@ -552,7 +553,10 @@ export function UsageLimitsSection({
         </Text>
       ) : null}
       {pools.map((pool) => {
-        const windows = displayLimitWindows(pool);
+        const all = displayLimitWindows(pool);
+        const windows = all.filter((window) => !isMinorLimitWindow(pool.driver, window));
+        const minor = all.filter((window) => isMinorLimitWindow(pool.driver, window));
+        const color = colors[usageProviderKind(pool.driver) ?? "codex"];
         return (
           <Fragment key={pool.driver}>
             <View className="gap-3">
@@ -571,7 +575,7 @@ export function UsageLimitsSection({
                   <PoolWindowCard
                     key={`${window.kind}:${window.id}`}
                     pool={window}
-                    color={colors[usageProviderKind(pool.driver) ?? "codex"]}
+                    color={color}
                     now={now}
                     environmentIds={
                       selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
@@ -582,6 +586,29 @@ export function UsageLimitsSection({
                   />
                 );
               })}
+              {minor.length > 0 ? (
+                <View className="gap-2 rounded-[24px] border-continuous bg-grouped-card px-4 py-3">
+                  {minor.map((window) => (
+                    <View
+                      key={`${window.kind}:${window.id}`}
+                      className="flex-row items-center gap-3"
+                    >
+                      <Text numberOfLines={1} className="w-40 text-xs text-foreground-muted">
+                        {window.label}
+                      </Text>
+                      <View className="h-1.5 flex-1 overflow-hidden rounded-full bg-subtle">
+                        <View
+                          className="h-full rounded-full opacity-60"
+                          style={{ width: `${window.remainingPercent}%`, backgroundColor: color }}
+                        />
+                      </View>
+                      <Text className="w-10 text-right text-xs font-t3-medium tabular-nums text-foreground">
+                        {window.remainingPercent}%
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </View>
           </Fragment>
         );

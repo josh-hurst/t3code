@@ -3,6 +3,7 @@ import {
   collectLimitAccounts,
   collectLimitPools,
   displayLimitWindows,
+  isMinorLimitWindow,
   type LimitAccount,
   type LimitPool,
   type LimitPoolMember,
@@ -676,7 +677,9 @@ function PoolWindowCard({
 function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: number }) {
   const color = barColor(pool.driver);
   const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
-  const windows = displayLimitWindows(pool);
+  const all = displayLimitWindows(pool);
+  const windows = all.filter((window) => !isMinorLimitWindow(pool.driver, window));
+  const minor = all.filter((window) => isMinorLimitWindow(pool.driver, window));
   const m = useMessages();
   return (
     <section className="flex flex-col gap-3">
@@ -704,6 +707,27 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
           />
         );
       })}
+      {minor.length > 0 ? (
+        <div className="flex flex-col gap-1.5 rounded-lg border border-border/60 px-4 py-2.5 text-xs">
+          {minor.map((window) => (
+            <div
+              key={`${window.kind}:${window.id}`}
+              className="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)_2.5rem] items-center gap-x-3"
+            >
+              <span className="truncate text-muted-foreground">{window.label}</span>
+              <span aria-hidden className="relative h-1.5 overflow-hidden rounded-full bg-muted">
+                <span
+                  className="absolute inset-y-0 start-0 opacity-60"
+                  style={{ width: `${window.remainingPercent}%`, backgroundColor: color }}
+                />
+              </span>
+              <span className="text-end font-medium text-foreground tabular-nums">
+                {window.remainingPercent}%
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

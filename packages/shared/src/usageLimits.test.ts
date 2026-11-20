@@ -12,6 +12,7 @@ import {
   type LimitAccount,
   type LimitPoolWindow,
   displayLimitWindows,
+  isMinorLimitWindow,
   cursorUsageWindowDetails,
   collectProviderUsageLimits,
   sameUsageLimitCommandCoverage,
@@ -1218,6 +1219,17 @@ describe("pooled account columns", () => {
     expect(visible.map((window) => window.id)).toEqual(ids);
     expect(visible.map((window) => window.remainingPercent)).toEqual(remaining);
     expect(cursorUsageWindowDetails(ids.at(-1)!, pool)?.label).toBe(label);
+  });
+
+  it.each([
+    ["antigravity", "gemini-5h", "session", false],
+    ["antigravity", "gemini-weekly", "weekly", false],
+    ["antigravity", "gemini-quota", "other", true],
+    ["antigravity", "gemini-argon-5h", "session", true],
+    ["antigravity", "3p-weekly", "weekly", true],
+    ["codex", "secondary", "weekly", false],
+  ] as const)("%s window %s is minor: %s", (driver, id, kind, minor) => {
+    expect(isMinorLimitWindow(ProviderDriverKind.make(driver), { id, kind })).toBe(minor);
   });
 
   it.each([
