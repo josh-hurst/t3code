@@ -3,6 +3,7 @@ import { ChevronsUpDownIcon, SearchIcon, XIcon } from "lucide-react";
 import * as React from "react";
 
 import { cn } from "~/lib/utils";
+import { useAppWindow } from "~/lib/appWindow";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 
@@ -154,7 +155,7 @@ function ComboboxPopup({
   const anchor = anchorProp ?? (multiple ? chipsRef : undefined);
 
   return (
-    <ComboboxPrimitive.Portal>
+    <ComboboxPrimitive.Portal container={useAppWindow().document.body}>
       <ComboboxPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}

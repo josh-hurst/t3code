@@ -2,6 +2,7 @@ import { Autocomplete as AutocompletePrimitive } from "@base-ui/react/autocomple
 import { ChevronsUpDownIcon, XIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
+import { useAppWindow } from "~/lib/appWindow";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 
@@ -90,7 +91,7 @@ function AutocompletePopup({
   anchor?: AutocompletePrimitive.Positioner.Props["anchor"];
 }) {
   return (
-    <AutocompletePrimitive.Portal>
+    <AutocompletePrimitive.Portal container={useAppWindow().document.body}>
       <AutocompletePrimitive.Positioner
         align={align}
         alignOffset={alignOffset}

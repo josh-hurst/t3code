@@ -5,6 +5,7 @@ import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
+import { getWindow } from "@dnd-kit/utilities";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { primaryServerKeybindingsAtom } from "../state/server";
 
@@ -54,6 +55,7 @@ function readFocusContext(event: KeyboardEvent): Partial<ShortcutMatchContext> {
 }
 
 function isInsideConfirmation(target: EventTarget | null): boolean {
+  const { Element } = getWindow(target);
   return target instanceof Element && target.closest('[role="alertdialog"]') !== null;
 }
 
@@ -111,11 +113,19 @@ function dispatchKeyDown(event: KeyboardEvent): void {
 }
 
 let keydownInstalled = false;
+export function attachCommandWindow(view: Window) {
+  view.addEventListener("keydown", dispatchCaptureKeyDown, true);
+  view.addEventListener("keydown", dispatchKeyDown);
+  return () => {
+    view.removeEventListener("keydown", dispatchCaptureKeyDown, true);
+    view.removeEventListener("keydown", dispatchKeyDown);
+  };
+}
+
 function ensureKeydownListener() {
   if (keydownInstalled || typeof window === "undefined") return;
   keydownInstalled = true;
-  window.addEventListener("keydown", dispatchCaptureKeyDown, true);
-  window.addEventListener("keydown", dispatchKeyDown);
+  attachCommandWindow(window);
 }
 
 function pushScope(list: CommandScope[], scope: CommandScope): () => void {

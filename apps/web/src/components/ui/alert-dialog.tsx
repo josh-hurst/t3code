@@ -2,6 +2,7 @@ import { AlertDialog as AlertDialogPrimitive } from "@base-ui/react/alert-dialog
 import { useRender } from "@base-ui/react/use-render";
 
 import { cn } from "~/lib/utils";
+import { useAppWindow } from "~/lib/appWindow";
 import {
   DIALOG_BACKDROP_CLASS,
   DIALOG_MOBILE_SHEET_CLASS,
@@ -22,7 +23,15 @@ function AlertDialog<Payload>(props: AlertDialogPrimitive.Root.Props<Payload>) {
   );
 }
 
-const AlertDialogPortal = AlertDialogPrimitive.Portal;
+function AlertDialogPortal({ container, ...props }: AlertDialogPrimitive.Portal.Props) {
+  const view = useAppWindow();
+  return (
+    <AlertDialogPrimitive.Portal
+      container={container === undefined ? view.document.body : container}
+      {...props}
+    />
+  );
+}
 
 function AlertDialogBackdrop({ className, ...props }: AlertDialogPrimitive.Backdrop.Props) {
   return (

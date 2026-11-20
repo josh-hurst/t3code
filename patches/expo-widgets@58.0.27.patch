@@ -92,7 +92,18 @@ diff --git a/ios/Widgets/Utils.swift b/ios/Widgets/Utils.swift
 index 76b2199..6cb52c3 100644
 --- a/ios/Widgets/Utils.swift
 +++ b/ios/Widgets/Utils.swift
-@@ -125,6 +125,10 @@ func getLiveActivityEnvironment(for environment: EnvironmentValues, in context:
+@@ -86,3 +86,10 @@ func getLiveActivityNodes(forName name: String, props: String? = nil, environme
++  var environment = environment
++  // Local artwork stays on the device and outside ActivityKit's 4 KB push payload.
++  if let entry = WidgetsStorage.getArray(forKey: "__expo_widgets_\(name)_timeline")?.first as? [String: Any],
++     let snapshot = entry["props"] as? [String: Any],
++     let localData = snapshot["localData"] as? [String: Any] {
++    environment["localData"] = localData
++  }
+   switch evaluateWidgetLayout(layout: layout, props: propsDict, environment: environment) {
+   case .success(let result):
+     return result
+@@ -125,6 +132,15 @@ func getLiveActivityEnvironment(for environment: EnvironmentValues, in context:
      "isStale": context.isStale
    ]
  
@@ -100,6 +111,11 @@ index 76b2199..6cb52c3 100644
 +    env["isLiquidGlassAvailable"] = true
 +  }
 +  env["widgetRenderingMode"] = environment.widgetRenderingMode.description
++  #if canImport(UIKit, _version: 9127.0.84)
++  if #available(iOS 27.0, *) {
++    env["isDynamicIslandLimitedInWidth"] = environment.isDynamicIslandLimitedInWidth
++  }
++  #endif
    if #available(iOS 18.0, *) {
      env["isActivityUpdateReduced"] = environment.isActivityUpdateReduced
      env["activityFamily"] = "\(environment.activityFamily)"

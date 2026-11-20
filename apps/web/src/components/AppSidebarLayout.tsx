@@ -473,6 +473,7 @@ export function AppSidebarLayout({
         className="h-dvh! min-h-0!"
         data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
         data-sidebar-floating={sidebarOverlaysChat}
+        data-window-glass-shell=""
         storageKey="chat_thread_sidebar_open"
         style={sidebarProviderStyle}
       >

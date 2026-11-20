@@ -1,6 +1,7 @@
 import { PreviewCard as PreviewCardPrimitive } from "@base-ui/react/preview-card";
 
 import { cn } from "~/lib/utils";
+import { useAppWindow } from "~/lib/appWindow";
 
 const PreviewCard = PreviewCardPrimitive.Root;
 
@@ -20,7 +21,7 @@ function PreviewCardPopup({
   sideOffset?: PreviewCardPrimitive.Positioner.Props["sideOffset"];
 }) {
   return (
-    <PreviewCardPrimitive.Portal>
+    <PreviewCardPrimitive.Portal container={useAppWindow().document.body}>
       <PreviewCardPrimitive.Positioner
         align={align}
         className="z-[140] max-w-(--available-width)"

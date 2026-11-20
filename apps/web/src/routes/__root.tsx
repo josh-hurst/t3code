@@ -54,6 +54,8 @@ import { GUEST_PAGE_PATH } from "../guestPage";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { useHostedPromptLinkLanding } from "../components/promptLinks/HostedPromptLinkLanding";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
+import { navigateMainWindow } from "../lib/threadPopout";
+import { isThreadPopoutPath, isThreadPopoutWindow } from "../lib/threadPopoutWindow";
 import { useAtomValue } from "@effect/atom-react";
 import { primaryServerConfigAtom, primaryServerWelcomeAtom } from "../state/server";
 import { readProject } from "../state/entities";
@@ -99,6 +101,7 @@ export const Route = createRootRoute({
       authGateState.status === "authenticated" &&
       getDesktopSnapShotBridge() &&
       shouldResumeSnapShotSetupOnStartup() &&
+      !isThreadPopoutWindow &&
       location.pathname !== "/settings/snap-shot"
     ) {
       throw redirect({ to: "/settings/snap-shot", replace: true });
@@ -176,6 +179,8 @@ function RootRouteBranch() {
     return <Outlet />;
   }
 
+  if (isThreadPopoutWindow) return <ThreadPopoutRoot pathname={pathname} />;
+
   // Settings can reopen /welcome mid-session, so it mounts everything the app does except the
   // first-run gate and the event router, whose first navigation would leave the page.
   const appHosts = (
@@ -233,6 +238,41 @@ function RootRouteBranch() {
       {/* Above both shells and the router, so drafts survive navigation, including to /welcome. */}
       <ThemeEditorHost />
     </>
+  );
+}
+
+/**
+ * A pop-out shows only its thread. Anywhere else it is sent (another thread, Settings) opens in
+ * the main window, and the pop-out stays on its thread.
+ */
+function ThreadPopoutRoot({ pathname }: { pathname: string }) {
+  const router = useRouter();
+  const href = useLocation({ select: (location) => location.href });
+  const leftThread = !isThreadPopoutPath(pathname);
+  // Where a handoff returns: this pop-out's latest thread, since a standby window gets one later.
+  const [home, setHome] = useState(href);
+  if (!leftThread && home !== href) setHome(href);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands a navigation that left the pop-out's thread to the main window
+  useEffect(() => {
+    if (!leftThread) return;
+    const href = router.state.location.href;
+    if (navigateMainWindow(href)) {
+      void router.navigate({ href: home, replace: true });
+      return;
+    }
+    // No main window left to take it: this window becomes one.
+    window.location.replace(router.history.createHref(href));
+    if (isElectron) window.location.reload();
+  }, [home, leftThread, router]);
+  if (leftThread) return null;
+  return (
+    <CommandPalette>
+      <ConfirmDialogHost />
+      <CustomSnoozeDialogHost />
+      <LaterRecheckDialogHost />
+      <GuestShareDialogHost />
+      <Outlet />
+    </CommandPalette>
   );
 }
 

@@ -1,0 +1,176 @@
+{
+  "Състояние и настройки на потребителя": {
+    "mute": "Изкл. на звука",
+    "deafen": "Заглушаване",
+    "disconnect": "Прекъсни връзката",
+    "disconnectQuietly": "Тихо прекъсване на връзката"
+  },
+  "Stav a nastavení uživatele": {
+    "mute": "Ztlumit",
+    "deafen": "Ztlumit zvuk",
+    "disconnect": "Odpojit",
+    "disconnectQuietly": "Tiše odpojit"
+  },
+  "Brugerstatus og -indstillinger": {
+    "mute": "Gør stum",
+    "deafen": "Gør døv",
+    "disconnect": "Frakobl",
+    "disconnectQuietly": "Afbryd diskret"
+  },
+  "Benutzerstatus und Einstellungen": {
+    "mute": "Stummschalten",
+    "deafen": "Ein- und Ausgabe deaktivieren",
+    "disconnect": "Verbindung trennen",
+    "disconnectQuietly": "Verbindung still trennen"
+  },
+  "Κατάσταση χρήστη και ρυθμίσεις": {
+    "mute": "Σίγαση",
+    "deafen": "Κώφωση",
+    "disconnect": "Αποσύνδεση",
+    "disconnectQuietly": "Αθόρυβη αποσύνδεση"
+  },
+  "Estado y ajustes del usuario": {
+    "mute": "Silenciar",
+    "deafen": "Ensordecer",
+    "disconnect": "Desconectar",
+    "disconnectQuietly": "Desconectarse en silencio"
+  },
+  "Käyttäjän tila ja asetukset": {
+    "mute": "Mykistä",
+    "deafen": "Hiljennä",
+    "disconnect": "Katkaise yhteys",
+    "disconnectQuietly": "Katkaise yhteys hiljaisesti"
+  },
+  "Statut et paramètres de l'utilisateur": {
+    "mute": "Rendre muet",
+    "deafen": "Mettre en sourdine",
+    "disconnect": "Déconnecter",
+    "disconnectQuietly": "Se déconnecter en silence"
+  },
+  "यूज़र स्टेटस और सेटिंग्स": {
+    "mute": "म्यूट करें",
+    "deafen": "आवाज़ बंद करना",
+    "disconnect": "डिस्कनेक्ट करें",
+    "disconnectQuietly": "चुपके से डिस्कनेक्ट करें"
+  },
+  "Status korisnika i postavke": {
+    "mute": "Isključi mikrofon",
+    "deafen": "Isključi zvuk",
+    "disconnect": "Prekini vezu",
+    "disconnectQuietly": "Prekini vezu u tišini"
+  },
+  "Felhasználói állapot és beállítások": {
+    "mute": "Némítás",
+    "deafen": "Süketítés",
+    "disconnect": "Szétkapcsolás",
+    "disconnectQuietly": "Leválasztás csendben"
+  },
+  "Impostazioni e stato utente": {
+    "mute": "Silenzia",
+    "deafen": "Silenzia l'audio",
+    "disconnect": "Disconnetti",
+    "disconnectQuietly": "Disconnetti silenziosamente"
+  },
+  "ユーザーステータスと設定": {
+    "mute": "ミュート",
+    "deafen": "スピーカーミュート",
+    "disconnect": "切断",
+    "disconnectQuietly": "こっそり接続切断"
+  },
+  "사용자 상태 및 설정": {
+    "mute": "음소거",
+    "deafen": "헤드셋 음소거",
+    "disconnect": "연결 끊기",
+    "disconnectQuietly": "조용히 연결 끊기"
+  },
+  "Naudotojo būsena ir nustatymai": {
+    "mute": "Nutildyti",
+    "deafen": "Išjungti garsą",
+    "disconnect": "Atsijungti",
+    "disconnectQuietly": "Atsijungti tyliai"
+  },
+  "Gebruikersstatus en -instellingen": {
+    "mute": "Dempen",
+    "deafen": "Onhoorbaar maken",
+    "disconnect": "Verbinding verbreken",
+    "disconnectQuietly": "Verbinding stilletjes verbreken"
+  },
+  "Brukerstatus og -innstillinger": {
+    "mute": "Demp",
+    "deafen": "Slå av lyd",
+    "disconnect": "Koble fra",
+    "disconnectQuietly": "Koble fra diskré"
+  },
+  "Status i ustawienia użytkownika": {
+    "mute": "Wycisz",
+    "deafen": "Wyłącz dźwięk",
+    "disconnect": "Rozłącz",
+    "disconnectQuietly": "Rozłącz po cichu"
+  },
+  "Status do usuário e configurações": {
+    "mute": "Silenciar",
+    "deafen": "Desativar áudio",
+    "disconnect": "Desconectar",
+    "disconnectQuietly": "Desconectar discretamente"
+  },
+  "Stare utilizator și setări": {
+    "mute": "Oprește sunetul",
+    "deafen": "Dezactivează sunetul",
+    "disconnect": "Deconectează-te",
+    "disconnectQuietly": "Deconectează-te discret"
+  },
+  "Статус и настройки пользователя": {
+    "mute": "Заглушить",
+    "deafen": "Откл. звук",
+    "disconnect": "Отключиться",
+    "disconnectQuietly": "Отключиться без оповещения"
+  },
+  "Användarstatus och inställningar": {
+    "mute": "Tysta",
+    "deafen": "Ljud av",
+    "disconnect": "Koppla från",
+    "disconnectQuietly": "Koppla från tyst"
+  },
+  "สถานะและการตั้งค่าผู้ใช้": {
+    "mute": "ปิดเสียง",
+    "deafen": "ปิดการได้ยิน",
+    "disconnect": "ตัดการเชื่อมต่อ",
+    "disconnectQuietly": "ยกเลิกการเชื่อมต่อแบบไม่มีเสียง"
+  },
+  "Kullanıcı Durumu ve Ayarlar": {
+    "mute": "Sustur",
+    "deafen": "Sağırlaştır",
+    "disconnect": "Bağlantıyı Kes",
+    "disconnectQuietly": "Sessizce Bağlantıyı Kes"
+  },
+  "Статус користувача і налаштування": {
+    "mute": "Заглушити",
+    "deafen": "Вимкнути звук",
+    "disconnect": "Відключитися",
+    "disconnectQuietly": "Відключитися без сповіщення"
+  },
+  "Trạng thái người dùng và cài đặt": {
+    "mute": "Tắt âm",
+    "deafen": "Tắt tiếng",
+    "disconnect": "Ngắt kết nối",
+    "disconnectQuietly": "Ngắt kết nối trong yên lặng"
+  },
+  "用户状态和设置": {
+    "mute": "静音",
+    "deafen": "耳机静音",
+    "disconnect": "断开连接",
+    "disconnectQuietly": "安静地断开连接"
+  },
+  "使用者狀態與設定": {
+    "mute": "靜音",
+    "deafen": "拒聽",
+    "disconnect": "中斷連接",
+    "disconnectQuietly": "悄悄中斷連線"
+  },
+  "User status and settings": {
+    "mute": "Mute",
+    "deafen": "Deafen",
+    "disconnect": "Disconnect",
+    "disconnectQuietly": "Disconnect Quietly"
+  }
+}

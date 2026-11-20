@@ -10,9 +10,10 @@ const layerRelayDpopSigner = DpopProof.layerSigner({
   loadOrCreateKey: loadOrCreateProofKey(),
 });
 
-export const layer = (relayUrl: string) =>
+export const layer = (relayUrl: string, pushRouterUrl?: string | null) =>
   ManagedRelay.layer({
     relayUrl,
+    ...(pushRouterUrl ? { pushRouterUrl } : {}),
     clientId: RelayMobileClientId,
     accessTokenStore: managedRelayAccessTokenStore,
   }).pipe(Layer.provideMerge(layerRelayDpopSigner));

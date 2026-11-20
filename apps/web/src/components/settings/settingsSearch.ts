@@ -339,6 +339,26 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["transparent transparency solid menus dialogs composer"],
   },
   {
+    id: "window-glass",
+    title: "Window glass",
+    to: "/settings/appearance",
+    searchTerms: ["blur vibrancy acrylic translucent transparent desktop background"],
+  },
+  {
+    // Prefixed because the slider control already owns the `window-transparency` id.
+    id: "setting-window-transparency",
+    title: "Window transparency",
+    to: "/settings/appearance",
+    searchTerms: ["glass blur translucent opacity see through main window"],
+  },
+  {
+    // Prefixed because the slider control already owns the `popout-transparency` id.
+    id: "setting-popout-transparency",
+    title: "Pop-out transparency",
+    to: "/settings/appearance",
+    searchTerms: ["glass blur translucent opacity see through floating thread window"],
+  },
+  {
     id: "diff-color-scheme",
     title: "Diff colors",
     to: "/settings/diffs",

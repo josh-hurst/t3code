@@ -93,6 +93,17 @@ describe("buildThreadActionMenuItems", () => {
     );
   });
 
+  it.each([
+    ["open", "pop-out"],
+    ["return", "open-in-main-window"],
+  ] as const)(
+    "keeps moving a thread between windows open to read-only clients (%s)",
+    (popout, id) => {
+      const items = buildThreadActionMenuItems({ ...baseState, canOperate: false, popout });
+      expect(items.find((item) => item.id === id)?.disabled).toBeUndefined();
+    },
+  );
+
   it("disables archive and turning into a project while the thread is running", () => {
     const items = buildThreadActionMenuItems({
       ...baseState,

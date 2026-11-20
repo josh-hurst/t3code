@@ -8,7 +8,11 @@ import * as Scope from "effect/Scope";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 
 export interface DesktopIpcInvokeEvent {
-  readonly sender: { readonly id: number };
+  readonly sender: {
+    readonly id: number;
+    readonly mainFrame?: unknown;
+    readonly opener?: unknown;
+  };
   readonly senderFrame?: unknown;
 }
 
@@ -189,8 +193,11 @@ export const layer = (ipcMain: DesktopIpcMain) =>
           electronWindow.main,
           (main) =>
             Option.isSome(main) &&
-            main.value.webContents.id === event.sender.id &&
-            main.value.webContents.mainFrame === event.senderFrame,
+            (main.value.webContents.id === event.sender.id
+              ? main.value.webContents.mainFrame === event.senderFrame
+              : // A thread pop-out: the main window's open handler only lets it load the app.
+                event.sender.opener === main.value.webContents.mainFrame &&
+                event.sender.mainFrame === event.senderFrame),
         ),
       );
     }),

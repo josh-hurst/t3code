@@ -256,6 +256,7 @@ export interface ManagedRelayAuthorization {
 
 export interface ManagedRelayClientLayerOptions {
   readonly relayUrl: string;
+  readonly pushRouterUrl?: string;
   readonly clientId: RelayPublicClientId;
   readonly accessTokenStore?: ManagedRelayAccessTokenStore;
 }
@@ -468,11 +469,20 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
   }
   const signer = yield* ManagedRelayDpopSigner;
   const client = yield* HttpApiClient.make(RelayApi, { baseUrl: relayUrl });
+  const pushOrigin = options.pushRouterUrl ?? relayUrl;
+  const pushUrl = normalizeSecureRelayUrl(pushOrigin);
+  if (!pushUrl) return disabledManagedRelayClient(pushOrigin);
+  const pushClient =
+    pushUrl === relayUrl ? client : yield* HttpApiClient.make(RelayApi, { baseUrl: pushUrl });
   const initialTokens = options.accessTokenStore ? yield* options.accessTokenStore.load : [];
   const cachedTokens = yield* SynchronizedRef.make<
     ReadonlyArray<ManagedRelayAccessTokenCacheEntry>
   >(initialTokens.filter((token) => token.clientId === options.clientId));
   const urlBuilder = HttpApiClient.urlBuilder(RelayApi, { baseUrl: relayUrl });
+  const pushUrls =
+    pushUrl === relayUrl
+      ? urlBuilder.mobile
+      : HttpApiClient.urlBuilder(RelayApi, { baseUrl: pushUrl }).mobile;
 
   type DpopProofTarget = Pick<ManagedRelayDpopProofInput, "method" | "url">;
   const dpopProofTargets = {
@@ -494,11 +504,11 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     }),
     registerDevice: (): DpopProofTarget => ({
       method: RelayRegisterDeviceEndpoint.method,
-      url: urlBuilder.mobile.registerDevice(),
+      url: pushUrls.registerDevice(),
     }),
     unregisterDevice: (deviceId: string): DpopProofTarget => ({
       method: RelayUnregisterDeviceEndpoint.method,
-      url: urlBuilder.mobile.unregisterDevice({ params: { deviceId } }),
+      url: pushUrls.unregisterDevice({ params: { deviceId } }),
     }),
     getAgentActivitySnapshot: (): DpopProofTarget => ({
       method: RelayAgentActivitySnapshotEndpoint.method,
@@ -506,7 +516,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     }),
     registerLiveActivity: (): DpopProofTarget => ({
       method: RelayRegisterLiveActivityEndpoint.method,
-      url: urlBuilder.mobile.registerLiveActivity(),
+      url: pushUrls.registerLiveActivity(),
     }),
   };
 
@@ -913,7 +923,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
             target: dpopProofTargets.registerDevice(),
           },
           (authorization) =>
-            client.mobile
+            pushClient.mobile
               .registerDevice({
                 headers: dpopHeaders(authorization),
                 payload: input.payload,
@@ -935,7 +945,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
             target: dpopProofTargets.unregisterDevice(input.deviceId),
           },
           (authorization) =>
-            client.mobile
+            pushClient.mobile
               .unregisterDevice({
                 headers: dpopHeaders(authorization),
                 params: { deviceId: input.deviceId },
@@ -978,7 +988,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
             target: dpopProofTargets.registerLiveActivity(),
           },
           (authorization) =>
-            client.mobile
+            pushClient.mobile
               .registerLiveActivity({
                 headers: dpopHeaders(authorization),
                 payload: input.payload,

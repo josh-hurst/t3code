@@ -23,7 +23,9 @@ import { turnItemUpdateCanEndBackgroundWork } from "@t3tools/shared/orchestratio
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import { normalizeRelayIssuer, RELAY_ACTIVITY_PUBLISH_TYP } from "@t3tools/shared/relayJwt";
+import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import * as Cause from "effect/Cause";
+import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
@@ -42,6 +44,7 @@ import * as HttpApiClient from "effect/http-api/HttpApiClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import {
+  CLOUD_LINKED_USER_ID,
   isAgentActivityPublishingEnabledValue,
   PUBLISH_AGENT_ACTIVITY_SECRET,
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
@@ -423,8 +426,10 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
     .map((thread) => thread.id);
 }
 
-/** @public */
-export const make = Effect.gen(function* () {
+const makePublisher = Effect.fn("AgentAwarenessRelay.makePublisher")(function* (pushRouter?: {
+  readonly url: string;
+  readonly accountId: string;
+}) {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
   const threads = yield* ThreadManagement.ThreadManagementService;
@@ -455,9 +460,16 @@ export const make = Effect.gen(function* () {
       readSecretString(RELAY_ISSUER_SECRET),
       readSecretString(RELAY_ENVIRONMENT_CREDENTIAL_SECRET),
     ]);
-    return url && environmentCredential
-      ? { url, issuer: issuer ?? url, environmentCredential }
-      : null;
+    if (!url || !environmentCredential) return null;
+    if (pushRouter) {
+      if (
+        url === pushRouter.url ||
+        (yield* readSecretString(CLOUD_LINKED_USER_ID)) !== pushRouter.accountId
+      )
+        return null;
+      return { url: pushRouter.url, issuer: pushRouter.url, environmentCredential };
+    }
+    return { url, issuer: issuer ?? url, environmentCredential };
   });
 
   const readPublishAgentActivityEnabled = readSecretString(PUBLISH_AGENT_ACTIVITY_SECRET).pipe(
@@ -470,7 +482,9 @@ export const make = Effect.gen(function* () {
   }) =>
     HttpApiClient.make(RelayApi, {
       baseUrl: relayConfig.url,
-      transformClient: relayEnvironmentClient(relayConfig.environmentCredential),
+      ...(pushRouter
+        ? {}
+        : { transformClient: relayEnvironmentClient(relayConfig.environmentCredential) }),
     }).pipe(Effect.provide(FetchHttpClient.layer));
 
   let cachedRelayClient: Effect.Success<ReturnType<typeof makeRelayClient>> | undefined;
@@ -997,6 +1011,51 @@ export const make = Effect.gen(function* () {
       return Queue.offer(catchUpRequests, undefined).pipe(Effect.asVoid);
     }),
     start,
+  });
+});
+
+declare const __T3CODE_BUILD_IOS_PUSH_ROUTER_URL__: string | undefined;
+declare const __T3CODE_BUILD_IOS_PUSH_ROUTER_ACCOUNT_ID__: string | undefined;
+
+/** @public */
+export const make = Effect.gen(function* () {
+  const connect = yield* makePublisher();
+  const configuredUrl = yield* Config.String("T3CODE_IOS_PUSH_ROUTER_URL").pipe(
+    Config.withDefault(
+      typeof __T3CODE_BUILD_IOS_PUSH_ROUTER_URL__ === "undefined"
+        ? ""
+        : __T3CODE_BUILD_IOS_PUSH_ROUTER_URL__,
+    ),
+  );
+  if (!configuredUrl) return connect;
+  const url = normalizeSecureRelayUrl(configuredUrl);
+  const accountId = yield* Config.String("T3CODE_IOS_PUSH_ROUTER_ACCOUNT_ID").pipe(
+    Config.withDefault(
+      typeof __T3CODE_BUILD_IOS_PUSH_ROUTER_ACCOUNT_ID__ === "undefined"
+        ? ""
+        : __T3CODE_BUILD_IOS_PUSH_ROUTER_ACCOUNT_ID__,
+    ),
+  );
+  if (!url || !accountId.trim()) {
+    yield* Effect.logWarning("iOS push router needs an HTTPS origin and a linked account ID");
+    return connect;
+  }
+  // Each destination owns its acknowledgments and retries, including when only one is reachable.
+  const router = yield* makePublisher({ url, accountId: accountId.trim() });
+  return AgentAwarenessRelay.of({
+    start: Effect.fn("AgentAwarenessRelay.startPublishers")(() =>
+      Effect.all([connect.start(), router.start()], { discard: true }),
+    ),
+    requestCatchUp: Effect.fn("AgentAwarenessRelay.requestPublisherCatchUp")(() =>
+      Effect.all([connect.requestCatchUp(), router.requestCatchUp()], { discard: true }),
+    ),
+    drain: Effect.all([connect.drain, router.drain], { concurrency: 2, discard: true }),
+    publishThread: Effect.fn("AgentAwarenessRelay.publishThreadToDestinations")((threadId) =>
+      Effect.all([connect.publishThread(threadId), router.publishThread(threadId)], {
+        concurrency: 2,
+        discard: true,
+      }),
+    ),
   });
 });
 

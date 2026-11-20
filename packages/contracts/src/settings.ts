@@ -156,6 +156,18 @@ export const GlassOpacity = Schema.Int.check(
 export type GlassOpacity = typeof GlassOpacity.Type;
 const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
 
+export const MIN_WINDOW_GLASS_TRANSPARENCY = 20;
+export const MAX_WINDOW_GLASS_TRANSPARENCY = 90;
+/** How much of the blurred desktop shows through a glass window; the rest is the theme color. */
+export const WindowGlassTransparency = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_WINDOW_GLASS_TRANSPARENCY,
+    maximum: MAX_WINDOW_GLASS_TRANSPARENCY,
+  }),
+);
+export type WindowGlassTransparency = typeof WindowGlassTransparency.Type;
+const DEFAULT_WINDOW_GLASS_TRANSPARENCY: WindowGlassTransparency = 70;
+
 export const MIN_APPEARANCE_CONTRAST = 50;
 export const MAX_APPEARANCE_CONTRAST = 200;
 export const AppearanceContrast = Schema.Int.check(
@@ -488,6 +500,15 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   glassOpacity: GlassOpacity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_GLASS_OPACITY)),
+  ),
+  /** Desktop on macOS and Windows: the main window shows the blurred desktop behind it. */
+  windowGlassEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  windowGlassTransparency: WindowGlassTransparency.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WINDOW_GLASS_TRANSPARENCY)),
+  ),
+  /** Thread pop-outs are always glass and keep their own transparency. */
+  popoutGlassTransparency: WindowGlassTransparency.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WINDOW_GLASS_TRANSPARENCY)),
   ),
   fontSizeInterface: InterfaceFontSize.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_INTERFACE_FONT_SIZE)),
@@ -2119,6 +2140,9 @@ export const ClientSettingsPatch = Schema.Struct({
   diffLayout: Schema.optionalKey(DiffLayout),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
+  windowGlassEnabled: Schema.optionalKey(Schema.Boolean),
+  windowGlassTransparency: Schema.optionalKey(WindowGlassTransparency),
+  popoutGlassTransparency: Schema.optionalKey(WindowGlassTransparency),
   onboardingCompletedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
   fontSizeInterface: Schema.optionalKey(InterfaceFontSize),
   fontSizePrompt: Schema.optionalKey(PromptFontSize),

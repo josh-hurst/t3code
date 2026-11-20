@@ -56,7 +56,7 @@ import {
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
@@ -79,6 +79,7 @@ import {
   ListChecksIcon,
   MessageSquareIcon,
   PaletteIcon,
+  PictureInPictureIcon,
   RotateCcwIcon,
   SettingsIcon,
   MonitorIcon,
@@ -113,6 +114,8 @@ import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstra
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { copyThreadReference } from "../lib/copyThreadReference";
+import { popOutThread, returnThreadToMainWindow } from "../lib/threadPopout";
+import { isThreadPopoutWindow } from "../lib/threadPopoutWindow";
 import {
   queueWorkspaceFocusFromPalette,
   restoreWorkspaceFocusFromPalette,
@@ -430,6 +433,7 @@ function OpenCommandPaletteDialog(props: {
   readonly initialContext: CommandPaletteReturnContext | undefined;
 }) {
   const navigate = useNavigate();
+  const router = useRouter();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { openChildSearch, setOpen } = props;
   // Keyed by palette session: the intent and restored search only seed this
@@ -1472,6 +1476,29 @@ function OpenCommandPaletteDialog(props: {
       shortcutCommand: "thread.copyReference",
       run: copyActiveThreadReference,
     });
+  }
+
+  if (activeThread !== null) {
+    const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+    actionItems.push(
+      isThreadPopoutWindow
+        ? {
+            kind: "action",
+            value: "action:open-thread-in-main-window",
+            searchTerms: ["main window", "pop out", "pop in", "window", "return"],
+            title: "Open in main window",
+            icon: <PictureInPictureIcon className={ITEM_ICON_CLASS} />,
+            run: async () => returnThreadToMainWindow(router, threadRef),
+          }
+        : {
+            kind: "action",
+            value: "action:pop-out-thread",
+            searchTerms: ["pop out", "new window", "float", "detach", "window"],
+            title: "Open thread in new window",
+            icon: <PictureInPictureIcon className={ITEM_ICON_CLASS} />,
+            run: async () => popOutThread(router, threadRef),
+          },
+    );
   }
 
   if (

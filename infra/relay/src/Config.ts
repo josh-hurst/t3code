@@ -5,6 +5,9 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
+// Delegated IDs exceed the router's default 100-character limit; match the environment server.
+export const RELAY_HTTP_ROUTER_CONFIG = { maxParamLength: 512 } as const;
+
 export const ApnsEnvironment = Schema.Literals(["sandbox", "production"]);
 export type ApnsEnvironment = typeof ApnsEnvironment.Type;
 

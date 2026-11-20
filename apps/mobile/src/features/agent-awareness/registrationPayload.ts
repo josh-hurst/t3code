@@ -3,11 +3,6 @@ import type { RelayDeviceRegistrationRequest } from "@t3tools/contracts/relay";
 import type { Preferences } from "../../persistence/mobile-preferences";
 import { supportsAgentAwarenessPush } from "./capabilities";
 
-// Development builds use sandbox APNs; distribution builds use production APNs.
-export function resolveApsEnvironment(appVariant: unknown): "sandbox" | "production" {
-  return appVariant === "development" ? "sandbox" : "production";
-}
-
 export function makeRelayDeviceRegistrationRequest(
   input: {
     readonly deviceId: string;

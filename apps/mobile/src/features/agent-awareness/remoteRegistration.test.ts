@@ -90,6 +90,11 @@ vi.mock("expo-constants", () => ({
   },
 }));
 
+vi.mock("expo-application", () => ({
+  applicationId: "dev.example.t3",
+  getIosPushNotificationServiceEnvironmentAsync: () => Promise.resolve("development"),
+}));
+
 vi.mock("expo-widgets", () => ({
   addPushToStartTokenListener: vi.fn(() => ({ remove: vi.fn() })),
 }));
@@ -677,6 +682,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       return Effect.gen(function* () {
         yield* runBackgroundOperations();
         expect(registrations.at(-1)).toMatchObject({
+          ...(os === "ios" ? { bundleId: "dev.example.t3", apsEnvironment: "sandbox" } : {}),
           preferences: { notificationsEnabled: true, liveActivitiesEnabled: true },
         });
         vi.mocked(Notifications.getPermissionsAsync).mockResolvedValueOnce({
@@ -1008,35 +1014,58 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       );
     }
 
-    it.effect("registers an existing Live Activity before waiting on the widget read", () => {
-      const order: Array<string> = [];
-      const activity = {
-        getId: () => "activity-1",
-        getPushToken: vi.fn(() => {
-          order.push("push-token");
-          return Promise.resolve(null);
-        }),
-        addPushTokenListener: vi.fn(),
-      };
-      widgetMocks.getInstances.mockReturnValue([activity] as never);
-      const relay = fakeRelay(() =>
-        Effect.sync(() => {
-          order.push("widget-snapshot");
-          return { aggregate };
-        }),
-      );
-      setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token"), "user-a");
+    it.effect(
+      "registers an existing Live Activity and repaints it with every thread in the foreground snapshot",
+      () => {
+        const order: Array<string> = [];
+        vi.mocked(loadPreferences).mockResolvedValueOnce({
+          liveActivitiesEnabled: true,
+        } as Preferences);
+        const secondThread = {
+          ...aggregate.activities[0]!,
+          threadId: "thread-2" as ThreadId,
+          threadTitle: "Another running thread",
+          deepLink: "/threads/env-1/thread-2",
+        };
+        const snapshot = {
+          ...aggregate,
+          activeCount: 2,
+          activities: [...aggregate.activities, secondThread],
+        };
+        const activity = {
+          getId: () => "activity-1",
+          getPushToken: vi.fn(() => {
+            order.push("push-token");
+            return Promise.resolve(null);
+          }),
+          addPushTokenListener: vi.fn(),
+          update: vi.fn(() => Promise.resolve()),
+        };
+        widgetMocks.getInstances.mockReturnValue([activity] as never);
+        const relay = fakeRelay(() =>
+          Effect.sync(() => {
+            order.push("widget-snapshot");
+            return { aggregate: snapshot };
+          }),
+        );
+        setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token"), "user-a");
 
-      return Effect.gen(function* () {
-        yield* refreshActiveLiveActivityRemoteRegistration();
+        return Effect.gen(function* () {
+          yield* refreshActiveLiveActivityRemoteRegistration();
 
-        expect(order).toEqual(["push-token", "widget-snapshot"]);
-        expect(publishWidgetMock).toHaveBeenLastCalledWith({
-          kind: "snapshot",
-          aggregate,
-        });
-      }).pipe(Effect.provide(relay));
-    });
+          expect(order).toEqual(["push-token", "widget-snapshot"]);
+          expect(publishWidgetMock).toHaveBeenLastCalledWith({
+            kind: "snapshot",
+            aggregate: snapshot,
+          });
+          expect(activity.update).toHaveBeenCalledWith(snapshot, expect.any(Date));
+          expect(widgetMocks.start).not.toHaveBeenCalled();
+
+          yield* refreshActiveLiveActivityRemoteRegistration();
+          expect(activity.update).toHaveBeenCalledTimes(1);
+        }).pipe(Effect.provide(relay));
+      },
+    );
 
     it.effect("keeps the newest rows when an older overlapping read finishes last", () =>
       Effect.gen(function* () {

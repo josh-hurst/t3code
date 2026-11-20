@@ -1,22 +1,21 @@
-import { HStack, ProgressView, Spacer, Text, VStack } from "@expo/ui/swift-ui";
+import { Capsule, HStack, Image, Rectangle, Spacer, Text, VStack } from "@expo/ui/swift-ui";
 import {
   accessibilityElement,
   accessibilityLabel,
   containerBackground,
   environment,
-  fixedSize,
   font,
   foregroundStyle,
   frame,
   layoutPriority,
   lineLimit,
-  progressViewStyle,
-  tint,
+  minimumScaleFactor,
+  opacity,
+  resizable,
   widgetURL,
 } from "@expo/ui/swift-ui/modifiers";
 import { createWidget, type WidgetEnvironment } from "expo-widgets";
-
-import type { SubscriptionUsageSnapshot as SubscriptionUsageProps } from "./subscriptionUsageSnapshot";
+import type { SubscriptionUsageSnapshot } from "./subscriptionUsageSnapshot";
 
 type UsageConfiguration = {
   codexPeriod?: "auto" | "session" | "weekly";
@@ -24,256 +23,369 @@ type UsageConfiguration = {
 };
 
 function SubscriptionUsage(
-  props: SubscriptionUsageProps,
-  widgetEnvironment: WidgetEnvironment<UsageConfiguration> & {
-    showsContainerBackground?: boolean;
-  },
+  published: Partial<SubscriptionUsageSnapshot> | undefined,
+  host: WidgetEnvironment<UsageConfiguration> & { showsContainerBackground?: boolean },
 ) {
   "widget";
-  // The extension evaluates this function without the app's module scope.
-  const family = widgetEnvironment.widgetFamily;
-  // Gallery snapshots can render an old timeline entry after it has expired.
-  const now = Math.max(widgetEnvironment.date?.getTime() ?? 0, Date.now());
-  const accessory = family === "accessoryRectangular";
-  const compact =
-    family === "systemSmall" || accessory || widgetEnvironment.levelOfDetail === "simplified";
-  const dense = family === "systemSmall" || family === "systemMedium";
-  const limit = family === "systemExtraLarge" ? 6 : family === "systemLarge" ? 4 : 2;
-  const monochrome =
-    widgetEnvironment.widgetRenderingMode !== "fullColor" || widgetEnvironment.isLuminanceReduced;
-  const mode = props.theme?.mode;
+  const props = published ?? {};
+  const accessory = host.widgetFamily === "accessoryRectangular";
+  const small = host.widgetFamily === "systemSmall" || host.levelOfDetail === "simplified";
+  const large = host.widgetFamily === "systemLarge" || host.widgetFamily === "systemExtraLarge";
+  const system =
+    accessory ||
+    host.widgetRenderingMode === "accented" ||
+    host.widgetRenderingMode === "vibrant" ||
+    host.isLuminanceReduced ||
+    host.showsContainerBackground === false;
   const appearance =
-    mode === "light" || mode === "dark"
-      ? mode
-      : widgetEnvironment.colorScheme === "dark"
+    props.theme?.mode === "light" || props.theme?.mode === "dark"
+      ? props.theme.mode
+      : host.colorScheme === "dark"
         ? "dark"
         : "light";
-  // StandBy can remove the card even in full color; text must then follow the host.
-  const palette =
-    !accessory && !monochrome && widgetEnvironment.showsContainerBackground !== false
-      ? props.theme?.[appearance]
-      : undefined;
-  const primary = palette?.foreground ?? "primary";
-  const secondary = palette?.secondary ?? "secondary";
-  const providers = props.providers ?? [
-    { name: "Codex", detail: "Open T3 to connect", windows: [], expiresAt: 0 },
-    { name: "Claude", detail: "Open T3 to connect", windows: [], expiresAt: 0 },
-  ];
-  const columns = providers.map((provider) => {
-    const stale = provider.windows.length > 0 && now >= provider.expiresAt;
+  const dark = appearance === "dark";
+  const palette = props.theme?.[appearance];
+  type Ink = Parameters<typeof foregroundStyle>[0];
+  const primary: Ink = system
+    ? { type: "hierarchical", style: "primary" }
+    : (palette?.foreground ?? (dark ? "#F6F2E9" : "#262925"));
+  const secondary: Ink = system
+    ? { type: "hierarchical", style: "secondary" }
+    : (palette?.secondary ?? (dark ? "#B0ABA3" : "#59615A"));
+  const background = palette?.background ?? (dark ? "#20231F" : "#F7F6F0");
+  const now = Math.max(host.date?.getTime() ?? 0, Date.now());
+  const limit = host.widgetFamily === "systemExtraLarge" ? 6 : large ? 4 : 2;
+  const providers = (props.providers ?? []).map((provider) => {
+    const claude = provider.name === "Claude";
     const period =
-      widgetEnvironment.configuration?.[
-        provider.name === "Claude" ? "claudePeriod" : "codexPeriod"
-      ] ?? "auto";
-    const windows = stale
+      (claude ? host.configuration?.claudePeriod : host.configuration?.codexPeriod) ?? "auto";
+    const expired = provider.windows.length > 0 && now >= provider.expiresAt;
+    const windows = expired
       ? []
       : provider.windows.filter((window) => period === "auto" || window.kind === period);
-    const tightest = windows.reduce<(typeof windows)[number] | undefined>(
-      (result, window) => (!result || window.remaining < result.remaining ? window : result),
+    const featured = windows.reduce<(typeof windows)[number] | undefined>(
+      (lowest, window) => (!lowest || window.remaining < lowest.remaining ? window : lowest),
       undefined,
     );
-    const compactWindows = [
-      windows.find((window) => window.kind === "session"),
-      windows.find((window) => window.kind === "weekly"),
-    ].filter((window) => window !== undefined);
-    const shown =
-      accessory || widgetEnvironment.levelOfDetail === "simplified"
-        ? tightest
-          ? [tightest]
-          : []
-        : family === "systemSmall" && compactWindows.length > 0
-          ? compactWindows
-          : period === "auto" && compactWindows.length > 0
-            ? [
-                ...compactWindows,
-                ...windows.filter((window) => !compactWindows.includes(window)),
-              ].slice(0, limit)
-            : windows.slice(0, limit);
-    const detail = stale
-      ? "Open T3 to refresh"
-      : period !== "auto" && windows.length === 0 && provider.windows.length > 0
-        ? `No ${period} limit reported`
-        : provider.detail;
-    const barModifiers = [
-      progressViewStyle("linear"),
-      frame({ height: 4 }),
-      ...(monochrome ? [] : [tint(provider.name === "Claude" ? "#d97757" : "#8e8e93")]),
-    ];
-    if (accessory) {
-      return (
-        <VStack
-          key={provider.name}
-          alignment="leading"
-          spacing={2}
+    const other = windows.filter((window) => window !== featured);
+    // In the two-window sizes, keep both configured periods visible when the provider reports several weekly pools.
+    const alternate = other.find((window) => window.kind !== featured?.kind);
+    const remaining = alternate
+      ? [alternate, ...other.filter((window) => window !== alternate)]
+      : other;
+    return {
+      name: provider.name,
+      mark: claude ? "ClaudeMark" : "CodexMark",
+      ink: system
+        ? primary
+        : claude
+          ? dark
+            ? "#F0A281"
+            : "#AA492B"
+          : dark
+            ? "#8AD9B9"
+            : "#1C7058",
+      featured,
+      remaining: remaining.slice(0, limit - 1),
+      more: featured
+        ? Math.max(
+            0,
+            (period === "auto" ? (provider.totalWindows ?? windows.length) : windows.length) -
+              limit,
+          )
+        : 0,
+      detail: expired
+        ? "Open T3 to refresh"
+        : !windows.length && period !== "auto" && provider.windows.length
+          ? "No " + period + " limit"
+          : provider.detail,
+    };
+  });
+  type Provider = (typeof providers)[number];
+  const brand = (name: string, width: number, height: number, color: Ink) => (
+    <HStack modifiers={[frame({ width, height }), foregroundStyle(color)]}>
+      <Image assetName={name} modifiers={[resizable()]} />
+    </HStack>
+  );
+  const inkFor = (provider: Provider, value: number) =>
+    !system && value <= 10 ? (palette?.danger ?? (dark ? "#FFA28F" : "#AA392A")) : provider.ink;
+  const meter = (percent: number, color: Ink, segments: number) => (
+    <HStack spacing={2}>
+      {Array.from({ length: segments }, (_, i) => (
+        <Capsule
+          key={i}
           modifiers={[
-            accessibilityElement("ignore"),
-            accessibilityLabel(
-              tightest
-                ? `${provider.name}, ${tightest.label}, ${tightest.remaining} percent remaining. ${tightest.reset}. ${provider.detail}.`
-                : `${provider.name}. ${detail}.`,
+            frame({ height: large ? 7 : 5 }),
+            foregroundStyle(color),
+            opacity(
+              i < Math.round((Math.max(0, Math.min(100, percent)) * segments) / 100) ? 1 : 0.18,
             ),
           ]}
+        />
+      ))}
+    </HStack>
+  );
+  const header = (
+    <HStack spacing={5}>
+      {brand("T3Mark", 18, 12, primary)}
+      <Text
+        modifiers={[
+          font({ size: small ? 12 : 13, weight: "semibold" }),
+          foregroundStyle(primary),
+          lineLimit(1),
+        ]}
+      >
+        Usage remaining
+      </Text>
+      <Spacer minLength={0} />
+      {!small && props.checkedAt ? (
+        <Text
+          modifiers={[
+            font({ size: 11, weight: "medium" }),
+            foregroundStyle(secondary),
+            lineLimit(1),
+          ]}
         >
-          <HStack spacing={4}>
+          {new Date(props.checkedAt).toLocaleTimeString(undefined, {
+            hour: "numeric",
+            minute: "2-digit",
+          })}
+        </Text>
+      ) : null}
+    </HStack>
+  );
+  const label = (provider: Provider, size: number) => (
+    <HStack spacing={5}>
+      {brand(provider.mark, size, size, provider.ink)}
+      <Text
+        modifiers={[font({ size, weight: "semibold" }), foregroundStyle(primary), lineLimit(1)]}
+      >
+        {provider.name}
+      </Text>
+    </HStack>
+  );
+  const compactRow = (provider: Provider) => {
+    const w = provider.featured;
+    const alternate = provider.remaining[0];
+    return (
+      <VStack key={provider.name} alignment="leading" spacing={2}>
+        <HStack spacing={4}>
+          {label(provider, accessory ? 12 : 13)}
+          <Spacer minLength={1} />
+          {w ? (
             <Text
               modifiers={[
-                font({ textStyle: "caption", weight: "semibold" }),
-                lineLimit(1),
-                foregroundStyle(primary),
-              ]}
-            >
-              {provider.name}
-              {tightest ? ` · ${tightest.label}` : ""}
-            </Text>
-            <Spacer />
-            <Text
-              modifiers={[
-                font({ textStyle: "caption", weight: "semibold" }),
-                lineLimit(1),
+                font({ size: accessory ? 14 : 20, weight: "bold", design: "rounded" }),
+                foregroundStyle(inkFor(provider, w.remaining)),
                 layoutPriority(1),
-                foregroundStyle(primary),
+                lineLimit(1),
               ]}
             >
-              {tightest
-                ? `${tightest.remaining}% left`
-                : period !== "auto" && !stale && provider.windows.length > 0
-                  ? "N/A"
-                  : "Open T3"}
+              {w.remaining}%
             </Text>
-          </HStack>
-          {tightest ? (
-            <ProgressView value={tightest.remaining / 100} modifiers={barModifiers} />
           ) : null}
-        </VStack>
-      );
-    }
+        </HStack>
+        <Text
+          modifiers={[
+            font({ size: 10, weight: "medium" }),
+            foregroundStyle(secondary),
+            lineLimit(1),
+            minimumScaleFactor(0.85),
+          ]}
+        >
+          {w
+            ? w.label +
+              (!accessory && alternate
+                ? " · " + alternate.label + " " + alternate.remaining + "%"
+                : "")
+            : provider.detail}
+        </Text>
+        {w && !accessory ? meter(w.remaining, inkFor(provider, w.remaining), 16) : null}
+      </VStack>
+    );
+  };
+  const column = (provider: Provider) => {
+    const w = provider.featured;
     return (
       <VStack
         key={provider.name}
         alignment="leading"
-        spacing={dense ? 1 : compact ? 2 : 4}
-        modifiers={[
-          frame({ maxWidth: Infinity, alignment: "leading" }),
-          fixedSize({ horizontal: false, vertical: true }),
-        ]}
+        spacing={large ? 8 : 3}
+        modifiers={[frame({ maxWidth: Infinity, alignment: "leading" })]}
       >
-        <Text
-          modifiers={[
-            font({ textStyle: compact ? "caption" : "headline", weight: "bold" }),
-            lineLimit(1),
-            foregroundStyle(primary),
-          ]}
-        >
-          {provider.name}
-        </Text>
-        {!compact || shown.length === 0 ? (
-          <Text
-            modifiers={[font({ textStyle: "caption2" }), foregroundStyle(secondary), lineLimit(1)]}
-          >
-            {detail === "Subscription remaining" ? " " : detail}
+        {label(provider, large ? 16 : 14)}
+        {large && provider.detail && provider.detail !== "Subscription remaining" && w ? (
+          <Text modifiers={[font({ size: 11 }), foregroundStyle(secondary), lineLimit(1)]}>
+            {provider.detail}
           </Text>
         ) : null}
-        {shown.map((window) => (
+        {w ? (
           <VStack
-            key={window.label}
             alignment="leading"
-            spacing={dense ? 1 : 2}
+            spacing={large ? 5 : 2}
             modifiers={[
               accessibilityElement("ignore"),
               accessibilityLabel(
-                `${provider.name}, ${window.label}, ${window.remaining} percent remaining. ${window.reset}. ${provider.detail}.`,
+                provider.name +
+                  ", " +
+                  w.label +
+                  ", " +
+                  w.remaining +
+                  " percent remaining. " +
+                  w.reset,
               ),
             ]}
           >
-            <HStack spacing={4}>
+            <HStack alignment="firstTextBaseline" spacing={5}>
               <Text
                 modifiers={[
-                  font({ textStyle: compact || dense ? "caption2" : "caption" }),
+                  font({
+                    size: large ? 41 : 34,
+                    weight: "bold",
+                    design: "rounded",
+                    leading: "tight",
+                  }),
+                  foregroundStyle(inkFor(provider, w.remaining)),
+                  lineLimit(1),
+                  minimumScaleFactor(0.82),
+                  layoutPriority(1),
+                ]}
+              >
+                {w.remaining}%
+              </Text>
+              {large ? null : (
+                <Text
+                  modifiers={[
+                    font({ size: 10, weight: "medium" }),
+                    foregroundStyle(secondary),
+                    lineLimit(2),
+                  ]}
+                >
+                  {w.label}
+                </Text>
+              )}
+            </HStack>
+            {large ? (
+              <Text
+                modifiers={[
+                  font({ size: 13, weight: "semibold" }),
+                  foregroundStyle(primary),
+                  lineLimit(1),
+                ]}
+              >
+                {w.label}
+              </Text>
+            ) : null}
+            {meter(w.remaining, inkFor(provider, w.remaining), 14)}
+            {large || !provider.remaining.length ? (
+              <Text modifiers={[font({ size: 11 }), foregroundStyle(secondary), lineLimit(2)]}>
+                {w.reset}
+              </Text>
+            ) : null}
+          </VStack>
+        ) : (
+          <Text modifiers={[font({ size: 13 }), foregroundStyle(secondary), lineLimit(2)]}>
+            {provider.detail}
+          </Text>
+        )}
+        {provider.remaining.map((window) => (
+          <VStack
+            key={window.label}
+            alignment="leading"
+            spacing={2}
+            modifiers={[
+              accessibilityElement("ignore"),
+              accessibilityLabel(
+                window.label + ", " + window.remaining + " percent remaining. " + window.reset,
+              ),
+            ]}
+          >
+            <HStack spacing={3}>
+              <Text
+                modifiers={[
+                  font({ size: large ? 13 : 11 }),
                   foregroundStyle(secondary),
                   lineLimit(1),
                 ]}
               >
                 {window.label}
               </Text>
-              <Spacer />
+              <Spacer minLength={2} />
               <Text
                 modifiers={[
-                  font({
-                    textStyle: compact || dense ? "caption2" : "caption",
-                    weight: "semibold",
-                  }),
-                  lineLimit(1),
+                  font({ size: large ? 15 : 12, weight: "semibold", design: "rounded" }),
+                  foregroundStyle(primary),
                   layoutPriority(1),
-                  foregroundStyle(
-                    window.remaining <= 10 && !monochrome
-                      ? (palette?.danger ??
-                          (widgetEnvironment.colorScheme === "light" ? "#dc2626" : "#fca5a5"))
-                      : primary,
-                  ),
+                  lineLimit(1),
                 ]}
               >
-                {window.remaining}% left
+                {window.remaining}%
               </Text>
             </HStack>
-            <ProgressView value={window.remaining / 100} modifiers={barModifiers} />
-            {!compact ? (
+            {large ? (
               <Text modifiers={[font({ size: 10 }), foregroundStyle(secondary), lineLimit(1)]}>
                 {window.reset}
               </Text>
             ) : null}
           </VStack>
         ))}
-        {!compact &&
-        !stale &&
-        (period === "auto" ? (provider.totalWindows ?? windows.length) : windows.length) > limit ? (
-          <Text
-            modifiers={[font({ textStyle: "caption2" }), foregroundStyle(secondary), lineLimit(1)]}
-          >
-            {(period === "auto" ? (provider.totalWindows ?? windows.length) : windows.length) -
-              limit}{" "}
-            more in T3
+        {large && provider.more > 0 ? (
+          <Text modifiers={[font({ size: 11 }), foregroundStyle(secondary)]}>
+            {provider.more} more in T3
           </Text>
         ) : null}
       </VStack>
     );
-  });
-  return (
-    <VStack
-      alignment="leading"
-      spacing={accessory || dense ? 2 : 6}
-      modifiers={[
-        ...(props.url ? [widgetURL(props.url)] : []),
-        ...(palette
-          ? [
-              containerBackground(palette.background, "widget"),
-              environment("colorScheme", appearance),
-            ]
-          : []),
-      ]}
-    >
-      {providers.length === 0 ? (
-        <Text modifiers={[font({ textStyle: "caption" }), foregroundStyle(secondary)]}>
-          No subscription limits available.
+  };
+  const root = [
+    ...(props.url ? [widgetURL(props.url)] : []),
+    ...(!system
+      ? [containerBackground(background, "widget"), environment("colorScheme", appearance)]
+      : []),
+  ];
+  if (!providers.length) {
+    return (
+      <VStack alignment="leading" spacing={7} modifiers={root}>
+        {header}
+        {!accessory ? <Spacer minLength={0} /> : null}
+        <Text
+          modifiers={[
+            font({ size: accessory ? 12 : 16, weight: "medium" }),
+            foregroundStyle(secondary),
+            lineLimit(3),
+          ]}
+        >
+          {props.providers ? "No subscription limits available" : "Open T3 Code to connect"}
         </Text>
-      ) : compact ? (
-        <VStack alignment="leading" spacing={accessory || dense ? 4 : 8}>
-          {columns}
+      </VStack>
+    );
+  }
+  if (accessory)
+    return (
+      <VStack alignment="leading" spacing={3} modifiers={root}>
+        {providers.map(compactRow)}
+      </VStack>
+    );
+  return (
+    <VStack alignment="leading" spacing={small ? 5 : 8} modifiers={root}>
+      {header}
+      <Spacer minLength={0} />
+      {small ? (
+        <VStack alignment="leading" spacing={7}>
+          {providers.map(compactRow)}
         </VStack>
       ) : (
-        <HStack alignment="top" spacing={16}>
-          {columns}
+        <HStack alignment="top" spacing={13}>
+          {column(providers[0]!)}
+          {providers[1] ? (
+            <Rectangle
+              modifiers={[frame({ width: 1 }), foregroundStyle(secondary), opacity(0.24)]}
+            />
+          ) : null}
+          {providers.slice(1).map(column)}
         </HStack>
       )}
-      {!accessory ? <Spacer /> : null}
-      {!accessory ? (
-        <Text
-          modifiers={[font({ textStyle: "caption2" }), foregroundStyle(secondary), lineLimit(1)]}
-        >
-          {props.checkedAt
-            ? `As of ${new Date(props.checkedAt).toLocaleString(undefined, { hour: "numeric", minute: "2-digit", month: "short", day: "numeric" })}`
-            : "Tap to connect in T3"}
-        </Text>
-      ) : null}
+      {large ? <Spacer minLength={0} /> : null}
     </VStack>
   );
 }

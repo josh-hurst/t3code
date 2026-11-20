@@ -26,7 +26,7 @@ import * as CloudMintSigner from "../auth/CloudMintSigner.ts";
 import * as RelayConfiguration from "../Config.ts";
 import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
 import * as ManagedEndpointAllocations from "../environments/ManagedEndpointAllocations.ts";
-import { RELAY_HTTP_ROUTER_CONFIG, traceRelayHttpRequestWith } from "../http/Api.ts";
+import { traceRelayHttpRequestWith } from "../http/Api.ts";
 import * as RelayHttpApi from "../http/Api.ts";
 import * as HookForwarder from "./HookForwarder.ts";
 import { RELAY_HOOK_DELIVERY_TYP, verifyRelayJwt } from "@t3tools/shared/relayJwt";
@@ -166,7 +166,9 @@ function makeHarness(options: Harness = {}) {
       RelayHttpApi.layerNotFoundRoute,
       RelayHttpApi.layerCors,
     ),
-  ).pipe(Effect.provideService(HttpRouter.RouterConfig, RELAY_HTTP_ROUTER_CONFIG));
+  ).pipe(
+    Effect.provideService(HttpRouter.RouterConfig, RelayConfiguration.RELAY_HTTP_ROUTER_CONFIG),
+  );
   // Use the Workers request path so pre-response handlers apply.
   const send = (request: Request) =>
     Effect.gen(function* () {

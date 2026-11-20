@@ -19,6 +19,7 @@ import { RelayAgentActivityState } from "@t3tools/contracts/relay";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -32,6 +33,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as EnvironmentKeys from "../cloud/environmentKeys.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import {
+  CLOUD_LINKED_USER_ID,
   PUBLISH_AGENT_ACTIVITY_SECRET,
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
   RELAY_ISSUER_SECRET,
@@ -335,6 +337,33 @@ const makeTestRelay = Effect.fnUntraced(function* (
 });
 
 describe("AgentAwarenessRelay", () => {
+  it.effect("publishes to the owner's push router without disclosing Connect credentials", () =>
+    Effect.gen(function* () {
+      const { relay, secrets, publications } = yield* makeTestRelay();
+      yield* secrets.set(CLOUD_LINKED_USER_ID, new TextEncoder().encode("owner"));
+      yield* relay.publishThread(THREAD_ID);
+      assert.deepStrictEqual(
+        publications.map(({ url, authorization }) => [new URL(url).origin, authorization]).sort(),
+        [
+          ["https://push.example.test", null],
+          ["https://relay.example.test", "Bearer credential-1"],
+        ],
+      );
+      yield* secrets.set(CLOUD_LINKED_USER_ID, new TextEncoder().encode("other-owner"));
+      yield* secrets.set(RELAY_ENVIRONMENT_CREDENTIAL_SECRET, new TextEncoder().encode("new-link"));
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications.length, 3);
+      assert.equal(publications[2]?.authorization, "Bearer new-link");
+    }).pipe(
+      Effect.provideService(
+        ConfigProvider.ConfigProvider,
+        ConfigProvider.fromUnknown({
+          T3CODE_IOS_PUSH_ROUTER_URL: "https://push.example.test",
+          T3CODE_IOS_PUSH_ROUTER_ACCOUNT_ID: "owner",
+        }),
+      ),
+    ),
+  );
   it.effect("publishes the parent as needing approval while its subagent waits", () =>
     Effect.gen(function* () {
       const shells = yield* Ref.make(

@@ -21,6 +21,11 @@ import type {
   DesktopAppActivationResponse,
 } from "./desktopAppActivation.ts";
 
+/** `window.open` names a thread pop-out with this prefix; desktop gives those windows glass. */
+export const THREAD_POPOUT_FRAME_PREFIX = "t3code-popout-";
+/** A pop-out pre-loaded while hidden; it shows once its route moves to a thread. */
+export const THREAD_POPOUT_STANDBY_FRAME_PREFIX = `${THREAD_POPOUT_FRAME_PREFIX}standby-`;
+
 export interface ContextMenuItem<T extends string = string> {
   id: T;
   label: string;
@@ -1058,12 +1063,19 @@ export type DesktopMediaRead = typeof DesktopMediaReadSchema.Type;
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+export const DesktopDictationWarningSchema = Schema.Literals([
+  "accessibility-required",
+  "check-discord",
+]);
+export type DesktopDictationWarning = typeof DesktopDictationWarningSchema.Type;
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getRelayTelemetryEnabled: () => boolean;
   getPathForFile: (file: File) => string;
   getClientPlatform: () => string;
   restartAudioService?: () => Promise<boolean>;
+  setDictationRecording?: (active: boolean) => Promise<DesktopDictationWarning | null>;
   setNotificationBadge: (badge: { count: number; image: string | null }) => Promise<void>;
   onNotificationBadgeClear: (listener: () => void) => () => void;
   onTrackpadScrollBegin: (listener: () => void) => () => void;
@@ -1092,6 +1104,8 @@ export interface DesktopBridge {
   getLocalEnvironmentBearerToken: () => Promise<string>;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
+  /** Another window of this app saved client settings. */
+  onClientSettingsChanged?: (listener: () => void) => () => void;
   getConnectionCatalog: () => Promise<string | null>;
   setConnectionCatalog: (catalog: string) => Promise<boolean>;
   discoverSshHosts: () => Promise<readonly DesktopDiscoveredSshHost[]>;

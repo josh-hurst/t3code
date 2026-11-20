@@ -3,6 +3,7 @@ import {
   configureAndroidAgentNotifications,
   clearAndroidAgentNotifications,
 } from "./androidNotifications";
+import * as Application from "expo-application";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import * as Clock from "effect/Clock";
@@ -46,7 +47,7 @@ import {
 } from "./agentLiveActivity";
 import { resolveCloudPublicConfig } from "../cloud/publicConfig";
 import { supportsAgentAwarenessPush } from "./capabilities";
-import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./registrationPayload";
+import { makeRelayDeviceRegistrationRequest } from "./registrationPayload";
 
 const REMOTE_ACTIVITY_REGISTRATION_RETRY_MS = 15_000;
 
@@ -64,6 +65,7 @@ const AgentAwarenessOperation = Schema.Literals([
   "list-active-live-activities",
   "load-live-activity-prime-preferences",
   "prime-live-activity",
+  "update-live-activity",
   "load-registration-record",
 ]);
 
@@ -164,7 +166,8 @@ function mergeAgentAwarenessRegistrationPreferences(
 }
 
 function readRelayConfig(): { readonly url: string } | null {
-  const relayUrl = resolveCloudPublicConfig().relay.url;
+  const relay = resolveCloudPublicConfig().relay;
+  const relayUrl = Platform.OS === "ios" ? (relay.iosPushRouterUrl ?? relay.url) : relay.url;
   if (!relayUrl) {
     return null;
   }
@@ -723,9 +726,15 @@ const registerDevice = Effect.fn("remoteRegistration.registerDevice")(function* 
   }
   const pushTokenRegistration = yield* nativePushTokenRegistration(input?.observedPushToken);
   const bundleId =
-    Platform.OS === "android"
-      ? Constants.expoConfig?.android?.package?.trim()
-      : Constants.expoConfig?.ios?.bundleIdentifier?.trim();
+    Platform.OS === "ios"
+      ? Application.applicationId
+      : Constants.expoConfig?.android?.package?.trim();
+  const apsEnvironment =
+    Platform.OS === "ios"
+      ? yield* Effect.promise(() =>
+          Application.getIosPushNotificationServiceEnvironmentAsync().catch(() => null),
+        )
+      : null;
   yield* registerDeviceWithRelay(
     makeRelayDeviceRegistrationRequest({
       deviceId,
@@ -742,7 +751,12 @@ const registerDevice = Effect.fn("remoteRegistration.registerDevice")(function* 
       appVersion: Constants.expoConfig?.version,
       ...(bundleId ? { bundleId } : {}),
       ...(Platform.OS === "ios"
-        ? { apsEnvironment: resolveApsEnvironment(Constants.expoConfig?.extra?.appVariant) }
+        ? {
+            apsEnvironment:
+              (apsEnvironment ?? Constants.expoConfig?.extra?.appVariant) === "development"
+                ? "sandbox"
+                : "production",
+          }
         : {}),
       ...(pushTokenRegistration.pushToken ? { pushToken: pushTokenRegistration.pushToken } : {}),
       notificationsEnabled: pushTokenRegistration.notificationsEnabled,
@@ -1021,6 +1035,27 @@ export const refreshActiveLiveActivityRemoteRegistration = Effect.fn(
     relayTokenProvider !== null && deviceRegistrationGeneration === generation;
   let read = 0;
   const isNewestRead = () => isCurrentAccount() && read === widgetSnapshotReads;
+  const repaint = (activity: LiveActivity<AgentActivityProps>, aggregate: AgentActivityProps) =>
+    Effect.tryPromise({
+      try: () => activity.update(aggregate, liveActivityStaleDate()),
+      catch: (cause) =>
+        new AgentAwarenessOperationError({ operation: "update-live-activity", cause }),
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => logRegistrationError("live activity refresh failed", error)),
+      ),
+    );
+  const liveActivitiesEnabled = Effect.tryPromise({
+    try: () => loadPreferences(),
+    catch: (cause) =>
+      new AgentAwarenessOperationError({
+        operation: "load-live-activity-prime-preferences",
+        cause,
+      }),
+  }).pipe(
+    Effect.map((preferences) => preferences.liveActivitiesEnabled !== false),
+    Effect.orElseSucceed(() => true),
+  );
   const refreshWidget = Effect.gen(function* () {
     // An obsolete refresh must not supersede the current account's read.
     if (!isCurrentAccount()) {
@@ -1078,20 +1113,13 @@ export const refreshActiveLiveActivityRemoteRegistration = Effect.fn(
       return;
     }
     const { snapshot } = widgetRead;
-    const preferences = yield* Effect.tryPromise({
-      try: () => loadPreferences(),
-      catch: (cause) =>
-        new AgentAwarenessOperationError({
-          operation: "load-live-activity-prime-preferences",
-          cause,
-        }),
-    }).pipe(Effect.orElseSucceed(() => null));
+    const enabled = yield* liveActivitiesEnabled;
     // A sign-out, account switch, or newer read during the preference read
     // makes this snapshot stale; priming now could bring old rows back.
     if (!isNewestRead()) {
       return;
     }
-    if (preferences?.liveActivitiesEnabled !== false) {
+    if (enabled) {
       // The snapshot and preference reads yield; an arm-on-send may have
       // created the card in the meantime. Re-check so two cards are never started.
       const armedMeanwhile = yield* Effect.try({
@@ -1100,20 +1128,12 @@ export const refreshActiveLiveActivityRemoteRegistration = Effect.fn(
       }).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<LiveActivity<AgentActivityProps>>));
       if (armedMeanwhile.length > 0) {
         activities = [...armedMeanwhile];
+        if (snapshot?.aggregate && isNewestRead())
+          yield* repaint(armedMeanwhile[0]!, snapshot.aggregate);
       } else if (snapshot?.aggregate && snapshot.aggregate.activeCount > 0) {
         const aggregate = snapshot.aggregate;
         const primed = yield* Effect.try({
-          try: () =>
-            startAgentLiveActivity(
-              {
-                title: aggregate.title,
-                subtitle: aggregate.subtitle,
-                activeCount: aggregate.activeCount,
-                updatedAt: aggregate.updatedAt,
-                activities: aggregate.activities,
-              },
-              liveActivityStaleDate(),
-            ),
+          try: () => startAgentLiveActivity(aggregate, liveActivityStaleDate()),
           catch: (cause) =>
             new AgentAwarenessOperationError({
               operation: "prime-live-activity",
@@ -1150,9 +1170,10 @@ export const refreshActiveLiveActivityRemoteRegistration = Effect.fn(
     scheduleActiveLiveActivityRegistrationRetry();
   }
 
-  // An existing card keeps its push token registered without waiting on the
-  // relay; the widget still repaints afterwards.
   if (hadActivities) {
-    yield* refreshWidget;
+    const result = yield* refreshWidget;
+    const aggregate = result?.snapshot?.aggregate;
+    if (aggregate && (yield* liveActivitiesEnabled) && isNewestRead())
+      yield* repaint(activities[0]!, aggregate);
   }
 });

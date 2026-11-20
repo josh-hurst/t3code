@@ -6,7 +6,7 @@ import assetLinks from "../web/public/.well-known/assetlinks.json";
 
 // Keep config parsing independent of local env files and build credentials.
 vi.mock("../../scripts/lib/public-config.ts", () => ({
-  loadRepoEnv: () => ({ APP_VARIANT: process.env.APP_VARIANT }),
+  loadRepoEnv: () => ({ ...process.env }),
 }));
 
 afterEach(() => {
@@ -44,4 +44,47 @@ it.each([
     { scheme: "https", host, pathPrefix: "/threads/" },
   ]);
   expect(assetLinks.map((link) => link.target.package_name)).toContain(identifier);
+});
+
+it("builds both extensions and enables push for a paid team's own bundle ID", async () => {
+  vi.stubEnv("T3CODE_IOS_BUNDLE_ID", "dev.example.t3");
+  vi.stubEnv("T3CODE_IOS_TEAM_ID", "EXAMPLE123");
+  const config = await loadConfig("production");
+  expect(config.ios).toMatchObject({
+    bundleIdentifier: "dev.example.t3",
+    appleTeamId: "EXAMPLE123",
+    entitlements: { "keychain-access-groups": ["$(AppIdentifierPrefix)dev.example.t3"] },
+  });
+  expect(config.android?.package).toBe("com.t3tools.t3code");
+  expect(config.plugins).toContainEqual([
+    "expo-widgets",
+    expect.objectContaining({
+      bundleIdentifier: "dev.example.t3.widgets",
+      groupIdentifier: "group.dev.example.t3",
+      enablePushNotifications: true,
+    }),
+  ]);
+  expect(config.plugins).toContainEqual([
+    "expo-sharing",
+    expect.objectContaining({
+      ios: expect.objectContaining({
+        enabled: true,
+        extensionBundleIdentifier: "dev.example.t3.sharing",
+        appGroupId: "group.dev.example.t3",
+      }),
+    }),
+  ]);
+  expect(config.extra?.iosPersonalTeamBuild).toBe(false);
+});
+
+it("keeps the reduced Personal Team build opt-in and its existing keychain", async () => {
+  vi.stubEnv("T3CODE_IOS_PERSONAL_TEAM", "1");
+  vi.stubEnv("T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID", "dev.example.personal");
+  const config = await loadConfig("production");
+  expect(config.ios?.bundleIdentifier).toBe("dev.example.personal");
+  expect(config.ios?.entitlements?.["keychain-access-groups"]).toEqual([
+    "$(AppIdentifierPrefix)com.t3tools.t3code",
+  ]);
+  expect(config.extra?.iosPersonalTeamBuild).toBe(true);
+  expect(config.plugins).not.toContainEqual(["expo-widgets", expect.anything()]);
 });

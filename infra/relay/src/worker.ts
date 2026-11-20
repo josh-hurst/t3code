@@ -23,11 +23,7 @@ import * as HttpApiScalar from "effect/http-api/HttpApiScalar";
 
 import { RelayApi } from "@t3tools/contracts/relay";
 
-import {
-  RELAY_HTTP_ROUTER_CONFIG,
-  traceRelayHttpRequestWith,
-  withoutCapturedParentSpan,
-} from "./http/Api.ts";
+import { traceRelayHttpRequestWith, withoutCapturedParentSpan } from "./http/Api.ts";
 import * as CloudMintSigner from "./auth/CloudMintSigner.ts";
 import * as RelayHttpApi from "./http/Api.ts";
 import { ManagedEndpointZone, RelayApiZone, RelayDeploymentConfig } from "./zone.ts";
@@ -43,6 +39,8 @@ import * as EnvironmentLinks from "./environments/EnvironmentLinks.ts";
 import * as ManagedEndpointAllocations from "./environments/ManagedEndpointAllocations.ts";
 import * as LiveActivities from "./agentActivity/LiveActivities.ts";
 import * as RelayDb from "./db.ts";
+import * as DbDeployment from "./dbDeployment.ts";
+import { layerCloudflareQueues } from "./agentActivity/ApnsCloudflareQueue.ts";
 import {
   RelayApnsDeliveryDeadLetterQueue,
   RelayApnsDeliveryQueue,
@@ -59,7 +57,6 @@ import * as RelayConfiguration from "./Config.ts";
 import * as AgentActivityPublisher from "./agentActivity/AgentActivityPublisher.ts";
 import * as ApnsClient from "./agentActivity/ApnsClient.ts";
 import * as ApnsProviderTokens from "./agentActivity/ApnsProviderTokens.ts";
-import * as ApnsDeliveryQueue from "./agentActivity/ApnsDeliveryQueue.ts";
 import * as ApnsDeliveries from "./agentActivity/ApnsDeliveries.ts";
 import * as CloudflareApiPause from "./environments/CloudflareApiPause.ts";
 import * as EnvironmentConnector from "./environments/EnvironmentConnector.ts";
@@ -176,7 +173,7 @@ export const layer = Api.make(
 
     const cloudMintPrivateKey = yield* cloudMintKeyPair.privateKey;
     const cloudMintPublicKey = yield* cloudMintKeyPair.publicKey;
-    const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(yield* RelayDb.RelayHyperdrive);
+    const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(yield* DbDeployment.RelayHyperdrive);
     // Named statements collide behind Hyperdrive transaction pooling (Effect-TS/effect#8320); use unnamed statements.
     const db = yield* Drizzle.Postgres(hyperdrive.connectionString, {
       client: { prepare: false },
@@ -326,9 +323,7 @@ export const layer = Api.make(
         ),
       ),
       Layer.provideMerge(ApnsClient.layer.pipe(Layer.provideMerge(ApnsProviderTokens.layer))),
-      Layer.provideMerge(
-        ApnsDeliveryQueue.layerCloudflareQueues(apnsDeliveryQueueSender, alchemyRuntimeContext),
-      ),
+      Layer.provideMerge(layerCloudflareQueues(apnsDeliveryQueueSender, alchemyRuntimeContext)),
       Layer.provideMerge(Layer.mergeAll(AgentActivityRows.layer, Devices.layer, layerHookInbox)),
       Layer.provideMerge(EnvironmentCredentials.layer),
       Layer.provideMerge(
@@ -538,7 +533,7 @@ export const layer = Api.make(
       RelayHttpApi.layerNotFoundRoute,
     ).pipe(
       HttpRouter.toHttpEffect,
-      Effect.provideService(HttpRouter.RouterConfig, RELAY_HTTP_ROUTER_CONFIG),
+      Effect.provideService(HttpRouter.RouterConfig, RelayConfiguration.RELAY_HTTP_ROUTER_CONFIG),
       withoutCapturedParentSpan,
       Effect.map((httpEffect) =>
         traceRelayHttpRequestWith(httpEffect, Layer.empty).pipe(

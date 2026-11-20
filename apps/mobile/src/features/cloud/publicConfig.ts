@@ -21,6 +21,7 @@ export interface CloudPublicConfig {
   };
   readonly relay: {
     readonly url: string | null;
+    readonly iosPushRouterUrl?: string | null;
   };
   readonly observability: {
     readonly tracesUrl: string | null;
@@ -57,6 +58,7 @@ function normalizeSecureUrl(value: unknown): string | null {
 }
 
 export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig?.extra) {
+  const iosPushRouterUrl = trimNonEmpty(extra?.relay?.iosPushRouterUrl);
   return {
     clerk: {
       publishableKey: trimNonEmpty(extra?.clerk?.publishableKey),
@@ -64,6 +66,7 @@ export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig
     },
     relay: {
       url: normalizeSecureRelayUrl(trimNonEmpty(extra?.relay?.url) ?? ""),
+      ...(iosPushRouterUrl ? { iosPushRouterUrl } : {}),
     },
     observability: {
       tracesUrl: normalizeSecureUrl(extra?.observability?.tracesUrl),

@@ -142,6 +142,10 @@ const threadProjectChipIconAtom = Atom.family((key: string) => {
   }).pipe(Atom.withLabel(`mobile-thread-project-chip-icon:${key}`));
 });
 
+export function projectChipIconForThreadAtom(ref: ScopedThreadRef) {
+  return threadProjectChipIconAtom(threadKey(ref));
+}
+
 const EMPTY_THREAD_CHIP_ICONS: ReadonlyMap<string, string> = new Map();
 const EMPTY_THREAD_CHIP_ICONS_ATOM = Atom.make(EMPTY_THREAD_CHIP_ICONS).pipe(
   Atom.withLabel("mobile-thread-chip-icons:empty"),
@@ -156,7 +160,7 @@ const threadChipIconsAtom = Atom.family((key: string) => {
       const ref =
         (link ? resolveThreadLink(get, link, target.environmentId) : null) ??
         scopeThreadRef(target.environmentId, target.threadId);
-      const icon = get(threadProjectChipIconAtom(threadKey(ref)));
+      const icon = get(projectChipIconForThreadAtom(ref));
       if (icon) icons.set(target.href, icon);
     }
     return icons;

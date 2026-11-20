@@ -24,6 +24,8 @@ import {
 import { titleRegenerationToast } from "../components/threadTitleRegenerationToast";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { copyThreadReference } from "../lib/copyThreadReference";
+import { popOutThread, returnThreadToMainWindow } from "../lib/threadPopout";
+import { isThreadPopoutWindow } from "../lib/threadPopoutWindow";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { threadEnvironment } from "../state/threads";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
@@ -148,6 +150,7 @@ export function useThreadActionMenu(input: {
         snoozePresets,
         canShareWithGuest,
         canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+        popout: isThreadPopoutWindow ? "return" : "open",
       });
       const clicked = await settlePromise(() => api.contextMenu.show(items, position));
       if (clicked._tag === "Failure" || clicked.value === null) return;
@@ -191,6 +194,12 @@ export function useThreadActionMenu(input: {
       switch (action) {
         case "find":
           onFind?.(threadRef);
+          return;
+        case "pop-out":
+          popOutThread(router, threadRef);
+          return;
+        case "open-in-main-window":
+          returnThreadToMainWindow(router, threadRef);
           return;
         case "project-settings": {
           const project = projects.find(

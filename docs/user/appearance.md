@@ -21,6 +21,14 @@ Android uses **Material You Layout** by default unless you have turned it off in
 It changes shapes, spacing, and controls independently
 of the selected theme.
 
+## Window glass
+
+In the desktop app on macOS and Windows, turn on **Window glass** in **Settings → Appearance** to
+show the blurred desktop behind the app window. Move the **Window transparency** slider to choose
+how much of the desktop shows through; the rest is your theme's color. Thread pop-outs are always
+glass; set theirs with **Pop-out transparency**, which is also available on web. Menus, dialogs,
+and the composer stay solid.
+
 ## Composer context
 
 Git-backed projects show branch and worktree controls below the composer while you create a thread.

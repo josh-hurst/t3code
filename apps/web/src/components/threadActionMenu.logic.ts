@@ -3,6 +3,8 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 
 export type ThreadActionMenuId =
   | "find"
+  | "pop-out"
+  | "open-in-main-window"
   | "new-thread-on-branch"
   | "filter-by-project"
   | "hide-project"
@@ -104,12 +106,16 @@ export interface ThreadActionMenuState {
   readonly canShareWithGuest?: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
+  /** "open" moves the thread into its own window; "return" sends a pop-out back to the main one. */
+  readonly popout?: "open" | "return";
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
   return ![
     "find",
+    "pop-out",
+    "open-in-main-window",
     "new-thread-on-branch",
     "hide-project",
     "project-settings",
@@ -130,6 +136,17 @@ export function buildThreadActionMenuItems(
     ...(state.canFind
       ? [{ id: "find" as const, label: "Find in thread", icon: "text-search" }]
       : []),
+    ...(state.popout === "open"
+      ? [{ id: "pop-out" as const, label: "Open in new window", icon: "picture-in-picture" }]
+      : state.popout === "return"
+        ? [
+            {
+              id: "open-in-main-window" as const,
+              label: "Open in main window",
+              icon: "picture-in-picture",
+            },
+          ]
+        : []),
     ...(state.branch
       ? [
           {

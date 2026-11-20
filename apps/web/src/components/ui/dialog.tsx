@@ -12,6 +12,7 @@ import {
 } from "react";
 import { cn } from "~/lib/utils";
 import { useNativeTitlebarHeight } from "~/lib/windowControlsOverlay";
+import { useAppWindow } from "~/lib/appWindow";
 import { Button, type ButtonVariant } from "~/components/ui/button";
 import {
   DIALOG_BACKDROP_CLASS,
@@ -64,7 +65,15 @@ function useDialogActionInitialFocus() {
   return { popupRef, initialFocus };
 }
 
-const DialogPortal = DialogPrimitive.Portal;
+function DialogPortal({ container, ...props }: DialogPrimitive.Portal.Props) {
+  const view = useAppWindow();
+  return (
+    <DialogPrimitive.Portal
+      container={container === undefined ? view.document.body : container}
+      {...props}
+    />
+  );
+}
 
 function DialogTrigger(props: DialogPrimitive.Trigger.Props) {
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;

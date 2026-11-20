@@ -15,6 +15,7 @@ export function createBrowserPcmCapture(
   input: {
     readonly getMicrophoneId: () => string | Promise<string>;
     readonly onLevel: (level: number) => void;
+    readonly setDictationRecording?: ((active: boolean) => Promise<void>) | undefined;
     readonly onDurationLimit: () => void;
     readonly onError: (message: string) => void;
   },
@@ -32,7 +33,10 @@ export function createBrowserPcmCapture(
     | { readonly resolve: () => void; readonly reject: (error: Error) => void }
     | undefined;
 
+  let releaseDiscord: (() => void) | undefined;
   const cleanupCapture = () => {
+    releaseDiscord?.();
+
     if (durationTimer) clearTimeout(durationTimer);
     durationTimer = undefined;
     worklet?.disconnect();
@@ -122,6 +126,18 @@ export function createBrowserPcmCapture(
         node.connect(context.destination);
         await context.resume();
         captureSignal.throwIfAborted();
+        const setRecording = input.setDictationRecording;
+        if (setRecording) {
+          const release = () => {
+            captureSignal.removeEventListener("abort", release);
+            releaseDiscord = undefined;
+            void setRecording(false).catch(() => undefined);
+          };
+          releaseDiscord = release;
+          captureSignal.addEventListener("abort", release, { once: true });
+          await setRecording(true).catch(() => undefined);
+          captureSignal.throwIfAborted();
+        }
       } catch (error) {
         cleanupCapture();
         throw error;

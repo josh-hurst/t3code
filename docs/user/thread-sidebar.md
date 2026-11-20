@@ -11,6 +11,11 @@ Drag its title to move it around the workspace, or click the pin to give the cha
 Click the pin again to return Threads to the left. Drag the right edge to resize it.
 Your device remembers its size and position.
 
+When Threads is unpinned, drag its title outside the app and release to open it in a
+separate window. Thread selections still open in the main app. Pin it to dock it again,
+or close the separate window to return it to the workspace. Browsers need popup permission
+for this; you can also use **Open sidebar in a separate window**.
+
 To move it with the keyboard, focus the Threads title, press Space, use the arrow keys,
 then press Space to drop it or Escape to cancel.
 
@@ -506,6 +511,22 @@ side chats.
 
 On mobile, a thread lists its side chats above the composer. Tap one to open it and
 answer its questions.
+
+## Pop a thread out
+
+To keep a thread in view while you work elsewhere, right-click it in the sidebar or open
+the thread menu in its header, then choose **Open in new window**. The command palette
+has **Open thread in new window** too. The thread opens in a floating glass window with
+its own composer, so you can keep chatting with it. Choosing it again focuses the window
+that is already open.
+
+On desktop, the window stays on the Space where it opened; move it to another Space as you
+would any window. On macOS, tiling window managers such as yabai float it rather than tile
+it when it opens, and you can still tile it with your usual float toggle.
+
+Links to other threads, Settings, and other pages open in the main window. To send the
+thread back, choose **Open in main window** from its menu, or close the window. Browser
+previews stay in the main window. In a browser, allow pop-ups for the site.
 
 ## Snooze until later
 

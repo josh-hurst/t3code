@@ -122,7 +122,14 @@ const variant = VARIANT_CONFIG[APP_VARIANT];
 const HOSTED_APP_HOST = "app.t3.codes";
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
-  : variant.iosBundleIdentifier;
+  : repoEnv.T3CODE_IOS_BUNDLE_ID?.trim() || variant.iosBundleIdentifier;
+if (!IOS_BUNDLE_IDENTIFIER_PATTERN.test(iosBundleIdentifier)) {
+  throw new Error("T3CODE_IOS_BUNDLE_ID must be a reverse-DNS bundle identifier.");
+}
+// Previously sideloaded Personal Team builds stored their pairing and sign-in in the variant's keychain.
+const iosKeychainGroup = isIosPersonalTeamBuild
+  ? variant.iosBundleIdentifier
+  : repoEnv.T3CODE_IOS_KEYCHAIN_GROUP?.trim() || iosBundleIdentifier;
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",
@@ -145,6 +152,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
         displayName: "Subscription usage",
         description: "Subscription quotas from your connected T3 Code environments.",
         ios: {
+          initialLayout: "./src/widgets/SubscriptionUsage.tsx",
           configuration: {
             title: "Subscription usage",
             description:
@@ -257,14 +265,14 @@ const config: ExpoConfig = {
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
     // Avoid Personal Team fallback: it cannot sign App Groups, Apple sign-in or push entitlements.
-    appleTeamId: "ARK85ZXQ4Z",
+    appleTeamId: repoEnv.T3CODE_IOS_TEAM_ID?.trim() || "ARK85ZXQ4Z",
     associatedDomains: [
       `applinks:${variant.relyingParty}`,
       `webcredentials:${variant.relyingParty}`,
       `applinks:${HOSTED_APP_HOST}`,
     ],
     entitlements: {
-      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
+      "keychain-access-groups": [`$(AppIdentifierPrefix)${iosKeychainGroup}`],
     },
     infoPlist: {
       UISupportedInterfaceOrientations: [
@@ -474,6 +482,7 @@ const config: ExpoConfig = {
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,
+      iosPushRouterUrl: repoEnv.T3CODE_IOS_PUSH_ROUTER_URL?.trim() || null,
     },
     clerk: {
       publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,

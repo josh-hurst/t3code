@@ -11,6 +11,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { useNativeTitlebarHeight } from "~/lib/windowControlsOverlay";
+import { useAppWindow } from "~/lib/appWindow";
 
 // Base UI's default, restated because a padding object zeroes the sides it omits.
 const COLLISION_PADDING = 5;
@@ -136,7 +137,7 @@ function TooltipPopup({
   anchor?: TooltipPrimitive.Positioner.Props["anchor"];
 }) {
   return (
-    <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Portal container={useAppWindow().document.body}>
       <TooltipPositioner align={align} anchor={anchor} side={side} sideOffset={sideOffset}>
         <TooltipPrimitive.Popup
           className={cn(

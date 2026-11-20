@@ -5,6 +5,7 @@ import {
   encodeComposerContextClipboardHtml,
 } from "@t3tools/shared/composerContextClipboard";
 import { useStableCallback } from "./useStableCallback";
+import { getFocusedAppWindow } from "../lib/appWindow";
 
 export class ClipboardApiUnavailableError extends Schema.TaggedError<ClipboardApiUnavailableError>()(
   "ClipboardApiUnavailableError",
@@ -56,6 +57,7 @@ function writeTextWithExecCommand(
   value: string,
   extraFlavors?: Readonly<Record<string, string>>,
 ): boolean {
+  const document = getFocusedAppWindow().document ?? globalThis.document;
   if (typeof document === "undefined" || typeof document.execCommand !== "function") return false;
 
   const textarea = document.createElement("textarea");
@@ -107,6 +109,7 @@ export async function writeTextToClipboard(
   }
 
   if (!value) return false;
+  const navigator = getFocusedAppWindow().navigator ?? globalThis.navigator;
   if (extraFlavors) {
     extraFlavors = Object.fromEntries(
       Object.entries(extraFlavors).filter(([type]) => type !== "text/plain"),
@@ -172,6 +175,10 @@ export async function writeTextToClipboard(
 }
 
 export async function readTextFromClipboard(target = "text"): Promise<string> {
+  const navigator =
+    typeof window === "undefined"
+      ? undefined
+      : (getFocusedAppWindow().navigator ?? globalThis.navigator);
   if (
     typeof window === "undefined" ||
     typeof navigator === "undefined" ||

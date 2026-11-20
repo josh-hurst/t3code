@@ -44,7 +44,6 @@ import { relayProtectedErrorMessage } from "@t3tools/client-runtime/relay";
 import { RELAY_MANAGED_TUNNEL_RECOVERY_TYP, signRelayJwt } from "@t3tools/shared/relayJwt";
 
 import {
-  RELAY_HTTP_ROUTER_CONFIG,
   recoverEnvironmentTunnelRecord,
   registerEnvironmentTunnelRecovery,
   relayDpopFailureReason,
@@ -1429,7 +1428,9 @@ describe("relay routing fallback", () => {
       );
       const httpEffect = yield* HttpRouter.toHttpEffect(
         Layer.mergeAll(layerRoutes, RelayHttpApi.layerNotFoundRoute, RelayHttpApi.layerCors),
-      ).pipe(Effect.provideService(HttpRouter.RouterConfig, RELAY_HTTP_ROUTER_CONFIG));
+      ).pipe(
+        Effect.provideService(HttpRouter.RouterConfig, RelayConfiguration.RELAY_HTTP_ROUTER_CONFIG),
+      );
       const threadIds = [
         "b7c8c522-d244-43dc-875f-7224fce79912",
         "t".repeat(512),

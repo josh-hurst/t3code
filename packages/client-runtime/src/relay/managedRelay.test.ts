@@ -16,6 +16,7 @@ function layerManagedRelayTest(
   fetchFn: typeof globalThis.fetch,
   relayUrl = "https://relay.example.test",
   accessTokenStore?: ManagedRelay.ManagedRelayAccessTokenStore,
+  pushRouterUrl?: string,
 ) {
   const layerHttpClient = RpcHttp.layerRemoteHttpClient(fetchFn);
   const layerSigner = Layer.succeed(
@@ -29,6 +30,7 @@ function layerManagedRelayTest(
   return ManagedRelay.layer({
     relayUrl,
     clientId: "t3-mobile",
+    ...(pushRouterUrl ? { pushRouterUrl } : {}),
     ...(accessTokenStore ? { accessTokenStore } : {}),
   }).pipe(Layer.provide(layerSigner), Layer.provide(layerHttpClient));
 }
@@ -40,6 +42,44 @@ function clerkToken(subject: string, nonce: string): string {
 }
 
 describe("ManagedRelayClient", () => {
+  it.effect("signs a fork device's registration proof for its push router", () => {
+    const requests: Array<[string, string | null, string | null]> = [];
+    const fetchFn: typeof globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init);
+      requests.push([
+        request.url,
+        request.headers.get("dpop"),
+        request.headers.get("authorization"),
+      ]);
+      if (request.url.endsWith("/dpop-token")) {
+        return Response.json({
+          access_token: "push-token",
+          token_type: "DPoP",
+          expires_in: 300,
+          issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+          scope: "mobile:registration",
+        });
+      }
+      return Response.json({ ok: true });
+    };
+    return Effect.gen(function* () {
+      const client = yield* ManagedRelay.ManagedRelayClient;
+      yield* client.unregisterDevice({ deviceId: "phone", clerkToken: clerkToken("owner", "1") });
+      expect(requests.map(([url]) => url)).toEqual([
+        "https://relay.example.test/v1/client/dpop-token",
+        "https://push.example.test/v1/mobile/devices/phone",
+      ]);
+      expect(requests[1]?.slice(1)).toEqual([
+        "proof:https://push.example.test/v1/mobile/devices/phone",
+        "DPoP push-token",
+      ]);
+    }).pipe(
+      Effect.provide(
+        layerManagedRelayTest(fetchFn, undefined, undefined, "https://push.example.test"),
+      ),
+    );
+  });
+
   it.effect("rejects unsafe relay URLs before sending credentials", () => {
     let requestCount = 0;
     const fetchFn = (() => {

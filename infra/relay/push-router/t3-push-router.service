@@ -1,0 +1,22 @@
+[Unit]
+Description=T3 Code iOS push router
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=t3_push_router
+Group=t3_push_router
+EnvironmentFile=/etc/t3-push-router/router.env
+LoadCredential=apns.p8:/etc/t3-push-router/apns.p8
+Environment=APNS_KEY_PATH=%d/apns.p8
+ExecStart=/opt/node/bin/node /opt/t3-push-router/router.mjs
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+MemoryMax=180M
+
+[Install]
+WantedBy=multi-user.target

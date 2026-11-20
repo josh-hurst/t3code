@@ -150,13 +150,6 @@ export const MobileSourceMapsUploadCredentials = Effect.gen(function* () {
   );
 });
 
-export const withSpanAttributes =
-  (attributes: Record<string, unknown>) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-    Effect.annotateCurrentSpan(attributes).pipe(
-      Effect.andThen(effect.pipe(Effect.annotateSpans(attributes))),
-    );
-
 const appendEncodedAttributes = (
   attributes: Record<string, unknown>,
   prefix: string,

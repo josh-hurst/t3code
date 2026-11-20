@@ -9,9 +9,11 @@ import {
   MAX_APPEARANCE_CONTRAST,
   MAX_GLASS_OPACITY,
   MAX_PANEL_ANIMATION_DURATION_MS,
+  MAX_WINDOW_GLASS_TRANSPARENCY,
   MIN_APPEARANCE_CONTRAST,
   MIN_GLASS_OPACITY,
   MIN_PANEL_ANIMATION_DURATION_MS,
+  MIN_WINDOW_GLASS_TRANSPARENCY,
 } from "@t3tools/contracts/settings";
 import {
   resolveSidebarStageBackdropVariant,
@@ -31,12 +33,13 @@ import {
   SettingsRow,
   SettingsSection,
 } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { searchableSetting, type SettingsSearchItemId } from "./settingsSearch";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { AppIconSettingsRow } from "./AppIconSettingsRow";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 import { TypographySection } from "./TypographySettings";
 import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
+import { isNativeWindowGlassSupported } from "../../lib/windowGlass";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
@@ -256,6 +259,54 @@ export function AppearanceSettingsPanel() {
               />
             </div>
           }
+        />
+
+        {isNativeWindowGlassSupported() ? (
+          <>
+            <SettingsRow
+              {...searchableSetting("window-glass")}
+              description="Show the blurred desktop behind the app window."
+              resetAction={
+                settings.windowGlassEnabled !== DEFAULT_UNIFIED_SETTINGS.windowGlassEnabled ? (
+                  <SettingResetButton
+                    label="window glass"
+                    onClick={() =>
+                      updateSettings({
+                        windowGlassEnabled: DEFAULT_UNIFIED_SETTINGS.windowGlassEnabled,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Switch
+                  checked={settings.windowGlassEnabled}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ windowGlassEnabled: Boolean(checked) })
+                  }
+                  aria-label="Window glass"
+                />
+              }
+            />
+            <GlassTransparencyRow
+              searchId="setting-window-transparency"
+              inputId="window-transparency"
+              label="Window transparency"
+              description="How much of the desktop shows through the app window."
+              value={settings.windowGlassTransparency}
+              defaultValue={DEFAULT_UNIFIED_SETTINGS.windowGlassTransparency}
+              onChange={(windowGlassTransparency) => updateSettings({ windowGlassTransparency })}
+            />
+          </>
+        ) : null}
+        <GlassTransparencyRow
+          searchId="setting-popout-transparency"
+          inputId="popout-transparency"
+          label="Pop-out transparency"
+          description="How much shows through threads opened in their own window."
+          value={settings.popoutGlassTransparency}
+          defaultValue={DEFAULT_UNIFIED_SETTINGS.popoutGlassTransparency}
+          onChange={(popoutGlassTransparency) => updateSettings({ popoutGlassTransparency })}
         />
 
         <SettingsRow
@@ -484,5 +535,69 @@ export function AppearanceSettingsPanel() {
 
       <TypographySection />
     </SettingsPageContainer>
+  );
+}
+
+function GlassTransparencyRow(props: {
+  readonly searchId: SettingsSearchItemId;
+  readonly inputId: string;
+  readonly label: string;
+  readonly description: string;
+  readonly value: number;
+  readonly defaultValue: number;
+  readonly onChange: (value: number) => void;
+}) {
+  const ratio =
+    (props.value - MIN_WINDOW_GLASS_TRANSPARENCY) /
+    (MAX_WINDOW_GLASS_TRANSPARENCY - MIN_WINDOW_GLASS_TRANSPARENCY);
+  return (
+    <SettingsRow
+      {...searchableSetting(props.searchId)}
+      description={props.description}
+      resetAction={
+        props.value !== props.defaultValue ? (
+          <SettingResetButton
+            label={props.label.toLowerCase()}
+            onClick={() => props.onChange(props.defaultValue)}
+          />
+        ) : null
+      }
+      control={
+        <div className="flex w-full items-center gap-3 sm:w-52">
+          <output
+            className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+            htmlFor={props.inputId}
+          >
+            {props.value}%
+          </output>
+          <input
+            aria-label={props.label}
+            className="settings-slider min-w-0 flex-1"
+            id={props.inputId}
+            max={MAX_WINDOW_GLASS_TRANSPARENCY}
+            min={MIN_WINDOW_GLASS_TRANSPARENCY}
+            onChange={(event) => {
+              const value = Number(event.currentTarget.value);
+              if (
+                Number.isInteger(value) &&
+                value >= MIN_WINDOW_GLASS_TRANSPARENCY &&
+                value <= MAX_WINDOW_GLASS_TRANSPARENCY
+              ) {
+                props.onChange(value);
+              }
+            }}
+            step={5}
+            style={
+              {
+                "--settings-slider-progress": `${ratio * 100}%`,
+                "--settings-slider-fill-offset": `${0.5 - ratio}rem`,
+              } as CSSProperties
+            }
+            type="range"
+            value={props.value}
+          />
+        </div>
+      }
+    />
   );
 }

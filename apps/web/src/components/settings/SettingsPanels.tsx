@@ -476,6 +476,15 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Contrast"]
       : []),
     ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? ["Glass opacity"] : []),
+    ...(settings.windowGlassEnabled !== DEFAULT_UNIFIED_SETTINGS.windowGlassEnabled
+      ? ["Window glass"]
+      : []),
+    ...(settings.windowGlassTransparency !== DEFAULT_UNIFIED_SETTINGS.windowGlassTransparency
+      ? ["Window transparency"]
+      : []),
+    ...(settings.popoutGlassTransparency !== DEFAULT_UNIFIED_SETTINGS.popoutGlassTransparency
+      ? ["Pop-out transparency"]
+      : []),
     ...(settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme
       ? ["Diff colors"]
       : []),
@@ -709,6 +718,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       screenReaderWindowTitle: DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
+      windowGlassEnabled: DEFAULT_UNIFIED_SETTINGS.windowGlassEnabled,
+      windowGlassTransparency: DEFAULT_UNIFIED_SETTINGS.windowGlassTransparency,
+      popoutGlassTransparency: DEFAULT_UNIFIED_SETTINGS.popoutGlassTransparency,
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,

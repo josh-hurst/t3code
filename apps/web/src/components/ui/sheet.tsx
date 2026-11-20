@@ -2,6 +2,7 @@ import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { cn } from "~/lib/utils";
+import { useAppWindow } from "~/lib/appWindow";
 import { Button } from "~/components/ui/button";
 import { ControlledOpenContext, renderRetainedPopup } from "~/components/ui/dialog";
 
@@ -13,7 +14,15 @@ function Sheet<Payload>(props: SheetPrimitive.Root.Props<Payload>) {
   );
 }
 
-const SheetPortal = SheetPrimitive.Portal;
+function SheetPortal({ container, ...props }: SheetPrimitive.Portal.Props) {
+  const view = useAppWindow();
+  return (
+    <SheetPrimitive.Portal
+      container={container === undefined ? view.document.body : container}
+      {...props}
+    />
+  );
+}
 
 function SheetBackdrop({ className, ...props }: SheetPrimitive.Backdrop.Props) {
   return (

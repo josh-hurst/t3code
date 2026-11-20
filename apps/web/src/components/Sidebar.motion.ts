@@ -1,3 +1,5 @@
+import { getWindow } from "@dnd-kit/utilities";
+
 const motionTiming = { duration: 150, easing: "ease-out" };
 const rowTravel = (height: number) => Math.min(height, 40);
 // Fades clone removed rows and animate clones and entries; intervening layout reads force reflows.
@@ -13,6 +15,7 @@ function progress(animation: Animation) {
 
 /** Position the list so all direct children's offsetTop share an origin. */
 export function createSidebarListMotion(parent: HTMLUListElement) {
+  const { HTMLElement } = getWindow(parent);
   let positions: Map<HTMLElement, RowPosition> | null = null;
   let disposed = false;
   const reducedMotion = parent.ownerDocument.defaultView?.matchMedia(

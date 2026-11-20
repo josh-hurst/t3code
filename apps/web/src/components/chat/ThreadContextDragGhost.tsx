@@ -24,6 +24,6 @@ export function ThreadContextDragGhost() {
         </span>
       ) : null}
     </div>,
-    document.body,
+    (ghost.ownerDocument ?? document).body,
   );
 }

@@ -123,6 +123,7 @@ function makeFakeBrowserWindow() {
       windowListeners.set(eventName, listener);
     }),
     restore: vi.fn(),
+    setAlwaysOnTop: vi.fn(),
     setBackgroundColor: vi.fn(),
     setAutoHideCursor: vi.fn(),
     setFullScreen: vi.fn(),
@@ -1515,6 +1516,87 @@ describe("DesktopWindow", () => {
         }
         assert.deepEqual(openedExternalUrls, []);
 
+        const openWindow = vi.mocked(fakeWindow.window.webContents.setWindowOpenHandler).mock
+          .calls[0]![0];
+        for (const [url, frameName, expectedAction] of [
+          ["about:blank", "t3code-threads-test", "allow"],
+          ["about:blank", "other", "deny"],
+          ["t3code-dev://app/", "t3code-threads-test", "deny"],
+          ["t3code-dev://app/#/popout/env/thread", "t3code-popout-env_thread", "allow"],
+          ["file:///tmp/#/popout/env/thread", "t3code-popout-env_thread", "deny"],
+        ] as const) {
+          const result = openWindow({ url, frameName } as Electron.HandlerDetails);
+          assert.equal(result.action, expectedAction);
+        }
+
+        const threadPopout = makeFakeBrowserWindow();
+        fakeWindow.webContentsListeners.get("did-create-window")?.(threadPopout.window, {
+          frameName: "t3code-popout-env_thread",
+        });
+        for (const [url, expectedPrevented] of [
+          ["t3code-dev://app/#/settings", false],
+          ["https://example.com", true],
+        ] as const) {
+          const preventDefault = vi.fn();
+          threadPopout.webContentsListeners.get("will-navigate")?.({ preventDefault }, url);
+          assert.equal(preventDefault.mock.calls.length, expectedPrevented ? 1 : 0, url);
+        }
+        const standbyOpen = openWindow({
+          url: "t3code-dev://app/#/popout/standby",
+          frameName: "t3code-popout-standby-1",
+        } as Electron.HandlerDetails);
+        assert.equal(standbyOpen.action, "allow");
+        assert.equal(
+          standbyOpen.action === "allow" ? standbyOpen.overrideBrowserWindowOptions?.show : null,
+          false,
+        );
+        const standby = makeFakeBrowserWindow();
+        vi.mocked(standby.window.isVisible).mockReturnValue(false);
+        fakeWindow.webContentsListeners.get("did-create-window")?.(standby.window, {
+          frameName: "t3code-popout-standby-1",
+        });
+        const navigateStandby = standby.webContentsListeners.get("did-navigate-in-page");
+        navigateStandby?.({}, "t3code-dev://app/#/popout/standby");
+        assert.equal(vi.mocked(standby.window.show).mock.calls.length, 0);
+        navigateStandby?.({}, "t3code-dev://app/#/popout/env/thread");
+        assert.equal(vi.mocked(standby.window.show).mock.calls.length, 1);
+
+        // Opens above normal windows so yabai floats it, then stacks like any window.
+        assert.equal(vi.mocked(threadPopout.window.setAlwaysOnTop).mock.calls.length, 0);
+        yield* TestClock.adjust(1000);
+        assert.deepEqual(vi.mocked(threadPopout.window.setAlwaysOnTop).mock.calls, [[false]]);
+
+        const attachWebview = vi.fn();
+        threadPopout.webContentsListeners.get("will-attach-webview")?.({
+          preventDefault: attachWebview,
+        });
+        assert.equal(attachWebview.mock.calls.length, 1);
+
+        const popup = makeFakeBrowserWindow();
+        fakeWindow.webContentsListeners.get("did-create-window")?.(popup.window, {
+          frameName: "t3code-threads-test",
+        });
+        const navigatePopup = vi.fn();
+        popup.webContentsListeners.get("will-navigate")?.(
+          { preventDefault: navigatePopup },
+          "https://example.com",
+        );
+        assert.equal(navigatePopup.mock.calls.length, 1);
+        const closePopup = vi.fn();
+        popup.webContentsListeners.get("before-input-event")?.(
+          { preventDefault: closePopup },
+          {
+            type: "keyDown",
+            key: "w",
+            meta: true,
+            control: false,
+            alt: false,
+            shift: false,
+          },
+        );
+        assert.equal(closePopup.mock.calls.length, 1);
+        assert.equal(vi.mocked(popup.window.close).mock.calls.length, 1);
+
         let prevented = false;
         willNavigate(
           {
@@ -1527,7 +1609,10 @@ describe("DesktopWindow", () => {
         yield* Effect.promise(() => Promise.resolve());
 
         assert.isTrue(prevented);
-        assert.deepEqual(openedExternalUrls, ["https://accounts.microsoft.com/oauth"]);
+        assert.deepEqual(openedExternalUrls, [
+          "https://example.com",
+          "https://accounts.microsoft.com/oauth",
+        ]);
       }).pipe(Effect.provide(layer));
     }),
   );

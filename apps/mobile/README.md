@@ -83,6 +83,14 @@ After changing a native dependency patch, rerun CocoaPods before rebuilding an e
 project. pnpm gives each patch hash a new package path; Pods can otherwise keep compiling the
 previous directory.
 
+For a fork signed by a paid Apple Developer team, set `T3CODE_IOS_TEAM_ID` and
+`T3CODE_IOS_BUNDLE_ID` in the repository's `.env.local` before prebuilding. Provision the app
+for Push Notifications and give the app, `.widgets` and `.sharing` the App Group
+`group.<bundle-id>`. When upgrading an existing Personal Team installation on the same team,
+set `T3CODE_IOS_KEYCHAIN_GROUP` to its previous keychain group suffix to retain pairing and sign-in.
+Set `T3CODE_MOBILE_UPDATES_ENABLED=0` when the fork uses its embedded JavaScript bundle.
+The fork's APNs key and device registrations belong on its [push router](../../infra/relay/push-router/README.md).
+
 If your Xcode account only has a Personal Team, use a bundle identifier you control and opt into the
 reduced-capability local build. Personal Team builds omit the widget and share extensions, push
 entitlement, and native Sign in with Apple entitlement; builds without this opt-in are unchanged.

@@ -1,3 +1,5 @@
+import { getWindow } from "@dnd-kit/utilities";
+
 // How long a row the list just moved ignores presses. A click that was already
 // on its way when the row slid under the pointer lands within this window.
 const MOVED_ROW_PRESS_DELAY_MS = 500;
@@ -12,6 +14,7 @@ const PRESS_FOLLOW_UPS = ["click", "auxclick", "dblclick", "contextmenu"] as con
 // sending a message or a shortcut.
 function editsText(event: KeyboardEvent) {
   const target = event.target;
+  const { HTMLElement, HTMLInputElement, HTMLTextAreaElement } = getWindow(target);
   const editable =
     target instanceof HTMLElement &&
     (target.isContentEditable ||
@@ -21,6 +24,7 @@ function editsText(event: KeyboardEvent) {
 }
 
 function readTops(list: HTMLElement) {
+  const { HTMLElement } = getWindow(list);
   const tops = new Map<HTMLElement, number>();
   for (const child of list.children) {
     if (child instanceof HTMLElement) tops.set(child, child.offsetTop);
@@ -35,6 +39,7 @@ function readTops(list: HTMLElement) {
  * The list must be positioned so every direct child's offsetTop shares its origin.
  */
 export function createSidebarShiftGuard(list: HTMLElement) {
+  const { Node, Element, PointerEvent } = getWindow(list);
   const view = list.ownerDocument.defaultView;
   let tops = readTops(list);
   const movedAt = new WeakMap<Element, number>();

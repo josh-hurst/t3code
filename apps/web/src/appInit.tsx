@@ -30,6 +30,9 @@ import { startGuideRunNotifications } from "./components/pullRequest/guide/PullR
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
 import { resolveServerBackedAppDisplayName, resolveWindowTitle } from "./branding.logic";
 import { isElectron } from "./env";
+import { startThreadPopoutNavigationRelay } from "./lib/threadPopout";
+import { isThreadPopoutWindow } from "./lib/threadPopoutWindow";
+import { isNativeWindowGlassSupported } from "./lib/windowGlass";
 import {
   subscribeComposerDraftModelReconciliation,
   subscribeDraftThreadPromotion,
@@ -67,6 +70,23 @@ import { environmentThreadShells, threadEnvironment } from "./state/threads";
 import { resolveActiveThreadRouteRef, resolveThreadRouteTarget } from "./threadRoutes";
 
 /** Writes appearance settings onto the document, touching only the groups that changed. */
+/**
+ * Pop-outs are always glass. The main window is glass when the setting is on and the OS can blur
+ * the desktop behind it; without that a pop-out gets a CSS wash instead.
+ */
+function applyWindowGlass(root: HTMLElement, settings: ClientSettings): void {
+  const native = isNativeWindowGlassSupported();
+  if (isThreadPopoutWindow || (native && settings.windowGlassEnabled)) {
+    root.dataset.windowGlass = native ? "native" : "css";
+  } else {
+    delete root.dataset.windowGlass;
+  }
+  const transparency = isThreadPopoutWindow
+    ? settings.popoutGlassTransparency
+    : settings.windowGlassTransparency;
+  root.style.setProperty("--window-glass-tint", `${100 - transparency}%`);
+}
+
 function startClientAppearance(): void {
   const root = document.documentElement;
   let applied: ClientSettings | null = null;
@@ -90,6 +110,13 @@ function startClientAppearance(): void {
     }
     if (previous?.appearanceContrast !== settings.appearanceContrast) {
       applyAppearanceContrast(root, settings.appearanceContrast);
+    }
+    if (
+      previous?.windowGlassEnabled !== settings.windowGlassEnabled ||
+      previous.windowGlassTransparency !== settings.windowGlassTransparency ||
+      previous.popoutGlassTransparency !== settings.popoutGlassTransparency
+    ) {
+      applyWindowGlass(root, settings);
     }
     if (previous?.glassOpacity !== settings.glassOpacity) {
       root.style.setProperty("--glass-opacity", `${settings.glassOpacity}%`);
@@ -275,12 +302,16 @@ export function startAppServices(): AppRouter {
   startEnvironmentThemeRepaint();
   startThemeBackground();
   startBrowserChromeThemeSync(router);
-  startDefaultThemeAdoption();
-  startModelPreferencesMigration();
-  startAgentOpenedPreviews();
-  if (isElectron) startElectronBrowserHost();
-  startPreviewTitleRecording();
-  startBrowserProfileReporting();
+  // A thread pop-out is a second renderer; app-wide work (notifications, the dock badge,
+  // previews, migrations, announcements) stays with the main window.
+  if (!isThreadPopoutWindow) {
+    startDefaultThemeAdoption();
+    startModelPreferencesMigration();
+    startAgentOpenedPreviews();
+    if (isElectron) startElectronBrowserHost();
+    startPreviewTitleRecording();
+    startBrowserProfileReporting();
+  }
   installChatRouteCommands(router);
   installCommandPaletteCommands(router);
   registerOpenFavoriteEditorCommand();
@@ -298,20 +329,25 @@ export function startAppServices(): AppRouter {
     shellStateAtom: environmentShell.stateAtom,
     pendingThreadIdsAtom: threadEnvironment.pendingThreadIdsAtom,
   });
-  startMainAppLocationTracking(router);
+  if (!isThreadPopoutWindow) startMainAppLocationTracking(router);
   startWorkspaceFocus(router);
-  startBackgroundThreadAnnouncements(appAtomRegistry, router);
-  startThreadVisitedMigration(appAtomRegistry);
-  startSshPasswordPromptQueue();
+  if (!isThreadPopoutWindow) {
+    startBackgroundThreadAnnouncements(appAtomRegistry, router);
+    startThreadVisitedMigration(appAtomRegistry);
+    startSshPasswordPromptQueue();
+    startThreadPopoutNavigationRelay(router);
+  }
 
-  startKeybindingsUpdateToasts();
   startSlowRpcRequestToasts();
   startHostFreezeToasts();
-  startLegacyThreadMigrationToast();
-  startPermissionUpdateNotices(router);
-  startThreadNotifications(appAtomRegistry, router);
-  startGuideRunNotifications(appAtomRegistry, router);
-  if (isElectron) startDesktopUpdateLaunchNotice();
+  if (!isThreadPopoutWindow) {
+    startKeybindingsUpdateToasts();
+    startLegacyThreadMigrationToast();
+    startPermissionUpdateNotices(router);
+    startThreadNotifications(appAtomRegistry, router);
+    startGuideRunNotifications(appAtomRegistry, router);
+    if (isElectron) startDesktopUpdateLaunchNotice();
+  }
 
   return router;
 }

@@ -40,6 +40,7 @@ import {
   type ThreadNotificationObservation,
 } from "./ThreadNotificationCoordinator.logic";
 import { toastManager } from "./ui/toast";
+import { isThreadPopoutFocused } from "../lib/threadPopout";
 
 interface NotificationState extends ThreadNotificationObservation {
   readonly raw: OrchestrationV2ThreadShell;
@@ -155,8 +156,11 @@ export function startThreadNotifications(
                 ? "Guest request"
                 : "Input needed";
     const onScreen = document.visibilityState === "visible" && document.hasFocus();
+    // A focused pop-out showing the thread counts as viewing it; this window can't see it otherwise.
+    const viewingInPopout = isThreadPopoutFocused({ environmentId, threadId: thread.id });
     const viewingThread =
-      onScreen && active.environmentId === environmentId && active.threadId === thread.id;
+      viewingInPopout ||
+      (onScreen && active.environmentId === environmentId && active.threadId === thread.id);
     if (hasNotificationSound(mode) && !(kind === "completion" && viewingThread)) {
       void playNotificationSound(kind, () =>
         hasNotificationSound(getClientSettings().notificationMode),
@@ -198,6 +202,7 @@ export function startThreadNotifications(
     if (
       !hasDesktopNotifications(mode) ||
       onScreen ||
+      viewingInPopout ||
       typeof Notification === "undefined" ||
       Notification.permission !== "granted"
     )

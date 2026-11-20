@@ -15,6 +15,7 @@ import type { SpeechTranscriptionOptions, SpeechStreamText } from "@t3tools/cont
 import type { CloudSpeechModelId, CloudSpeechProvider } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
+import { toastManager } from "../components/ui/toast";
 import { createBrowserPcmCapture } from "./browserPcmCapture";
 import { runEnvironmentSpeech } from "./runEnvironmentSpeech";
 
@@ -34,7 +35,29 @@ export function createBrowserVoiceInputPlatform(input: {
   readonly onText: (text: SpeechStreamText) => void;
   readonly onError: (message: string) => void;
 }) {
-  return createBrowserPcmCapture(input, async (options) => {
+  const setRecording = window.desktopBridge?.setDictationRecording;
+  const setDictationRecording =
+    setRecording &&
+    (async (active: boolean) => {
+      const warning = await setRecording(active).catch(() => "check-discord" as const);
+      if (warning === "accessibility-required") {
+        toastManager.add({
+          type: "warning",
+          title: "Allow T3 Code to mute Discord during dictation",
+          description:
+            "Grant T3 Code Accessibility access in System Settings → Privacy & Security. Until then, mute Discord yourself before speaking.",
+        });
+      } else if (warning === "check-discord") {
+        toastManager.add({
+          type: "warning",
+          title: active ? "Check your Discord mic before speaking" : "Check your Discord mic",
+          description: active
+            ? "T3 Code couldn’t confirm your Discord mute state."
+            : "T3 Code couldn’t restore your Discord mic.",
+        });
+      }
+    });
+  return createBrowserPcmCapture({ ...input, setDictationRecording }, async (options) => {
     const recordingOptions = input.getTranscriptionOptions();
     const streamingEnabled = input.getStreamingEnabled();
     const transcribeRecording = async (

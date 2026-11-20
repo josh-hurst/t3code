@@ -89,6 +89,13 @@ when recording started, and the editor is read-only while dictation runs.
 Changes that reach the draft meanwhile, such as a cited message, are kept;
 the text then goes after your selection instead of replacing it.
 
+During a Discord desktop call on the same computer, T3 Code desktop temporarily
+mutes your Discord microphone while recording. Finishing or cancelling restores
+it if T3 Code muted it. Discord’s call controls must be available to your
+system’s accessibility tools. On macOS, grant T3 Code Accessibility access in
+System Settings → Privacy & Security. On Linux, if T3 Code can’t see the call
+controls, start Discord with `--force-renderer-accessibility`.
+
 Pressing Send while dictating finishes the recording and sends the draft once
 the transcript has been inserted. Cancelling also cancels that queued send. In
 the other editors, Save, Comment, Reply, Submit review, or Attach works the

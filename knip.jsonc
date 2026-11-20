@@ -150,8 +150,13 @@
       ],
     },
     "infra/relay": {
-      // Alchemy loads src/worker.ts as the Worker entry and reads its default export.
-      "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!", "src/worker.ts!"],
+      // Alchemy loads the Worker and the standalone APNs service bundles its own Node entry.
+      "entry": [
+        "alchemy.run.ts!",
+        "src/persistence/schema.ts!",
+        "src/worker.ts!",
+        "src/pushRouter/main.ts!",
+      ],
     },
     "packages/*": {
       // These workspace packages are private to this monorepo.

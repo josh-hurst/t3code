@@ -1,199 +1,310 @@
-import { HStack, Image, Spacer, Text, VStack } from "@expo/ui/swift-ui";
+import { HStack, Image, Link, Spacer, Text, VStack } from "@expo/ui/swift-ui";
 import {
+  accessibilityLabel,
   containerBackground,
+  cornerRadius,
+  fixedSize,
   font,
   foregroundStyle,
   frame,
-  layoutPriority,
   lineLimit,
+  minimumScaleFactor,
+  layoutPriority,
   resizable,
   widgetURL,
 } from "@expo/ui/swift-ui/modifiers";
 import { createWidget, type WidgetEnvironment } from "expo-widgets";
-
 import type {
   AgentActivityPhase,
   AgentActivityProps,
   AgentActivityRowProps,
 } from "./AgentActivity";
 
-// Home-screen and Lock Screen counterpart of the AgentActivity Live Activity.
-// It shares the Live Activity's name, but expo-widgets stores widget and Live
-// Activity layouts under different keys, so each needs its own registration.
+type AgentWidgetProps = Partial<AgentActivityProps> & {
+  readonly localData?: Readonly<Record<string, string>>;
+};
+
 export function AgentActivityWidget(
-  publishedProps: Partial<AgentActivityProps> | undefined,
-  environment: WidgetEnvironment,
+  props: AgentWidgetProps | undefined,
+  environment: WidgetEnvironment & { showsContainerBackground?: boolean },
 ) {
   "widget";
-  // The extension evaluates this function without the app's module scope.
-  // Before the app's first publish, the embedded layout renders with no props.
-  const props = publishedProps ?? {};
-  const family = environment.widgetFamily;
-  const accessory = family === "accessoryRectangular";
-  const small = family === "systemSmall";
-  const monochrome =
+  const small = environment.widgetFamily === "systemSmall";
+  const accessory = environment.widgetFamily === "accessoryRectangular";
+  const dark = environment.colorScheme === "dark";
+  const system =
+    accessory ||
     environment.widgetRenderingMode === "accented" ||
     environment.widgetRenderingMode === "vibrant" ||
-    environment.isLuminanceReduced === true;
-  const isLightScheme = environment.colorScheme === "light";
-
-  type Foreground = Parameters<typeof foregroundStyle>[0];
-  const primaryForeground = { type: "hierarchical", style: "primary" } as const;
-  const secondaryForeground = { type: "hierarchical", style: "secondary" } as const;
-  const phaseTint = (phase: AgentActivityPhase): Foreground => {
-    if (monochrome) return primaryForeground;
+    environment.isLuminanceReduced ||
+    environment.showsContainerBackground === false;
+  type Ink = Parameters<typeof foregroundStyle>[0];
+  const primary: Ink = system
+    ? { type: "hierarchical", style: "primary" }
+    : dark
+      ? "#F1F5EF"
+      : "#182E28";
+  const secondary: Ink = system
+    ? { type: "hierarchical", style: "secondary" }
+    : dark
+      ? "#A3B6AE"
+      : "#52685F";
+  const phaseStyle = (phase: AgentActivityPhase) => {
     switch (phase) {
       case "waiting_for_approval":
-        return isLightScheme ? "#d97706" : "#fcd34d";
+        return {
+          rank: 0,
+          color: dark ? "#F7BB81" : "#9B4D1C",
+          symbol: "hand.raised.fill",
+          label: "Approval",
+        } as const;
       case "waiting_for_input":
-        return isLightScheme ? "#4f46e5" : "#a5b4fc";
+        return {
+          rank: 0,
+          color: dark ? "#F7BB81" : "#9B4D1C",
+          symbol: "bubble.left.fill",
+          label: "Input",
+        } as const;
       case "failed":
-        return isLightScheme ? "#dc2626" : "#fca5a5";
-      case "completed":
-        return isLightScheme ? "#059669" : "#6ee7b7";
-      case "stale":
-        return secondaryForeground;
+        return {
+          rank: 1,
+          color: dark ? "#FFA69E" : "#AA3937",
+          symbol: "exclamationmark.triangle.fill",
+          label: "Failed",
+        } as const;
       case "starting":
       case "running":
-      default:
-        return isLightScheme ? "#0284c7" : "#7dd3fc";
+        return {
+          rank: 2,
+          color: dark ? "#89DFC1" : "#176951",
+          symbol: "terminal",
+          label: "Active",
+        } as const;
+      case "stale":
+        return {
+          rank: 3,
+          color: dark ? "#A3B6AE" : "#52685F",
+          symbol: "clock",
+          label: "Out of date",
+        } as const;
+      case "completed":
+        return {
+          rank: 4,
+          color: dark ? "#72DB95" : "#207540",
+          symbol: "checkmark",
+          label: "Done",
+        } as const;
     }
   };
-  const phasePriority = (phase: AgentActivityPhase): number => {
-    if (phase === "waiting_for_approval" || phase === "waiting_for_input") return 0;
-    if (phase === "failed") return 1;
-    if (phase === "running" || phase === "starting") return 2;
-    return 3;
-  };
-
-  const loaded = props.activities !== undefined;
-  const rows = [...(props.activities ?? [])].sort(
-    (a, b) => phasePriority(a.phase) - phasePriority(b.phase),
+  const rows = [...(props?.activities ?? [])].sort(
+    (a, b) => phaseStyle(a.phase).rank - phaseStyle(b.phase).rank,
   );
-  const shown = rows.slice(0, accessory || small ? 2 : 4);
-  const attentionCount = rows.filter(
-    (row) => row.phase === "waiting_for_approval" || row.phase === "waiting_for_input",
+  const first = rows[0];
+  const state = first ? phaseStyle(first.phase) : undefined;
+  const multiple = rows.length > 1;
+  const visible = rows.slice(0, accessory ? 2 : small ? 3 : 5);
+  const shownActive = visible.filter(
+    (row) => row.phase !== "completed" && row.phase !== "failed",
   ).length;
-  const workingCount = rows.filter(
-    (row) => row.phase === "running" || row.phase === "starting",
-  ).length;
-  const summary =
-    attentionCount > 0
-      ? `${attentionCount} need${attentionCount === 1 ? "s" : ""} ${small ? "you" : "attention"}`
-      : workingCount > 0
-        ? `${props.activeCount ?? workingCount} active`
-        : rows.some((row) => row.phase === "stale")
-          ? "Out of date"
-          : rows.some((row) => row.phase === "failed")
-            ? "Failed"
-            : rows.length > 0
-              ? "Done"
-              : "";
-  const summaryTint = rows[0] ? phaseTint(rows[0].phase) : secondaryForeground;
-  const emptyMessage = loaded
-    ? (props.subtitle ?? "No active agents")
-    : "Open T3 Code to load agent activity";
-
-  // Widget taps open the containing app, and every build accepts the prod
-  // scheme as a link prefix, so dev and preview builds route this too.
-  const linkRow = rows[0];
-  const deepLink =
-    linkRow && linkRow.deepLink.startsWith("/") && !linkRow.deepLink.startsWith("//")
-      ? `t3code://${linkRow.deepLink.slice(1)}`
+  const more = Math.max(rows.length - visible.length, (props?.activeCount ?? 0) - shownActive);
+  const count =
+    state?.rank === 2
+      ? (props?.activeCount ?? rows.length)
+      : rows.filter((row) => phaseStyle(row.phase).rank === state?.rank).length;
+  const caption =
+    state?.rank === 0
+      ? count === 1
+        ? "needs you"
+        : "need you"
+      : state?.rank === 1
+        ? "failed"
+        : state?.rank === 2
+          ? "active"
+          : state?.rank === 3
+            ? "out of date"
+            : "done";
+  const accent = !system && state ? state.color : primary;
+  const url = (row: AgentActivityRowProps) =>
+    row.deepLink.startsWith("/") && !row.deepLink.startsWith("//")
+      ? "t3code://" + row.deepLink.slice(1)
       : null;
-
-  const background = accessory ? "clear" : isLightScheme ? "#ffffff" : "#1c1c1e";
-  const rootModifiers = [
-    containerBackground(background, "widget"),
-    ...(deepLink ? [widgetURL(deepLink)] : []),
+  const firstURL = first && url(first);
+  const root = [
+    ...(accessory
+      ? [containerBackground("clear", "widget")]
+      : system
+        ? []
+        : [containerBackground(dark ? "#17241F" : "#ECF4EC", "widget")]),
+    ...(firstURL ? [widgetURL(firstURL)] : []),
   ];
-
-  // The template image ignores frame/foregroundStyle applied to itself; size
-  // and tint it through a container the resizable image fills.
-  const renderLogo = (height: number) => (
-    <HStack
-      modifiers={[frame({ width: height * 1.5, height }), foregroundStyle(primaryForeground)]}
-    >
-      <Image assetName="T3Mark" modifiers={[resizable()]} />
+  const heading = (
+    <HStack spacing={5}>
+      {!small && !accessory ? (
+        <Image
+          systemName={state?.symbol ?? "terminal"}
+          size={12}
+          modifiers={[foregroundStyle(accent)]}
+        />
+      ) : null}
+      <Text
+        modifiers={[font({ size: 13, weight: "semibold" }), foregroundStyle(primary), lineLimit(1)]}
+      >
+        Agents
+      </Text>
     </HStack>
   );
-
-  const renderRow = (row: AgentActivityRowProps, key: string) =>
-    small || accessory ? (
-      <VStack key={key} alignment="leading" spacing={1}>
+  const empty = props?.subtitle ?? "Open T3 Code to load activity";
+  if (!first || !state) {
+    return (
+      <VStack alignment="leading" spacing={accessory ? 3 : 9} modifiers={root}>
+        {heading}
+        {!accessory ? <Spacer minLength={0} /> : null}
         <Text
           modifiers={[
-            font({ weight: "semibold", size: accessory ? 13 : 12 }),
-            foregroundStyle(primaryForeground),
-            lineLimit(1),
+            font({ size: accessory ? 13 : 19, weight: "semibold" }),
+            foregroundStyle(primary),
+            lineLimit(3),
           ]}
         >
-          {row.threadTitle}
-        </Text>
-        <Text
-          modifiers={[
-            font({ weight: "medium", size: 11 }),
-            foregroundStyle(phaseTint(row.phase)),
-            lineLimit(1),
-          ]}
-        >
-          {row.status}
+          {empty}
         </Text>
       </VStack>
+    );
+  }
+  const rowIcon = (row: AgentActivityRowProps, size: number) => {
+    const tile = frame({ width: size, height: size });
+    if (row.phase === "completed") {
+      return (
+        <HStack modifiers={[tile, foregroundStyle(phaseStyle("completed").color)]}>
+          <Image
+            systemName="checkmark"
+            size={size - 1}
+            modifiers={[accessibilityLabel("Completed")]}
+          />
+        </HStack>
+      );
+    }
+    const icons = props?.localData;
+    const uri =
+      icons?.[JSON.stringify([row.environmentId, row.projectTitle, row.threadId])] ??
+      icons?.[JSON.stringify([row.environmentId, row.projectTitle])];
+    return uri?.startsWith("data:image/") ? (
+      <Image uiImage={uri} modifiers={[resizable(), tile, cornerRadius(4)]} />
     ) : (
-      <HStack key={key} spacing={7} alignment="center">
-        <Text
+      <HStack modifiers={[tile, foregroundStyle(secondary)]}>
+        <Image systemName={uri === "text.bubble" ? "text.bubble" : "folder"} size={size - 3} />
+      </HStack>
+    );
+  };
+  const narrow = small || accessory;
+  const rowView = (row: AgentActivityRowProps) => {
+    const look = phaseStyle(row.phase);
+    const titleMods = [
+      font({ size: accessory ? 12 : small ? 13 : 14, weight: "semibold" }),
+      foregroundStyle(primary),
+      lineLimit(1),
+    ];
+    const projectMods = [
+      font({ size: accessory ? 10 : small ? 11 : 12, weight: "medium" }),
+      foregroundStyle(secondary),
+      lineLimit(1),
+    ];
+    const key = row.environmentId + "/" + row.threadId;
+    const status =
+      look.rank !== 2 && row.phase !== "completed" ? (
+        <Image
+          systemName={look.symbol}
+          size={10}
           modifiers={[
-            font({ weight: "semibold", size: 13 }),
-            foregroundStyle(primaryForeground),
-            lineLimit(1),
+            foregroundStyle(system ? primary : look.color),
+            accessibilityLabel(look.label),
           ]}
-        >
+        />
+      ) : null;
+    const content = narrow ? (
+      <VStack
+        key={key}
+        alignment="leading"
+        spacing={0}
+        modifiers={[frame({ maxWidth: Infinity, alignment: "leading" })]}
+      >
+        <Text modifiers={titleMods}>{row.threadTitle}</Text>
+        <HStack spacing={4}>
+          {rowIcon(row, accessory ? 11 : 13)}
+          <Text modifiers={projectMods}>{row.projectTitle}</Text>
+          {status}
+        </HStack>
+      </VStack>
+    ) : (
+      <HStack key={key} spacing={8}>
+        {rowIcon(row, 18)}
+        <Text modifiers={[...titleMods, frame({ maxWidth: Infinity, alignment: "leading" })]}>
           {row.threadTitle}
         </Text>
-        <Text modifiers={[font({ size: 11 }), foregroundStyle(secondaryForeground), lineLimit(1)]}>
-          {row.projectTitle}
-        </Text>
-        <Spacer minLength={8} />
+        {status}
         <Text
           modifiers={[
-            font({ weight: "semibold", size: 11 }),
-            foregroundStyle(phaseTint(row.phase)),
+            ...projectMods,
+            frame({ maxWidth: 90, alignment: "trailing" }),
+            fixedSize({ horizontal: true, vertical: false }),
             layoutPriority(1),
           ]}
         >
-          {row.status}
+          {row.projectTitle}
         </Text>
       </HStack>
     );
-
-  return (
-    <VStack alignment="leading" spacing={accessory ? 2 : 8} modifiers={rootModifiers}>
-      <HStack spacing={6} alignment="center">
-        {accessory ? null : renderLogo(13)}
+    const destination = !narrow && url(row);
+    return destination ? (
+      <Link key={key} destination={destination}>
+        {content}
+      </Link>
+    ) : (
+      content
+    );
+  };
+  const total = props?.activeCount ?? 0;
+  const countText = total > 0 && state.rank !== 3 ? total + " active" : count + " " + caption;
+  const summary = countText + (more > 0 ? " · +" + more : "");
+  if (!multiple && !accessory) {
+    return (
+      <VStack alignment="leading" spacing={4} modifiers={root}>
+        {heading}
+        <Spacer minLength={0} />
         <Text
           modifiers={[
-            font({ weight: "semibold", size: 12 }),
-            foregroundStyle(accessory ? primaryForeground : summaryTint),
+            font({ size: small ? 29 : 34, weight: "bold", design: "rounded" }),
+            foregroundStyle(accent),
             lineLimit(1),
+            minimumScaleFactor(0.7),
           ]}
         >
-          {summary || (accessory ? "T3 Code" : "")}
+          {count} {caption}
         </Text>
-        <Spacer minLength={0} />
+        <Spacer minLength={1} />
+        {rowView(first)}
+      </VStack>
+    );
+  }
+  return (
+    <VStack alignment="leading" spacing={accessory ? 1 : small ? 4 : 3} modifiers={root}>
+      <HStack spacing={5}>
+        {accessory ? <Image systemName={state.symbol} size={11} /> : heading}
+        <Spacer minLength={1} />
+        <Text
+          modifiers={[
+            font({ size: narrow ? 11 : 12, weight: "semibold", design: "rounded" }),
+            foregroundStyle(accent),
+            lineLimit(1),
+            minimumScaleFactor(0.8),
+          ]}
+        >
+          {summary}
+        </Text>
       </HStack>
-      {shown.length > 0 ? (
-        <VStack alignment="leading" spacing={accessory ? 1 : small ? 6 : 5}>
-          {shown.map((row, index) => renderRow(row, `${row.threadId}:${index}`))}
-        </VStack>
-      ) : (
-        <Text modifiers={[font({ size: 12 }), foregroundStyle(secondaryForeground), lineLimit(2)]}>
-          {emptyMessage}
-        </Text>
-      )}
-      {accessory ? null : <Spacer minLength={0} />}
+      {visible.map(rowView)}
     </VStack>
   );
 }
 
-export default createWidget<Partial<AgentActivityProps>>("AgentActivity", AgentActivityWidget);
+export default createWidget<AgentWidgetProps>("AgentActivity", AgentActivityWidget);

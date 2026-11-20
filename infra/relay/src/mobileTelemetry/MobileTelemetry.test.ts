@@ -20,7 +20,7 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
-import { RELAY_HTTP_ROUTER_CONFIG } from "../http/Api.ts";
+import { RELAY_HTTP_ROUTER_CONFIG } from "../Config.ts";
 import * as RelayHttpApi from "../http/Api.ts";
 import * as MobileTelemetry from "./MobileTelemetry.ts";
 

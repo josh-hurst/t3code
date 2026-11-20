@@ -145,3 +145,88 @@ it("keeps focus in the search box when a click picks a search result", async () 
   // Picking clears the results; a focused result would drop focus, and its recovery scrolls the list.
   await expect.element(search).toHaveFocus();
 });
+
+it("keeps detached thread navigation, keyboard focus, and context menus in their windows", async () => {
+  await page.viewport(1400, 900);
+  const [first, second] = [threadWithHistory("visible", 1), threadWithHistory("search-target", 1)];
+  using _environment = installFakeEnvironment([first, second]);
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    sidebarClassicEnabled: true,
+    boringSidebarEnabled: true,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const previousPosition = localStorage.getItem("chat_thread_sidebar_position");
+  localStorage.setItem("chat_thread_sidebar_position", JSON.stringify({ x: 0, y: 0 }));
+  using _position = {
+    [Symbol.dispose]() {
+      if (previousPosition === null) localStorage.removeItem("chat_thread_sidebar_position");
+      else localStorage.setItem("chat_thread_sidebar_position", previousPosition);
+    },
+  };
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${first.id}`] }),
+  );
+  await router.load();
+  await using screen = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  const folder = page.getByRole("button", { name: /^render/ });
+  await expect.element(folder).toBeVisible();
+  if (folder.element().getAttribute("aria-expanded") === "false") {
+    folder.element().focus();
+    await userEvent.keyboard("{Enter}");
+  }
+  using open = vi.spyOn(window, "open");
+  using _popup = {
+    [Symbol.dispose]() {
+      for (const result of open.mock.results) {
+        if (result.type === "return") result.value?.close();
+      }
+    },
+  };
+  await userEvent.click(screen.getByRole("button", { name: "Open sidebar in a separate window" }));
+  const popup = open.mock.results[0]!.value as Window;
+  await vi.waitFor(() =>
+    expect(
+      popup.document.querySelector('[data-testid="sidebar-project-folder"] button'),
+    ).not.toBeNull(),
+  );
+  const popupFolder = popup.document.querySelector<HTMLButtonElement>(
+    '[data-testid="sidebar-project-folder"] button',
+  )!;
+  if (popupFolder.getAttribute("aria-expanded") === "false") await act(() => popupFolder.click());
+  const row = () =>
+    [...popup.document.querySelectorAll<HTMLElement>('[data-testid="sidebar-row-folder"]')].find(
+      (element) => element.textContent?.includes(second.title),
+    );
+  await vi.waitFor(() => expect(row(), popup.document.body.innerText).toBeDefined());
+  const rows = [
+    ...popup.document.querySelectorAll<HTMLElement>('[data-testid="sidebar-row-folder"]'),
+  ];
+  await act(() => {
+    rows[0]!.focus();
+    rows[0]!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(popup.document.activeElement).toBe(rows[1]);
+  await act(() => row()!.click());
+  await vi.waitFor(() =>
+    expect(router.state.location.pathname).toBe(`/${ENVIRONMENT_ID}/${second.id}`),
+  );
+  await act(() => {
+    row()!.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 120 }),
+    );
+  });
+  await vi.waitFor(() =>
+    expect(popup.document.querySelector('[data-context-menu="true"]')).not.toBeNull(),
+  );
+  expect(document.querySelector('[data-context-menu="true"]')).toBeNull();
+  popup.close();
+  await expect
+    .element(screen.getByRole("button", { name: "Open sidebar in a separate window" }))
+    .toBeVisible();
+});

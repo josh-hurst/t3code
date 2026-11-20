@@ -1,5 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { type RefObject, useEffect, useEffectEvent, useSyncExternalStore } from "react";
+import { getFocusedAppWindow } from "../../lib/appWindow";
 
 import type { ThreadContextDropRef } from "./threadContextDrop.logic";
 
@@ -59,6 +60,7 @@ const DROP_TARGET_ATTRIBUTE = "data-thread-context-drop";
 const DROP_OVER_ATTRIBUTE = "data-thread-context-over";
 
 export interface ThreadContextDragGhost {
+  readonly ownerDocument?: Document;
   readonly x: number;
   readonly y: number;
   readonly title: string;
@@ -89,6 +91,7 @@ export function useThreadContextDragGhost(): ThreadContextDragGhost | null {
 let overTarget: HTMLElement | null = null;
 
 function findDropTarget(point: { x: number; y: number }): HTMLElement | null {
+  const document = getFocusedAppWindow().document;
   return (
     document
       .elementFromPoint(point.x, point.y)
@@ -106,7 +109,14 @@ export function moveThreadContextDrag(
     target?.setAttribute(DROP_OVER_ATTRIBUTE, "true");
     overTarget = target;
   }
-  setGhost({ x: point.x, y: point.y, kind: "thread", ...label });
+  const view = getFocusedAppWindow();
+  setGhost({
+    x: point.x,
+    y: point.y,
+    kind: "thread",
+    ...label,
+    ...(view === window ? {} : { ownerDocument: view.document }),
+  });
 }
 
 export function endThreadContextDrag() {

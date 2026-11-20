@@ -12,6 +12,7 @@ import { Atom } from "effect/reactivity";
 
 import { PREVIEW_RECENT_URL_LIMIT } from "./components/preview/previewConstants";
 import { appAtomRegistry } from "./rpc/atomRegistry";
+import { isThreadPopoutWindow } from "./lib/threadPopoutWindow";
 
 export interface DesktopPreviewOverlay {
   hasWebContents: boolean;
@@ -523,7 +524,8 @@ export function rememberPreviewUrl(ref: ScopedThreadRef, url: string): void {
 
 export function isPreviewSupportedInRuntime(): boolean {
   if (typeof window === "undefined") return false;
-  return Boolean(window.desktopBridge?.preview);
+  // Desktop previews attach to the main window only.
+  return Boolean(window.desktopBridge?.preview) && !isThreadPopoutWindow;
 }
 
 /** Releases desktop-host pages as well as local session state. */

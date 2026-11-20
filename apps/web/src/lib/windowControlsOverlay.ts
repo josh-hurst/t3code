@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 import { isElectron } from "~/env";
+import { useAppWindow } from "./appWindow";
 
 import { isMacPlatform, isWindowsPlatform } from "./utils";
 
@@ -74,7 +75,9 @@ function getNativeTitlebarHeight(): number {
 }
 
 export function useNativeTitlebarHeight(): number {
-  return useSyncExternalStore(subscribeTitlebarArea, getNativeTitlebarHeight, () => 0);
+  const view = useAppWindow();
+  const height = useSyncExternalStore(subscribeTitlebarArea, getNativeTitlebarHeight, () => 0);
+  return view === window ? height : 0;
 }
 
 function getElectronPlatformClassNames(

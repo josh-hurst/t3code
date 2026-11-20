@@ -79,14 +79,9 @@ import * as ManagedEndpointAllocations from "../environments/ManagedEndpointAllo
 import * as EnvironmentPublishSignatures from "../environments/EnvironmentPublishSignatures.ts";
 import * as MobileRegistrations from "../agentActivity/MobileRegistrations.ts";
 import * as T3ChatAccounts from "../t3chat/T3ChatAccounts.ts";
-import { withSpanAttributes } from "../observability.ts";
+import { withSpanAttributes } from "../spanAttributes.ts";
 import { isRelayHookPath, redactRelayHookUrl } from "../hooks/HookForwarder.ts";
 import * as RelayDb from "../db.ts";
-
-// Delegated IDs exceed the router's default 100-character limit; match the environment server.
-export const RELAY_HTTP_ROUTER_CONFIG = {
-  maxParamLength: 512,
-} as const;
 
 const appendRelayCredentialResponseHeaders = HttpEffect.appendPreResponseHandler(
   (_request, response) =>

@@ -10,7 +10,12 @@ import * as Semaphore from "effect/Semaphore";
 
 import * as Electron from "electron";
 
-import { type DesktopSnapShotEvent, DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
+import {
+  type DesktopSnapShotEvent,
+  DEFAULT_CLIENT_SETTINGS,
+  THREAD_POPOUT_FRAME_PREFIX,
+  THREAD_POPOUT_STANDBY_FRAME_PREFIX,
+} from "@t3tools/contracts";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -42,6 +47,11 @@ import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
+import {
+  getInitialWindowBackgroundColor,
+  windowGlassOptions,
+  windowGlassSupported,
+} from "./windowGlass.ts";
 
 const TITLEBAR_HEIGHT = 40;
 
@@ -159,10 +169,6 @@ function getIconOption(
     onNone: () => ({}),
     onSome: (icon) => ({ icon }),
   });
-}
-
-function getInitialWindowBackgroundColor(shouldUseDarkColors: boolean): string {
-  return shouldUseDarkColors ? "#000000" : "#ffffff";
 }
 
 type DisplayBounds = Pick<Electron.Rectangle, "x" | "y" | "width" | "height">;
@@ -341,20 +347,62 @@ function getWindowTitleBarOptions(
   };
 }
 
+/**
+ * A thread pop-out opens at NSFloatingWindowLevel so tiling managers such as yabai float it
+ * instead of tiling it; it drops to the normal level once it appears (see did-create-window).
+ */
+const THREAD_POPOUT_LEVEL_DROP_DELAY = "1 second";
+
+function isThreadPopoutUrl(url: string): boolean {
+  return /^#\/popout\/[^/]+\/[^/]+/.test(URL.parse(url)?.hash ?? "");
+}
+
+function getThreadPopoutWindowOptions(
+  shouldUseDarkColors: boolean,
+  platform: NodeJS.Platform,
+  preloadPath: string,
+): Electron.BrowserWindowConstructorOptions {
+  const glass: Electron.BrowserWindowConstructorOptions = windowGlassSupported(platform)
+    ? // A floating window stays glass while another window has focus.
+      { ...windowGlassOptions(platform), visualEffectState: "active" }
+    : { backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors) };
+  return {
+    title: "T3 Code Pop-out",
+    width: 640,
+    height: 820,
+    minWidth: 380,
+    minHeight: 420,
+    alwaysOnTop: true,
+    fullscreenable: false,
+    autoHideMenuBar: true,
+    ...getWindowTitleBarOptions(shouldUseDarkColors, platform),
+    ...glass,
+    // A window.open child gets no preload unless asked, and the app needs the desktop bridge.
+    webPreferences: {
+      preload: preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  };
+}
+
 function syncWindowAppearance(
   window: Electron.BrowserWindow,
   hasTitleBarOverlay: boolean,
   shouldUseDarkColors: boolean,
   platform: NodeJS.Platform,
+  customTitleBar: boolean,
+  glass = false,
 ): Effect.Effect<void> {
   return Effect.sync(() => {
     if (window.isDestroyed()) {
       return;
     }
 
-    window.setBackgroundColor(getInitialWindowBackgroundColor(shouldUseDarkColors));
+    if (!glass) window.setBackgroundColor(getInitialWindowBackgroundColor(shouldUseDarkColors));
     const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform);
-    if (hasTitleBarOverlay && typeof titleBarOverlay === "object") {
+    if (customTitleBar && hasTitleBarOverlay && typeof titleBarOverlay === "object") {
       window.setTitleBarOverlay(titleBarOverlay);
     }
   });
@@ -389,8 +437,19 @@ export const make = Effect.gen(function* () {
   const previewManager = yield* PreviewManager.PreviewManager;
   const previewPasskeys = yield* PreviewPasskeys.PreviewPasskeys;
   const primaryPaste = yield* DesktopPrimaryPaste.DesktopPrimaryPaste;
+  const sidebarWindows = new WeakSet<Electron.BrowserWindow>();
+  const threadPopoutWindows = new WeakSet<Electron.BrowserWindow>();
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const clientSettings = yield* DesktopClientSettings.DesktopClientSettings;
+  const readMainWindowGlass = clientSettings.get.pipe(
+    Effect.map(
+      (settings) =>
+        windowGlassSupported(environment.platform) &&
+        Option.isSome(settings) &&
+        settings.value.windowGlassEnabled,
+    ),
+    Effect.orElseSucceed(() => false),
+  );
   const electronApp = yield* ElectronApp.ElectronApp;
   const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
   const backendReadyRef = yield* Ref.make(false);
@@ -449,6 +508,7 @@ export const make = Effect.gen(function* () {
     const iconPaths = yield* assets.iconPaths;
     const iconOption = getIconOption(iconPaths, environment.platform);
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+    const mainWindowGlass = yield* readMainWindowGlass;
     const persistedSettings = yield* desktopSettings.get;
     const persistedBounds = persistedSettings.mainWindowBounds;
     const displayBoundsResult = yield* Effect.sync(() => {
@@ -481,6 +541,7 @@ export const make = Effect.gen(function* () {
       autoHideMenuBar: true,
       ...(environment.platform === "darwin" ? { disableAutoHideCursor: true } : {}),
       backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
+      ...(mainWindowGlass ? windowGlassOptions(environment.platform) : {}),
       ...iconOption,
       title: environment.displayName,
       ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
@@ -739,11 +800,97 @@ export const make = Effect.gen(function* () {
       void runPromise(previewManager.prepareWebview(contents));
     });
 
-    window.webContents.setWindowOpenHandler(({ url }) => {
+    window.webContents.setWindowOpenHandler(({ url, frameName }) => {
+      if (url === "about:blank" && frameName.startsWith("t3code-threads-")) {
+        return {
+          action: "allow",
+          overrideBrowserWindowOptions: {
+            title: "Threads",
+            minWidth: 260,
+            minHeight: 240,
+            autoHideMenuBar: true,
+            backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
+          },
+        };
+      }
+      if (
+        frameName.startsWith(THREAD_POPOUT_FRAME_PREFIX) &&
+        isSameOriginRendererNavigation({ applicationUrl, navigationUrl: url })
+      ) {
+        return {
+          action: "allow",
+          overrideBrowserWindowOptions: {
+            ...getThreadPopoutWindowOptions(
+              shouldUseDarkColors,
+              environment.platform,
+              environment.preloadPath,
+            ),
+            show: !frameName.startsWith(THREAD_POPOUT_STANDBY_FRAME_PREFIX),
+          },
+        };
+      }
+      return openExternalAndDeny(url);
+    });
+    const closeOnCloseShortcut = (popup: Electron.BrowserWindow) => {
+      popup.webContents.on("before-input-event", (event, input) => {
+        const modifier = environment.platform === "darwin" ? input.meta : input.control;
+        if (
+          input.type === "keyDown" &&
+          modifier &&
+          !input.alt &&
+          !input.shift &&
+          input.key.toLowerCase() === "w"
+        ) {
+          event.preventDefault();
+          popup.close();
+        }
+      });
+    };
+    const openExternalAndDeny = (url: string) => {
       if (Option.isSome(ElectronShell.parseSafeExternalUrl(url))) {
         void runPromise(electronShell.openExternal(url));
       }
-      return { action: "deny" };
+      return { action: "deny" as const };
+    };
+    window.webContents.on("did-create-window", (popup, details) => {
+      if (details.frameName.startsWith(THREAD_POPOUT_FRAME_PREFIX)) {
+        threadPopoutWindows.add(popup);
+        // Browser previews attach through the main window's PreviewManager only.
+        popup.webContents.on("will-attach-webview", (event) => event.preventDefault());
+        popup.webContents.setWindowOpenHandler(({ url }) => openExternalAndDeny(url));
+        popup.webContents.on("will-navigate", (event, url) => {
+          if (isSameOriginRendererNavigation({ applicationUrl, navigationUrl: url })) return;
+          event.preventDefault();
+          openExternalAndDeny(url);
+        });
+        // The renderer's Cmd/Ctrl+W closes tabs in the main window; here it closes the pop-out.
+        closeOnCloseShortcut(popup);
+        // yabai reads the level when the window appears and keeps it floating afterwards; at the
+        // normal level the user's toggle can still tile it and it stacks like any window.
+        const dropToNormalLevel = () =>
+          runFork(
+            Effect.sleep(THREAD_POPOUT_LEVEL_DROP_DELAY).pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  if (!popup.isDestroyed()) popup.setAlwaysOnTop(false);
+                }),
+              ),
+            ),
+          );
+        if (popup.isVisible()) dropToNormalLevel();
+        else popup.once("show", dropToNormalLevel);
+        if (details.frameName.startsWith(THREAD_POPOUT_STANDBY_FRAME_PREFIX)) {
+          popup.webContents.on("did-navigate-in-page", (_event, url) => {
+            if (!popup.isVisible() && isThreadPopoutUrl(url)) popup.show();
+          });
+        }
+        return;
+      }
+      if (!details.frameName.startsWith("t3code-threads-")) return;
+      sidebarWindows.add(popup);
+      popup.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      popup.webContents.on("will-navigate", (event) => event.preventDefault());
+      closeOnCloseShortcut(popup);
     });
     window.webContents.on("will-navigate", (event, url) => {
       if (
@@ -1216,9 +1363,19 @@ export const make = Effect.gen(function* () {
     }),
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
-      yield* electronWindow.syncAllAppearance((window, { titleBarOverlay }) =>
-        syncWindowAppearance(window, titleBarOverlay, shouldUseDarkColors, environment.platform),
-      );
+      const main = Option.getOrNull(yield* electronWindow.main);
+      const mainGlass = yield* readMainWindowGlass;
+      yield* electronWindow.syncAllAppearance((window, { titleBarOverlay }) => {
+        const popout = threadPopoutWindows.has(window);
+        return syncWindowAppearance(
+          window,
+          titleBarOverlay || (popout && environment.platform !== "darwin"),
+          shouldUseDarkColors,
+          environment.platform,
+          !sidebarWindows.has(window),
+          windowGlassSupported(environment.platform) && (popout || (window === main && mainGlass)),
+        );
+      });
     }).pipe(Effect.withSpan("desktop.window.syncAppearance")),
   });
 });

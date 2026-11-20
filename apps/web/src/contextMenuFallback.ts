@@ -166,6 +166,10 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "path", attrs: { d: "M3 5a2 2 0 0 0 2 2h3" } },
     { tag: "path", attrs: { d: "M3 3v13a2 2 0 0 0 2 2h3" } },
   ],
+  "picture-in-picture": [
+    { tag: "path", attrs: { d: "M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4" } },
+    { tag: "rect", attrs: { width: "10", height: "7", x: "12", y: "13", rx: "2" } },
+  ],
   "text-search": [
     { tag: "path", attrs: { d: "M21 5H3" } },
     { tag: "path", attrs: { d: "M10 12H3" } },
@@ -182,7 +186,11 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
   ],
 };
 
-function createIconElement(name: string, tone: "neutral" | "destructive"): SVGSVGElement | null {
+function createIconElement(
+  name: string,
+  tone: "neutral" | "destructive",
+  document: Document,
+): SVGSVGElement | null {
   const paths = ICON_PATHS[name];
   if (!paths || typeof document.createElementNS !== "function") {
     return null;
@@ -213,21 +221,17 @@ function createIconElement(name: string, tone: "neutral" | "destructive"): SVGSV
 }
 
 function clampMenuPosition(menu: HTMLDivElement, preferredLeft: number, preferredTop: number) {
+  const view = menu.ownerDocument?.defaultView ?? window;
   const rect = menu.getBoundingClientRect();
-  const left = Math.min(
-    Math.max(4, preferredLeft),
-    Math.max(4, window.innerWidth - rect.width - 4),
-  );
-  const top = Math.min(
-    Math.max(4, preferredTop),
-    Math.max(4, window.innerHeight - rect.height - 4),
-  );
+  const left = Math.min(Math.max(4, preferredLeft), Math.max(4, view.innerWidth - rect.width - 4));
+  const top = Math.min(Math.max(4, preferredTop), Math.max(4, view.innerHeight - rect.height - 4));
   menu.style.left = `${left}px`;
   menu.style.top = `${top}px`;
 }
 
 function isNodeWithinMenuStack(target: EventTarget | null, menuStack: readonly HTMLDivElement[]) {
-  if (typeof Node !== "undefined" && target instanceof Node) {
+  const NodeConstructor = menuStack[0]?.ownerDocument?.defaultView?.Node ?? globalThis.Node;
+  if (NodeConstructor && target instanceof NodeConstructor) {
     return menuStack.some((menu) => menu.contains(target));
   }
   if (!target || typeof target !== "object") {
@@ -258,7 +262,11 @@ export function dismissContextMenu(restoreFocus = true): void {
 export function showContextMenuFallback<T extends string>(
   items: readonly ContextMenuItem<T>[],
   position?: { x: number; y: number },
+  ownerDocument: Document = document,
 ): Promise<T | null> {
+  const document = ownerDocument;
+  const view = document.defaultView ?? window;
+  const HTMLElement = document.defaultView?.HTMLElement ?? globalThis.HTMLElement;
   dismissContextMenu();
   return new Promise<T | null>((resolve) => {
     let focusedElement = document.activeElement;
@@ -285,7 +293,7 @@ export function showContextMenuFallback<T extends string>(
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("contextmenu", onContextMenu, true);
       document.removeEventListener("focusin", onFocusIn);
-      window.removeEventListener("blur", onWindowBlur);
+      view.removeEventListener("blur", onWindowBlur);
       const shouldRestoreFocus =
         restoreFocus && isNodeWithinMenuStack(document.activeElement, menuStack);
       for (const menu of menuStack) {
@@ -471,7 +479,7 @@ export function showContextMenuFallback<T extends string>(
         if (typeof item.checked === "boolean") {
           button.setAttribute("role", "menuitemradio");
           button.setAttribute("aria-checked", item.checked ? "true" : "false");
-          const check = item.checked ? createIconElement("check", "neutral") : null;
+          const check = item.checked ? createIconElement("check", "neutral", document) : null;
           if (check) {
             button.appendChild(check);
           } else {
@@ -482,7 +490,11 @@ export function showContextMenuFallback<T extends string>(
             button.appendChild(spacer);
           }
         } else if (typeof item.icon === "string") {
-          const icon = createIconElement(item.icon, isLeafDestructive ? "destructive" : "neutral");
+          const icon = createIconElement(
+            item.icon,
+            isLeafDestructive ? "destructive" : "neutral",
+            document,
+          );
           if (icon) {
             button.appendChild(icon);
           }
@@ -507,7 +519,7 @@ export function showContextMenuFallback<T extends string>(
         if (hasChildren) {
           button.setAttribute("aria-haspopup", "menu");
           button.setAttribute("aria-expanded", "false");
-          const chevron = createIconElement("chevron-right", "neutral");
+          const chevron = createIconElement("chevron-right", "neutral", document);
           if (chevron) {
             chevron.setAttribute(
               "class",
@@ -620,7 +632,7 @@ export function showContextMenuFallback<T extends string>(
         menu.style.maxWidth = "min(24rem, calc(100vw - 0.5rem))";
         const { width } = menu.getBoundingClientRect();
         const roomLeft = parentTrigger.getBoundingClientRect().left - 4;
-        const roomRight = window.innerWidth - preferredLeft;
+        const roomRight = view.innerWidth - preferredLeft;
         const flipLeft = width > roomRight && roomLeft > roomRight;
         clampMenuPosition(menu, flipLeft ? roomLeft - width : preferredLeft, preferredTop);
       });
@@ -640,7 +652,7 @@ export function showContextMenuFallback<T extends string>(
         : null;
     (firstAction ?? menuStack[0])?.focus({ preventScroll: true });
     document.addEventListener("focusin", onFocusIn);
-    window.addEventListener("blur", onWindowBlur);
+    view.addEventListener("blur", onWindowBlur);
 
     requestAnimationFrame(() => {
       canDismissFromPointer = true;

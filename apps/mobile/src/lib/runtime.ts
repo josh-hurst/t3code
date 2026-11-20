@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import { Platform } from "react-native";
 
 import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
 
@@ -15,9 +16,7 @@ import { whenProtectedDataAvailable } from "./protectedData";
 
 declare const module: { readonly hot?: FoundationHotModule } | undefined;
 
-function configuredRelayUrl(): string {
-  return resolveCloudPublicConfig().relay.url ?? "http://relay.invalid";
-}
+const { relay } = resolveCloudPublicConfig();
 
 const layerHttpClient = layerRemoteHttpClient(fetch);
 
@@ -30,7 +29,10 @@ type RuntimeLayerSource =
   | typeof Tracing.layer;
 
 const layerRuntime = Layer.merge(
-  ManagedRelayLayer.layer(configuredRelayUrl()),
+  ManagedRelayLayer.layer(
+    relay.url ?? "http://relay.invalid",
+    Platform.OS === "ios" ? relay.iosPushRouterUrl : undefined,
+  ),
   NativeWebSocket.layer,
 ).pipe(
   Layer.provideMerge(Dpop.layer),

@@ -1,6 +1,7 @@
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 
 import { cn } from "~/lib/utils";
+import { useAppWindow } from "~/lib/appWindow";
 
 import { renderClosingPositioner } from "./closing-positioner";
 
@@ -63,7 +64,7 @@ function PopoverPopup({
   // guards.
   const Viewport = keepMounted ? "div" : PopoverPrimitive.Viewport;
   return (
-    <PopoverPrimitive.Portal keepMounted={keepMounted}>
+    <PopoverPrimitive.Portal container={useAppWindow().document.body} keepMounted={keepMounted}>
       {touchBackdrop ? (
         // On touch, the backdrop consumes outside taps so closing cannot also activate the control beneath.
         <PopoverPrimitive.Backdrop

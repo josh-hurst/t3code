@@ -1,4 +1,6 @@
 import { attachSidebarTree } from "../lib/sidebarTree";
+import { useAppWindow } from "../lib/appWindow";
+import { popOutThread } from "../lib/threadPopout";
 import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import {
@@ -24,6 +26,7 @@ import {
   type Modifier,
 } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
+import { getEventCoordinates, getWindow } from "@dnd-kit/utilities";
 import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   canSnooze,
@@ -1122,6 +1125,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const delegatedUnderParent = useDelegatedUnderParent();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
+  const appWindow = useAppWindow();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
@@ -2260,8 +2264,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       targetSection: activeSection,
       contextDrag: false,
       occurredAt: new Date().toISOString(),
-      activationY:
-        event.activatorEvent instanceof PointerEvent ? event.activatorEvent.clientY : null,
+      activationY: getEventCoordinates(event.activatorEvent)?.y ?? null,
     });
   };
   const hasProjectFolders = projectFolders !== null && projectFolders.length > 0;
@@ -3078,6 +3081,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 canShareWithGuestAtom(threadRef.environmentId),
               ),
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+              popout: "open",
               supports: {
                 settlement: configLoaded,
                 autoSettleOptOut: supportsAutoSettleOptOut,
@@ -3107,6 +3111,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           return;
         }
         switch (clicked.value) {
+          case "pop-out":
+            popOutThread(router, threadRef);
+            return;
           case "hide-project":
             if (threadProjectGroup) setProjectHidden(threadProjectGroup.projectKey, true);
             return;
@@ -3480,8 +3487,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       navigateToThreadKey(orderedThreadKeys[jumpIndex] ?? null);
     };
     window.addEventListener("keydown", onWindowKeyDown);
-    return () => window.removeEventListener("keydown", onWindowKeyDown);
+    if (appWindow !== window) appWindow.addEventListener("keydown", onWindowKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onWindowKeyDown);
+      if (appWindow !== window) appWindow.removeEventListener("keydown", onWindowKeyDown);
+    };
   }, [
+    appWindow,
     keybindings,
     navigateToThread,
     orderedThreadKeys,
@@ -3563,7 +3575,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     if (item.value === "all") {
                       setProjectScopeKeys([]);
                     } else if (
-                      eventDetails.event instanceof MouseEvent &&
+                      eventDetails.event instanceof
+                        getWindow(eventDetails.event.target).MouseEvent &&
                       eventDetails.event.shiftKey
                     ) {
                       // Canceling skips Base UI's commit, which would freeze the search query, and its close.

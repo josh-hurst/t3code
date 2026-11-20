@@ -2689,3 +2689,74 @@ code {
 .messages-timeline-scroll:focus-visible {
   outline: none;
 }
+
+/* Window glass: the main window (when enabled) and thread pop-outs. With native glass (macOS
+   vibrancy, Windows acrylic) the page is transparent and the blurred desktop shows through;
+   elsewhere a static wash stands in. The main pane and the sidebar each paint one tint of their
+   own theme color. Equal tints would shrink their contrast to almost nothing, so the sidebar is a
+   fixed step more see-through, as in macOS sidebars. Inside the shell the large
+   layout planes are clear so their nested layers do not stack into a solid fill, while anything
+   positioned over content keeps a solid surface so what scrolls under it cannot show through.
+   Portaled menus and dialogs sit outside the shell and stay solid. */
+html[data-window-glass] {
+  --window-glass-base: var(--background);
+  --window-glass-sidebar: var(--sidebar);
+  background: transparent !important;
+}
+html[data-window-glass="native"] body {
+  background: transparent !important;
+}
+html[data-window-glass="css"] body {
+  background:
+    radial-gradient(
+      120% 80% at 0% 0%,
+      color-mix(in srgb, var(--primary) 16%, transparent),
+      transparent 65%
+    ),
+    radial-gradient(
+      110% 70% at 100% 100%,
+      color-mix(in srgb, var(--info) 14%, transparent),
+      transparent 60%
+    ),
+    var(--window-glass-base) !important;
+}
+html[data-window-glass]
+  [data-window-glass-shell]
+  :is([data-slot="sidebar-inset"], [data-window-glass-pane]) {
+  background-color: color-mix(
+    in srgb,
+    var(--window-glass-base) var(--window-glass-tint, 30%),
+    transparent
+  );
+}
+html[data-window-glass] [data-window-glass-shell] [data-app-sidebar] [data-slot="sidebar-inner"] {
+  background-color: color-mix(
+    in srgb,
+    var(--window-glass-sidebar) max(0%, calc(var(--window-glass-tint, 30%) - 15%)),
+    transparent
+  );
+}
+html[data-window-glass] [data-window-glass-shell],
+html[data-window-glass] [data-window-glass-shell] [data-app-sidebar] {
+  --background: transparent;
+  --sidebar: transparent;
+  --sidebar-stage-fade: transparent;
+}
+html[data-window-glass]
+  [data-window-glass-shell]
+  :is(.sticky, .absolute, .fixed):not([data-slot="sidebar-container"]) {
+  --background: var(--window-glass-base);
+  --sidebar: var(--window-glass-sidebar);
+}
+/* Themes paint the chat header with the toolbar color; on glass it is part of the pane. */
+html[data-window-glass] [data-window-glass-shell] [data-chat-header] {
+  background-color: transparent;
+}
+/* Translucent over glass, the composer reads as the same tone as the window; solid, it stands out. */
+html[data-window-glass] [data-window-glass-shell] [data-slot="composer-shell"] {
+  --glass-opacity: 100%;
+}
+/* The strip under the composer blends into the window; its blur still hides the timeline. */
+html[data-window-glass] [data-window-glass-shell] [data-slot="composer-context-strip"] {
+  background: transparent;
+}

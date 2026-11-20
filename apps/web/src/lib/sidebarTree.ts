@@ -1,3 +1,5 @@
+import { getWindow } from "@dnd-kit/utilities";
+
 const ROW = "[data-sidebar-row]";
 
 /** Ref callback for a sidebar list; installs its keyboard navigation and returns its cleanup. */
@@ -10,6 +12,8 @@ export function attachSidebarTree(element: HTMLElement | null) {
  * Rows stay ordinary buttons in the Tab order so screen readers can browse the list.
  */
 export function installSidebarTree(root: HTMLElement) {
+  const document = root.ownerDocument;
+  const { Element, HTMLElement } = getWindow(root);
   let focusedId: string | undefined;
   let focusedParent: string | undefined;
   let focusedIndex = -1;

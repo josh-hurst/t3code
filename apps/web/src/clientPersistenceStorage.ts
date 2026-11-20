@@ -36,5 +36,10 @@ export function subscribeBrowserClientSettingsWrites(onChange: () => void): () =
   };
   const target = window;
   target.addEventListener("storage", handleStorage);
-  return () => target.removeEventListener("storage", handleStorage);
+  // Desktop windows save through the main process, so no storage event reaches the others.
+  const unsubscribeDesktop = window.desktopBridge?.onClientSettingsChanged?.(onChange);
+  return () => {
+    target.removeEventListener("storage", handleStorage);
+    unsubscribeDesktop?.();
+  };
 }
