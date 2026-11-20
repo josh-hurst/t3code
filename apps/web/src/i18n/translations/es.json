@@ -12191,5 +12191,11 @@
   "27d76249d09eb69f": "Guía de revisión lista",
   "faa3bb26abb39c93": "Falló la guía de revisión",
   "b7df38b7d8792d78": "Abrir guía",
-  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión"
+  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión",
+  "bcb1091975b32fd7": "No se pudo sacar el hilo de su hilo principal",
+  "b6cf030976d3b9a2": "No se pudo anidar el hilo",
+  "942a5b9928b3d2d8": "Nuevo hilo secundario",
+  "828687d2e0f125d9": "Quitar del hilo principal",
+  "76fe50249102a5bd": "Anidar",
+  "973e4d3791ea4b54": "Anidado en"
 }

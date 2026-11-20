@@ -10,6 +10,8 @@ export type ThreadActionMenuId =
   | "open-in-main-window"
   | "popout-new-thread"
   | "new-thread-on-branch"
+  | "new-child-thread"
+  | "unnest"
   | "filter-by-project"
   | "hide-project"
   | "turn-into-project"
@@ -137,6 +139,8 @@ export interface ThreadActionMenuState {
   readonly canTurnIntoProject?: boolean;
   /** "open" moves the thread into its own window; "return" sends a pop-out back to the main one. */
   readonly popout?: "open" | "return";
+  /** Set where the server nests threads; `isNested` offers taking this one out of its parent. */
+  readonly nesting?: { readonly isNested: boolean } | null;
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
@@ -190,6 +194,24 @@ export function buildThreadActionMenuItems(
             label: resolve(msg("New thread on {branch}", { branch: state.branch })),
             icon: "message-square-plus",
           },
+        ]
+      : []),
+    ...(state.nesting
+      ? [
+          {
+            id: "new-child-thread" as const,
+            label: resolve(msg("New child thread")),
+            icon: "message-square-plus",
+          },
+          ...(state.nesting.isNested
+            ? [
+                {
+                  id: "unnest" as const,
+                  label: resolve(msg("Remove from parent")),
+                  icon: "corner-up-left",
+                },
+              ]
+            : []),
         ]
       : []),
     ...(state.supports.pinning

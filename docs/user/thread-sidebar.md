@@ -361,6 +361,19 @@ rules to connected environments that support shared settings. Offline environmen
 and older servers keep their previous values. Changing a rule does not reopen
 already settled threads.
 
+### Nest threads under a parent
+
+Nest a thread under another so settling the parent settles it too. On web and desktop, drag
+a thread onto another and nudge it to the right until the row shows **Nest**, then release.
+To start a new thread already nested, choose **New child thread** from a thread's menu; it
+nests once you send its first message. **Remove from parent** takes a thread back out.
+
+Nesting changes nothing else. A nested thread still files itself by its own status: under its
+parent while both sit in the same section, and on its own, naming its parent, when it needs
+you or lands somewhere else. A nested thread that is still working, waiting on a question,
+or holding a queued message stays put when its parent settles. Undoing the parent's settle
+brings back the threads it settled with it.
+
 ### History: every topic
 
 When [thread summaries](#choose-what-shows-under-a-threads-title) are on, each finished

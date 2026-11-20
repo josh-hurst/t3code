@@ -338,7 +338,99 @@ type SidebarThreadDropPlan =
     }
   | { readonly kind: "settle" };
 
-export type SidebarDropVerb = "pin" | "unpin" | "settle" | "unsettle" | "wake";
+export type SidebarDropVerb = "pin" | "unpin" | "settle" | "unsettle" | "wake" | "nest";
+
+/** The key of the thread this one is nested under, in its own environment. */
+export function sidebarThreadParentKey(
+  thread: Pick<SidebarThreadSummary, "environmentId" | "nestedUnder">,
+): string | null {
+  return thread.nestedUnder
+    ? scopedThreadKey(scopeThreadRef(thread.environmentId, thread.nestedUnder))
+    : null;
+}
+
+const NO_NEST_DEPTHS: ReadonlyMap<string, number> = new Map();
+
+/**
+ * Puts each row whose parent is in the same list right under it, children in list order, and
+ * gives each such row its depth. A row whose parent is elsewhere keeps its place.
+ */
+export function nestSidebarRows<T>(
+  rows: readonly T[],
+  keyOf: (row: T) => string,
+  parentKeyOf: (row: T) => string | null,
+): { readonly rows: readonly T[]; readonly depthByKey: ReadonlyMap<string, number> } {
+  const keys = new Set(rows.map(keyOf));
+  const childrenByKey = new Map<string, T[]>();
+  const roots: T[] = [];
+  for (const row of rows) {
+    const parentKey = parentKeyOf(row);
+    if (parentKey === null || parentKey === keyOf(row) || !keys.has(parentKey)) {
+      roots.push(row);
+      continue;
+    }
+    const siblings = childrenByKey.get(parentKey);
+    if (siblings) siblings.push(row);
+    else childrenByKey.set(parentKey, [row]);
+  }
+  if (childrenByKey.size === 0) return { rows, depthByKey: NO_NEST_DEPTHS };
+  const ordered: T[] = [];
+  const depthByKey = new Map<string, number>();
+  const placed = new Set<string>();
+  const place = (row: T, depth: number) => {
+    const key = keyOf(row);
+    if (placed.has(key)) return;
+    placed.add(key);
+    ordered.push(row);
+    if (depth > 0) depthByKey.set(key, depth);
+    for (const child of childrenByKey.get(key) ?? []) place(child, depth + 1);
+  };
+  for (const root of roots) place(root, 0);
+  // A loop in a stale snapshot has no root, so its rows end the list unnested.
+  for (const row of rows) if (!placed.has(keyOf(row))) ordered.push(row);
+  return { rows: ordered, depthByKey };
+}
+
+/**
+ * A label above a row that nesting indents moves to the next row that kept its place, unless
+ * another group starts first; the indented row now belongs to its parent's group.
+ */
+export function rehomeSidebarRowLabels<Label>(
+  keys: readonly string[],
+  depthByKey: ReadonlyMap<string, number>,
+  labels: ReadonlyMap<string, Label>,
+): ReadonlyMap<string, Label> {
+  if (![...labels.keys()].some((key) => depthByKey.has(key))) return labels;
+  const rehomed = new Map(labels);
+  keys.forEach((key, index) => {
+    const label = labels.get(key);
+    if (label === undefined || !depthByKey.has(key)) return;
+    rehomed.delete(key);
+    for (const candidate of keys.slice(index + 1)) {
+      if (labels.has(candidate)) return;
+      if (!depthByKey.has(candidate)) {
+        rehomed.set(candidate, label);
+        return;
+      }
+    }
+  });
+  return rehomed;
+}
+
+/** Whether `key` is `ancestorKey` or nested under it at any depth. */
+export function isSidebarRowWithin(
+  key: string,
+  ancestorKey: string,
+  parentKeyOf: (key: string) => string | null,
+): boolean {
+  const seen = new Set<string>();
+  for (let current: string | null = key; current !== null; current = parentKeyOf(current)) {
+    if (current === ancestorKey) return true;
+    if (seen.has(current)) return false;
+    seen.add(current);
+  }
+  return false;
+}
 
 export function resolveSidebarDropVerb(
   from: SidebarSection,

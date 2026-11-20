@@ -12203,5 +12203,11 @@
   "27d76249d09eb69f": "Granskningsguiden är klar",
   "faa3bb26abb39c93": "Granskningsguiden misslyckades",
   "b7df38b7d8792d78": "Öppna guiden",
-  "9e91e9a77b664e4e": "Kunde inte starta en granskningsguide"
+  "9e91e9a77b664e4e": "Kunde inte starta en granskningsguide",
+  "bcb1091975b32fd7": "Det gick inte att ta ut tråden ur sin överordnade tråd",
+  "b6cf030976d3b9a2": "Det gick inte att lägga tråden under en annan",
+  "942a5b9928b3d2d8": "Ny undertråd",
+  "828687d2e0f125d9": "Ta bort från överordnad",
+  "76fe50249102a5bd": "Lägg under",
+  "973e4d3791ea4b54": "Ligger under"
 }

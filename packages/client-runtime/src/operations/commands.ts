@@ -126,6 +126,10 @@ export interface ReorderActiveThreadInput extends ThreadCommandInput {
   readonly orderKey: string;
 }
 
+export interface NestThreadInput extends ThreadCommandInput {
+  readonly parentThreadId: ThreadId | null;
+}
+
 export interface SnoozeThreadInput extends ThreadCommandInput {
   readonly snoozedUntil: string;
 }
@@ -623,6 +627,17 @@ export const reorderActiveThread = Effect.fn("EnvironmentCommands.reorderActiveT
     commandId: yield* allocateCommandId(input),
     threadId: input.threadId,
     orderKey: input.orderKey,
+  });
+});
+
+export const nestThread = Effect.fn("EnvironmentCommands.nestThread")(function* (
+  input: NestThreadInput,
+) {
+  return yield* dispatch({
+    type: "thread.nest",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    parentThreadId: input.parentThreadId,
   });
 });
 

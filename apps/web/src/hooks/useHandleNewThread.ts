@@ -52,6 +52,7 @@ import { useThreadRouteTarget } from "./useThreadRouteTarget";
 import { readUnloadedThreadCount } from "../state/olderSettledShelf";
 import { resolveProjectDefaultProviderModelSelection } from "../providerInstances";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
+import { setChildThreadDraftParent } from "../childThreadDrafts";
 
 export const LAST_USED_PROJECT_STORAGE_KEY = "t3code:last-used-project:v1";
 export const lastUsedProjectKeySchema = Schema.NullOr(Schema.String);
@@ -92,17 +93,20 @@ export function createNewThreadHandler(router: AnyRouter) {
     return resolveThreadRouteTarget(currentRouteParams);
   };
 
-  return (
+  type NewThreadOptions = {
+    branch?: string | null;
+    worktreePath?: string | null;
+    envMode?: DraftThreadEnvMode;
+    startFromOrigin?: boolean;
+    replace?: boolean;
+    /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
+    prompt?: string;
+    /** The thread the new one nests under once its first message sends. */
+    nestUnder?: ThreadId;
+  };
+  const openDraft = (
     projectRef: ScopedProjectRef,
-    options?: {
-      branch?: string | null;
-      worktreePath?: string | null;
-      envMode?: DraftThreadEnvMode;
-      startFromOrigin?: boolean;
-      replace?: boolean;
-      /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
-      prompt?: string;
-    },
+    options?: NewThreadOptions,
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
     const projects = readProjects();
     const projectGroupingSettings = selectProjectGroupingSettings(getClientSettings());
@@ -457,6 +461,11 @@ export function createNewThreadHandler(router: AnyRouter) {
       });
       return { draftId, threadId };
     })();
+  };
+  return async (projectRef: ScopedProjectRef, options?: NewThreadOptions) => {
+    const opened = await openDraft(projectRef, options);
+    if (opened !== null) setChildThreadDraftParent(opened.threadId, options?.nestUnder ?? null);
+    return opened;
   };
 }
 

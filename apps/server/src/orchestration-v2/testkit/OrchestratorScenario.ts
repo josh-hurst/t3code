@@ -157,6 +157,7 @@ function commandThreadIds(command: OrchestrationV2Command): ReadonlyArray<Thread
     case "thread.unpin":
     case "thread.pin.reorder":
     case "thread.active.reorder":
+    case "thread.nest":
     case "thread.tag.set":
     case "thread.visit":
     case "thread.contents.regroup.request":

@@ -122,6 +122,7 @@ import { fileAttachmentCapabilityBlockReason } from "./composerAttachmentFiles";
 import { useLinkedEnvironments } from "../../state/peerLinks";
 import { readEnvironmentScope } from "../../state/session";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { takeChildThreadDraftParent } from "../../childThreadDrafts";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
   threadContextsOutsideEnvironment,
@@ -377,6 +378,7 @@ export function useComposerSend(input: ComposerSendInput) {
   const startThreadTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
+  const nestThread = useOrchestrationCommand(threadEnvironment.nest, { reportFailure: false });
   const uploadThreadFeedback = useOrchestrationCommand(threadEnvironment.uploadFeedback, {
     reportFailure: false,
   });
@@ -1530,6 +1532,24 @@ export function useComposerSend(input: ComposerSendInput) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        const nestUnder = isLocalDraftThread
+          ? takeChildThreadDraftParent(threadIdForSend)
+          : undefined;
+        if (nestUnder !== undefined) {
+          void nestThread({
+            environmentId,
+            input: { threadId: threadIdForSend, parentThreadId: nestUnder },
+          }).then((result) => {
+            if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: m(msg("Could not nest the thread")),
+                description: thrownErrorMessage(squashAtomCommandFailure(result), m) ?? undefined,
+              }),
+            );
+          });
+        }
         if (checkoutPullRequestUrl) {
           linkCheckoutPullRequest(
             scopeThreadRef(environmentId, threadIdForSend),

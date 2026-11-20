@@ -196,6 +196,8 @@ export interface EnvironmentThreadShell {
   readonly autoSettlePlan?: import("@t3tools/contracts").OrchestrationV2AutoSettlePlan | null;
   readonly pinOrderKey: string | null;
   readonly activeOrderKey: string | null;
+  /** The thread this one is nested under; settling that thread settles this one too. */
+  readonly nestedUnder?: import("@t3tools/contracts").ThreadId | null;
   readonly pullRequests: ReadonlyArray<import("@t3tools/contracts").ThreadPullRequestLink>;
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null;
   readonly branchPullRequest?: ThreadLinkedPullRequest | null;
@@ -358,6 +360,7 @@ export function presentThreadShell(
     autoSettlePlan: thread.autoSettlePlan ?? null,
     pinOrderKey: thread.pinOrderKey ?? null,
     activeOrderKey: thread.activeOrderKey ?? null,
+    ...(thread.nestedUnder ? { nestedUnder: thread.nestedUnder } : {}),
     ...(thread.lastVisitedAt === undefined
       ? {}
       : { lastVisitedAt: nullableIso(thread.lastVisitedAt) }),

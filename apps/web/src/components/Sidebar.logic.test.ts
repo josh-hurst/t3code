@@ -41,6 +41,9 @@ import {
   resolveSidebarVisibleProjectKeys,
   sidebarThreadNeedsYou,
   createOpenThreadPlacementHold,
+  isSidebarRowWithin,
+  nestSidebarRows,
+  rehomeSidebarRowLabels,
 } from "./Sidebar.logic";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
@@ -367,6 +370,55 @@ function makeLatestRun(overrides?: {
       overrides?.completedAt !== undefined ? overrides.completedAt : "2026-03-09T10:05:00.000Z",
   };
 }
+
+describe("nested rows", () => {
+  // Each row is "key" or "key<parent".
+  const nest = (rows: readonly string[]) => {
+    const keyOf = (row: string) => row.split("<")[0]!;
+    const nested = nestSidebarRows(rows, keyOf, (row) => row.split("<")[1] ?? null);
+    return { keys: nested.rows.map(keyOf), depths: Object.fromEntries(nested.depthByKey) };
+  };
+
+  it("moves children under a parent in the same list and keeps the rest in place", () => {
+    expect(nest(["a", "c<b", "b", "d<c", "e<elsewhere", "f<b"])).toEqual({
+      keys: ["a", "b", "c", "d", "f", "e"],
+      depths: { c: 1, d: 2, f: 1 },
+    });
+  });
+
+  it("keeps a stale loop listed, unnested", () => {
+    expect(nest(["x<y", "y<x", "z"])).toEqual({ keys: ["z", "x", "y"], depths: {} });
+  });
+
+  it("moves a group label off an indented row to the next row of its group", () => {
+    const labels = new Map([
+      ["c1", "Today"],
+      ["c2", "Earlier"],
+      ["r5", "Older"],
+    ]);
+    const depths = new Map([
+      ["c1", 1],
+      ["c2", 1],
+      ["c4", 1],
+    ]);
+    // c1's group has r1; c2's group has only indented rows before the next label.
+    const keys = ["c1", "r1", "c2", "c4", "r5"];
+    expect(Object.fromEntries(rehomeSidebarRowLabels(keys, depths, labels))).toEqual({
+      r1: "Today",
+      r5: "Older",
+    });
+  });
+
+  it("finds a thread nested at any depth so a drop cannot make a loop", () => {
+    const parents = new Map([
+      ["c", "b"],
+      ["b", "a"],
+    ]);
+    const parentOf = (key: string) => parents.get(key) ?? null;
+    expect(isSidebarRowWithin("c", "a", parentOf)).toBe(true);
+    expect(isSidebarRowWithin("a", "c", parentOf)).toBe(false);
+  });
+});
 
 describe("orderItemsByPreferredIds", () => {
   it("resolves legacy preference aliases without materializing project state", () => {

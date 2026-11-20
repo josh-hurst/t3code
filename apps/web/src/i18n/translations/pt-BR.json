@@ -12195,5 +12195,11 @@
   "27d76249d09eb69f": "Guia de revisão pronto",
   "faa3bb26abb39c93": "O guia de revisão falhou",
   "b7df38b7d8792d78": "Abrir guia",
-  "9e91e9a77b664e4e": "Não foi possível iniciar um guia de revisão"
+  "9e91e9a77b664e4e": "Não foi possível iniciar um guia de revisão",
+  "bcb1091975b32fd7": "Não foi possível tirar a conversa da conversa principal",
+  "b6cf030976d3b9a2": "Não foi possível aninhar a conversa",
+  "942a5b9928b3d2d8": "Nova conversa filha",
+  "828687d2e0f125d9": "Remover da conversa principal",
+  "76fe50249102a5bd": "Aninhar",
+  "973e4d3791ea4b54": "Aninhada em"
 }

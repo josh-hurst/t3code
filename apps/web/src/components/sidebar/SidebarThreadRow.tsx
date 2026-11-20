@@ -52,6 +52,7 @@ import {
   CircleDashedIcon,
   CircleDotDashedIcon,
   BellDotIcon,
+  CornerDownRightIcon,
   ClockIcon,
   GitBranchIcon,
   MessageCircleQuestionIcon,
@@ -691,6 +692,12 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
       <T>Wake</T>
     </>
   ),
+  nest: (
+    <>
+      <CornerDownRightIcon aria-hidden className="size-3" />
+      <T>Nest</T>
+    </>
+  ),
 };
 
 const TOP_STATUS_ICONS = {
@@ -755,6 +762,12 @@ type SidebarThreadRowProps = {
   groupDivider?: boolean;
   // The project's name as text on a slim row, or null where the list already says it.
   projectNameOnRow?: string | null;
+  // How many levels this row sits under a parent drawn above it.
+  nestDepth?: number;
+  // The parent's title, for a nested thread drawn away from its parent.
+  nestedUnderTitle?: string | null;
+  // A dragged thread will nest under this row when dropped.
+  isNestTarget?: boolean;
   // Drawn at the end of the Needs you panel's label, on the panel's first row.
   panelLabelAction?: ReactNode;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
@@ -1256,16 +1269,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     shouldRecede &&
       (status === "preparing" || status === "working") &&
       "opacity-70 transition-opacity hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
-    isFileDragOver && "ring-1 ring-inset ring-primary/70",
+    (isFileDragOver || props.isNestTarget) && "ring-1 ring-inset ring-primary/70",
     isFileDragOver && !props.isActive && !isSelected && "bg-sidebar-row-hover",
     props.sortable?.isDragging &&
       "bg-sidebar bg-linear-to-b from-sidebar-row-active to-sidebar-row-active text-sidebar-foreground opacity-100 shadow-lg",
   );
   const sortable = props.sortable;
+  const nestIndent = Math.min(props.nestDepth ?? 0, 3) * 12;
+  const indentStyle = nestIndent > 0 ? { paddingInlineStart: nestIndent } : undefined;
   const sortableRootProps = sortable
     ? {
         ref: sortable.setNodeRef,
         style: {
+          ...indentStyle,
           transform: CSS.Translate.toString(sortable.transform),
           transition: sortable.transition,
           // A zero-height boundary also makes dnd-kit scale the source to
@@ -1277,7 +1293,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         },
         ...sortable.listeners,
       }
-    : {};
+    : { style: indentStyle };
   const destinationVerb = sortable?.isDragging
     ? props.dropVerb
     : props.sweepAction === "unsnooze"
@@ -1599,6 +1615,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         {props.panelLabelAction}
       </div>
     ) : null;
+  const nestedUnderLabel = props.nestedUnderTitle ? (
+    <div className="flex h-5 items-center gap-1 px-2.5 text-2xs text-sidebar-muted-foreground/80">
+      <CornerDownRightIcon aria-hidden className="size-3 shrink-0" />
+      <span className="sr-only">
+        <T>Nested under</T>
+      </span>
+      <span className="min-w-0 truncate">{props.nestedUnderTitle}</span>
+    </div>
+  ) : null;
 
   if (props.tide) {
     const isCardRow = variant === "card";
@@ -1857,6 +1882,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             {props.groupLabel}
           </div>
         ) : null}
+        {nestedUnderLabel}
         <Tooltip disabled={snoozeMenuOpen || sortable?.isDragging}>
           <TooltipTrigger
             render={
@@ -1945,6 +1971,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         )}
       >
         {panelLabel}
+        {nestedUnderLabel}
         <Tooltip disabled={isRenaming || sortable?.isDragging}>
           <TooltipTrigger
             render={
@@ -2152,6 +2179,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       )}
     >
       {panelLabel}
+      {nestedUnderLabel}
       <Tooltip disabled={isRenaming || snoozeMenuOpen || sortable?.isDragging}>
         <TooltipTrigger
           render={

@@ -657,6 +657,11 @@ export interface ProjectionStoreV2Shape {
   readonly listActiveThreads: (
     projectId?: ProjectId,
   ) => Effect.Effect<ReadonlyArray<ActiveThreadListEntry>, ProjectionStoreV2Error>;
+  /** Every active thread nested under another, with the thread it is nested under. */
+  readonly listNestedThreads: () => Effect.Effect<
+    ReadonlyArray<{ readonly threadId: ThreadId; readonly nestedUnder: ThreadId }>,
+    ProjectionStoreV2Error
+  >;
   /** Older settled thread ids below a cursor, newest settle first, and per-project counts. */
   readonly listOlderSettledThreads: (
     query: OlderSettledThreadsQuery,
@@ -1092,6 +1097,7 @@ export function applyToProjection(
       };
     // Reordering, PR refreshes and follow-ups preserve the orchestrator's activity timestamp.
     case "thread.active-reordered":
+    case "thread.nested":
     case "thread.tags-updated":
     case "thread.pull-request-synced":
     case "thread.follow-up-updated":
@@ -2158,6 +2164,7 @@ export function threadShellFromProjection(
     autoSettleDisabledAt: projection.thread.autoSettleDisabledAt ?? null,
     autoSettlePlan: projection.thread.autoSettlePlan ?? null,
     pinOrderKey: projection.thread.pinOrderKey ?? null,
+    ...(projection.thread.nestedUnder ? { nestedUnder: projection.thread.nestedUnder } : {}),
     ...(projection.thread.tags?.length ? { tags: projection.thread.tags } : {}),
     lastVisitedAt: projection.thread.lastVisitedAt,
     opens: projection.thread.opens ?? null,
@@ -2467,6 +2474,7 @@ function shellFromState(input: {
     autoSettleDisabledAt: input.state.thread.autoSettleDisabledAt ?? null,
     autoSettlePlan: input.state.thread.autoSettlePlan ?? null,
     pinOrderKey: input.state.thread.pinOrderKey ?? null,
+    ...(input.state.thread.nestedUnder ? { nestedUnder: input.state.thread.nestedUnder } : {}),
     ...(input.state.thread.tags?.length ? { tags: input.state.thread.tags } : {}),
     lastVisitedAt: input.state.thread.lastVisitedAt,
     opens: input.state.thread.opens ?? null,
@@ -2677,6 +2685,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             case "thread.unpinned":
             case "thread.pin-reordered":
             case "thread.active-reordered":
+            case "thread.nested":
             case "thread.tags-updated":
             case "thread.visited":
             case "thread.marked-unread":
@@ -3530,6 +3539,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             event.type !== "thread.unpinned" &&
             event.type !== "thread.pin-reordered" &&
             event.type !== "thread.active-reordered" &&
+            event.type !== "thread.nested" &&
             event.type !== "thread.tags-updated" &&
             event.type !== "thread.visited" &&
             event.type !== "thread.visit-recorded" &&
@@ -9868,6 +9878,23 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       }));
     }, Effect.mapError(shellSnapshotReadError));
 
+    const listNestedThreads = Effect.fn("ProjectionStore.listNestedThreads")(function* () {
+      const rows = yield* sql<{ readonly thread_id: string; readonly nested_under: string }>`
+        SELECT thread_id, nested_under FROM (
+          SELECT t.thread_id,
+            CASE WHEN json_valid(t.payload_json)
+              THEN json_extract(t.payload_json, '$.nestedUnder') END AS nested_under
+          FROM orchestration_v2_projection_threads t
+          WHERE t.deleted_at IS NULL AND t.archived_at IS NULL
+        )
+        WHERE nested_under IS NOT NULL
+      `;
+      return rows.map((row) => ({
+        threadId: ThreadId.make(row.thread_id),
+        nestedUnder: ThreadId.make(row.nested_under),
+      }));
+    }, Effect.mapError(shellSnapshotReadError));
+
     const getThreadLinkMetadata = Effect.fn("ProjectionStore.getThreadLinkMetadata")(function* (
       threadIds: ReadonlyArray<ThreadId>,
     ) {
@@ -10060,6 +10087,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       countThreads: readOnReader(countThreads),
       listActiveShellIndex: readOnReader(listActiveShellIndex),
       listActiveThreads: readOnReader(listActiveThreads),
+      listNestedThreads: readOnReader(listNestedThreads),
       readShellSnapshot: readOnReader(readShellSnapshot),
       listOlderSettledThreads: readOnReader(listOlderSettledThreads),
       getThreadShell: readOnReader(getThreadShell),

@@ -687,6 +687,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.unpin":
     case "thread.pin.reorder":
     case "thread.active.reorder":
+    case "thread.nest":
     case "thread.tag.set":
     case "thread.visit":
     case "thread.card.record":
@@ -1960,6 +1961,59 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     (effect, threadId) =>
       effect.pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause }))),
   );
+
+  /** Threads nested under this one at any depth, parents before their children. */
+  const nestedDescendantIds = Effect.fn("Orchestrator.nestedDescendantIds")(
+    function* (threadId: ThreadId) {
+      const childrenOf = new Map<ThreadId, Array<ThreadId>>();
+      for (const link of yield* projectionStore.listNestedThreads()) {
+        childrenOf.set(link.nestedUnder, [
+          ...(childrenOf.get(link.nestedUnder) ?? []),
+          link.threadId,
+        ]);
+      }
+      const found: Array<ThreadId> = [];
+      const seen = new Set([threadId]);
+      const queue = [threadId];
+      for (let parent = queue.shift(); parent !== undefined; parent = queue.shift()) {
+        for (const child of childrenOf.get(parent) ?? []) {
+          if (seen.has(child)) continue;
+          seen.add(child);
+          found.push(child);
+          queue.push(child);
+        }
+      }
+      return found;
+    },
+    (effect, threadId) =>
+      effect.pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause }))),
+  );
+
+  /** Why `threadId` cannot nest under `parentThreadId`, or null when it can. */
+  const nestRefusal = Effect.fn("Orchestrator.nestRefusal")(function* (
+    threadId: ThreadId,
+    parentThreadId: ThreadId,
+  ) {
+    if (parentThreadId === threadId) return "A thread cannot be nested under itself.";
+    const parent = yield* findThread(parentThreadId);
+    if (parent === null || parent.deletedAt !== null) {
+      return `Thread ${parentThreadId} does not exist.`;
+    }
+    if (!isListedThreadLineage(parent.lineage)) {
+      return `Thread ${parentThreadId} is not in the thread list.`;
+    }
+    // A loop would leave no thread on top to settle the rest.
+    const seen = new Set([parentThreadId]);
+    let ancestor = parent.nestedUnder ?? null;
+    while (ancestor !== null && !seen.has(ancestor)) {
+      if (ancestor === threadId) {
+        return "A thread cannot be nested under a thread nested under it.";
+      }
+      seen.add(ancestor);
+      ancestor = (yield* findThread(ancestor))?.nestedUnder ?? null;
+    }
+    return null;
+  });
 
   const getProjectionWithPendingEvents =
     /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
@@ -4043,7 +4097,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         threadId: command.threadId,
       });
     }
-
     const now = yield* DateTime.now;
     const emitEvent = emit(events, command);
     const thread: OrchestrationV2AppThread = {
@@ -4934,6 +4987,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           | "thread.pin.reorder"
           | "thread.tag.set"
           | "thread.active.reorder"
+          | "thread.nest"
           | "thread.mark-unread"
           | "thread.metadata.update"
           | "thread.pull-request.link"
@@ -5096,6 +5150,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         command.type === "thread.unpin" ||
         command.type === "thread.pin.reorder" ||
         command.type === "thread.active.reorder" ||
+        command.type === "thread.nest" ||
         command.type === "thread.pull-request.sync") &&
       thread.archivedAt !== null
     ) {
@@ -5104,6 +5159,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         commandType: command.type,
         cause: `Thread ${command.threadId} is archived.`,
       });
+    }
+    if (command.type === "thread.nest" && command.parentThreadId !== null) {
+      const refusal = isListedThreadLineage(thread.lineage)
+        ? yield* nestRefusal(command.threadId, command.parentThreadId)
+        : `Thread ${command.threadId} is not in the thread list.`;
+      if (refusal !== null) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: refusal,
+        });
+      }
     }
     // Reject reorder after unpin so a raced request cannot restore a cleared pin.
     if (command.type === "thread.pin.reorder" && thread.pinnedAt == null) {
@@ -5522,6 +5589,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             updatedAt: alreadyAwake ? thread.updatedAt : now,
           };
         }
+        // Nesting changes only what a settle takes along, so it is not activity.
+        case "thread.nest":
+          return { ...thread, nestedUnder: command.parentThreadId };
         // A forecast is not activity: updatedAt stays, as it does for a visit or a card.
         case "thread.auto-settle.plan":
           return { ...thread, autoSettlePlan: command.plan };
@@ -6058,6 +6128,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return "thread.pin-reordered" as const;
         case "thread.active.reorder":
           return "thread.active-reordered" as const;
+        case "thread.nest":
+          return "thread.nested" as const;
         case "thread.tag.set":
           return "thread.tags-updated" as const;
         case "thread.mark-unread":
@@ -16084,9 +16156,68 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }),
     );
 
+  /**
+   * A settle settles the threads nested under it, and its undo un-settles the ones it settled,
+   * which carry its settle time. A nested thread that cannot settle now stays as it is.
+   */
+  const cascadeNestedSettlement = Effect.fn("Orchestrator.cascadeNestedSettlement")(function* (
+    command: Extract<
+      OrchestrationV2ServerCommand,
+      { readonly type: "thread.settle" | "thread.unsettle" }
+    >,
+    parentSettledAt: DateTime.Utc | null,
+    nestedIds: ReadonlyArray<ThreadId>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    if (nestedIds.length === 0) return;
+    if (command.type === "thread.unsettle" && command.restoreUnsettledAt === undefined) return;
+    const settledAt =
+      command.type === "thread.settle"
+        ? (yield* Ref.get(events))
+            .filter((event) => event.threadId === command.threadId)
+            .flatMap((event) => (event.type === "thread.settled" ? [event.payload.settledAt] : []))
+            .at(-1)
+        : parentSettledAt;
+    if (settledAt == null) return;
+    for (const threadId of nestedIds) {
+      const nested = yield* findThread(threadId);
+      if (nested === null || nested.deletedAt !== null || nested.archivedAt !== null) continue;
+      const isSettled = nested.settledOverride === "settled";
+      const follows =
+        command.type === "thread.settle"
+          ? !isSettled
+          : isSettled &&
+            nested.settledAt !== null &&
+            DateTime.toEpochMillis(nested.settledAt) === DateTime.toEpochMillis(settledAt);
+      if (!follows) continue;
+      const commandId = CommandId.make(`${command.commandId}:nested:${threadId}`);
+      const eventsBefore = yield* Ref.get(events);
+      const effectsBefore = yield* Ref.get(effects);
+      yield* dispatchThreadMutation(
+        command.type === "thread.settle"
+          ? { type: "thread.settle", commandId, threadId, settledAt }
+          : {
+              type: "thread.unsettle",
+              commandId,
+              threadId,
+              reason: "user",
+              restoreUnsettledAt: null,
+            },
+        events,
+        effects,
+      ).pipe(
+        Effect.catchTags({
+          OrchestratorDispatchError: () =>
+            Ref.set(events, eventsBefore).pipe(Effect.andThen(Ref.set(effects, effectsBefore))),
+        }),
+      );
+    }
+  });
+
   const dispatchOnce = Effect.fn("orchestrationV2.dispatch.once")(function* (
     command: OrchestrationV2ServerCommand,
-    sideChatIds: ReadonlyArray<ThreadId>,
+    cascadeIds: ReadonlyArray<ThreadId>,
   ): Effect.fn.Return<
     {
       readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
@@ -16169,16 +16300,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             cause: `Thread ${command.threadId} changed before automatic settlement.`,
           });
         }
-        yield* dispatchThreadMutation(
-          {
-            type: "thread.settle",
-            commandId: command.commandId,
-            threadId: command.threadId,
-            ...(command.settledAt === undefined ? {} : { settledAt: command.settledAt }),
-          },
-          events,
-          effects,
-        );
+        const settle = {
+          type: "thread.settle",
+          commandId: command.commandId,
+          threadId: command.threadId,
+          ...(command.settledAt === undefined ? {} : { settledAt: command.settledAt }),
+        } as const;
+        yield* dispatchThreadMutation(settle, events, effects);
+        yield* cascadeNestedSettlement(settle, null, cascadeIds, events, effects);
         break;
       }
       case "thread.delete": {
@@ -16228,7 +16357,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         // The dispatch wrapper holds each side chat's lock, so none can commit after this plan.
         const plans = [
           yield* planDeletion(command),
-          ...(yield* Effect.forEach(sideChatIds, (threadId) =>
+          ...(yield* Effect.forEach(cascadeIds, (threadId) =>
             planDeletion({
               ...command,
               commandId: CommandId.make(`${command.commandId}:side-chat:${threadId}`),
@@ -16246,7 +16375,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         const parentArchivedAt = (yield* findThread(command.threadId))?.archivedAt ?? null;
         yield* dispatchThreadMutation(command, events, effects);
         // Unarchive restores the side chats this parent's archive took, not ones archived before it.
-        for (const threadId of sideChatIds) {
+        for (const threadId of cascadeIds) {
           const sideChatArchivedAt = (yield* findThread(threadId))?.archivedAt ?? null;
           const follows =
             command.type === "thread.archive"
@@ -16276,7 +16405,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       }
       case "thread.settle":
-      case "thread.unsettle":
+      case "thread.unsettle": {
+        // An undo finds the nested threads by the settle time it is about to clear.
+        const parentSettledAt =
+          command.type === "thread.unsettle" && cascadeIds.length > 0
+            ? ((yield* findThread(command.threadId))?.settledAt ?? null)
+            : null;
+        yield* dispatchThreadMutation(command, events, effects);
+        yield* cascadeNestedSettlement(command, parentSettledAt, cascadeIds, events, effects);
+        break;
+      }
+      case "thread.nest":
       case "thread.snooze":
       case "thread.unsnooze":
       case "thread.auto-settle.set":
@@ -16620,10 +16759,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     } satisfies OrchestratorV2DispatchResult;
   });
 
-  /** `sideChatIds` are the live side chats a delete, archive, or unarchive cascades to, read under their locks. */
+  /**
+   * `cascadeIds` are the threads the command also changes, read before and held under their locks:
+   * the live side chats of a delete, archive, or unarchive, or the threads nested under a settle.
+   */
   const dispatchWithReceiptEffect = Effect.fn("orchestrationV2.dispatch.withReceipt")(function* (
     command: OrchestrationV2ServerCommand,
-    sideChatIds: ReadonlyArray<ThreadId> = [],
+    cascadeIds: ReadonlyArray<ThreadId> = [],
     cancelledTask?: OrchestrationV2Subagent,
   ): Effect.fn.Return<OrchestratorV2DispatchResult, OrchestratorV2Error> {
     yield* Effect.annotateCurrentSpan({
@@ -16677,7 +16819,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
     }
 
-    const plan = yield* dispatchOnce(command, sideChatIds).pipe(
+    const plan = yield* dispatchOnce(command, cascadeIds).pipe(
       Effect.tap((planned) => refuseAboveRuntimeModeCeiling(command, planned.events)),
       Effect.filterOrFail(
         (planned) =>
@@ -16964,6 +17106,20 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return yield* command.type === "thread.delete"
         ? threadDispatch.withDeletionLock(cascade)
         : cascade;
+    }
+    if (
+      command.type === "thread.settle" ||
+      command.type === "thread.auto-settle" ||
+      (command.type === "thread.unsettle" && command.restoreUnsettledAt !== undefined)
+    ) {
+      const nestedIds = yield* nestedDescendantIds(command.threadId);
+      // One order for every cascade, so two that share threads cannot each hold what the other needs.
+      return yield* [command.threadId, ...nestedIds]
+        .toSorted()
+        .reduceRight(
+          (locked, threadId) => threadDispatch.withLock(threadId, locked),
+          dispatchWithReceiptEffect(command, nestedIds),
+        );
     }
     // Taken before the lineage read, so a message whose read yields keeps its
     // place ahead of later messages to the same thread.

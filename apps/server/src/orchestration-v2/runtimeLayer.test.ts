@@ -3908,6 +3908,125 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect(
+    "settling a thread settles the threads nested under it, and its undo restores them",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const projectId = ProjectId.make("runtime-layer-nest-project");
+        yield* seedProject({
+          projectId,
+          title: "Nest project",
+          workspaceRoot: "/workspace/nest",
+          defaultModelSelection: null,
+          createdAt: "2026-09-07T00:00:00.000Z",
+        });
+        const create = (name: string) =>
+          orchestrator.dispatch({
+            type: "thread.create",
+            createdBy: "user",
+            creationSource: "web",
+            commandId: CommandId.make(`runtime-layer-nest-${name}-create`),
+            threadId: ThreadId.make(`runtime-layer-nest-${name}`),
+            projectId,
+            title: name,
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+          });
+        const parent = ThreadId.make("runtime-layer-nest-parent");
+        const child = ThreadId.make("runtime-layer-nest-child");
+        const grandchild = ThreadId.make("runtime-layer-nest-grandchild");
+        const busy = ThreadId.make("runtime-layer-nest-busy");
+        yield* create("parent");
+        yield* create("child");
+        yield* create("grandchild");
+        yield* create("busy");
+        const nest = (name: string, threadId: ThreadId, parentThreadId: ThreadId | null) =>
+          orchestrator.dispatch({
+            type: "thread.nest",
+            commandId: CommandId.make(`runtime-layer-nest-${name}`),
+            threadId,
+            parentThreadId,
+          });
+        yield* nest("child-under-parent", child, parent);
+        yield* nest("grandchild-under-child", grandchild, child);
+        yield* nest("busy-under-parent", busy, parent);
+        for (const [name, threadId, parentThreadId] of [
+          ["self", parent, parent],
+          ["cycle", parent, grandchild],
+          ["missing", child, ThreadId.make("runtime-layer-nest-missing")],
+        ] as const) {
+          const refused = yield* nest(name, threadId, parentThreadId).pipe(Effect.flip);
+          assert.instanceOf(refused, Orchestrator.OrchestratorDispatchError, name);
+        }
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make("runtime-layer-nest-busy-message"),
+          threadId: busy,
+          messageId: MessageId.make("runtime-layer-nest-busy-message"),
+          text: "Keep working.",
+          attachments: [],
+          dispatchMode: { type: "start_immediately" },
+        });
+
+        const shell = yield* orchestrator.getShellSnapshot();
+        assert.equal(shell.threads.find((thread) => thread.id === child)?.nestedUnder, parent);
+        const settledIds = (
+          threads: ReadonlyArray<{
+            readonly id: ThreadId;
+            readonly settledOverride: string | null;
+          }>,
+        ) =>
+          threads
+            .filter((thread) => thread.settledOverride === "settled")
+            .map((thread) => thread.id)
+            .toSorted();
+        const settledNow = Effect.map(orchestrator.getShellSnapshot(), (snapshot) =>
+          settledIds(snapshot.threads),
+        );
+
+        // Nesting is not activity, so the inactivity settle still applies, and it cascades too.
+        yield* orchestrator.dispatch({
+          type: "thread.auto-settle",
+          commandId: CommandId.make("runtime-layer-nest-auto-settle"),
+          threadId: parent,
+          snapshotAt: (yield* orchestrator.getThreadProjection(parent)).thread.updatedAt,
+        });
+        // The busy thread cannot settle while it works, so it stays and the parent still settles.
+        assert.deepEqual(yield* settledNow, [child, grandchild, parent].toSorted());
+
+        yield* orchestrator.dispatch({
+          type: "thread.unsettle",
+          commandId: CommandId.make("runtime-layer-nest-undo"),
+          threadId: parent,
+          reason: "user",
+          restoreUnsettledAt: null,
+        });
+        assert.deepEqual(yield* settledNow, []);
+
+        yield* nest("grandchild-out", grandchild, null);
+        yield* orchestrator.dispatch({
+          type: "thread.settle",
+          commandId: CommandId.make("runtime-layer-nest-settle"),
+          threadId: parent,
+        });
+        assert.deepEqual(yield* settledNow, [child, parent].toSorted());
+        // A plain un-settle is its own choice and leaves the nested threads settled.
+        yield* orchestrator.dispatch({
+          type: "thread.unsettle",
+          commandId: CommandId.make("runtime-layer-nest-unsettle"),
+          threadId: parent,
+          reason: "user",
+        });
+        assert.deepEqual(yield* settledNow, [child]);
+      }),
+  );
+
   it.effect("keeps the branch pull request when linking another pull request", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

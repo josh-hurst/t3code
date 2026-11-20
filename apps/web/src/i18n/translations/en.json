@@ -12205,5 +12205,11 @@
   "27d76249d09eb69f": "Review guide ready",
   "faa3bb26abb39c93": "Review guide failed",
   "b7df38b7d8792d78": "Open guide",
-  "9e91e9a77b664e4e": "Could not start a review guide"
+  "9e91e9a77b664e4e": "Could not start a review guide",
+  "bcb1091975b32fd7": "Could not take the thread out of its parent",
+  "b6cf030976d3b9a2": "Could not nest the thread",
+  "942a5b9928b3d2d8": "New child thread",
+  "828687d2e0f125d9": "Remove from parent",
+  "76fe50249102a5bd": "Nest",
+  "973e4d3791ea4b54": "Nested under"
 }

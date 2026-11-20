@@ -578,6 +578,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   autoSettlePlan: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePlan)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  /** The thread the user nested this one under; settling that thread settles this one too. */
+  nestedUnder: Schema.optional(Schema.NullOr(ThreadId)),
   /** Absent on threads written before tags existed; read as empty. */
   tags: Schema.optional(StoredThreadTags),
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtc).pipe(
@@ -2125,6 +2127,7 @@ export const OrchestrationV2DomainEvent = Schema.Union([
       "thread.unpinned",
       "thread.pin-reordered",
       "thread.active-reordered",
+      "thread.nested",
       "thread.tags-updated",
       "thread.visited",
       "thread.marked-unread",
@@ -2407,6 +2410,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   autoSettlePlan: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePlan)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  nestedUnder: Schema.optional(Schema.NullOr(ThreadId)),
   /** Absent on threads written before tags existed; read as empty. */
   tags: Schema.optional(StoredThreadTags),
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -3096,6 +3100,7 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
       "thread.unpinned",
       "thread.pin-reordered",
       "thread.active-reordered",
+      "thread.nested",
       "thread.tags-updated",
       "thread.visited",
       "thread.marked-unread",
@@ -3474,6 +3479,13 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     orderKey: TrimmedNonEmptyString,
+  }),
+  /** Nests the thread under another, whose settle then settles it too; null takes it out. */
+  Schema.Struct({
+    type: Schema.Literal("thread.nest"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    parentThreadId: Schema.NullOr(ThreadId),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.visit"),

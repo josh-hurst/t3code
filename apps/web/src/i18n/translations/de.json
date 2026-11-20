@@ -12196,5 +12196,11 @@
   "27d76249d09eb69f": "Review-Leitfaden bereit",
   "faa3bb26abb39c93": "Review-Leitfaden fehlgeschlagen",
   "b7df38b7d8792d78": "Leitfaden öffnen",
-  "9e91e9a77b664e4e": "Review-Leitfaden konnte nicht gestartet werden"
+  "9e91e9a77b664e4e": "Review-Leitfaden konnte nicht gestartet werden",
+  "bcb1091975b32fd7": "Thread konnte nicht aus seinem übergeordneten Thread gelöst werden",
+  "b6cf030976d3b9a2": "Thread konnte nicht untergeordnet werden",
+  "942a5b9928b3d2d8": "Neuer untergeordneter Thread",
+  "828687d2e0f125d9": "Aus übergeordnetem Thread lösen",
+  "76fe50249102a5bd": "Unterordnen",
+  "973e4d3791ea4b54": "Untergeordnet unter"
 }

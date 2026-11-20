@@ -12196,5 +12196,11 @@
   "27d76249d09eb69f": "Guide de revue prêt",
   "faa3bb26abb39c93": "Échec du guide de revue",
   "b7df38b7d8792d78": "Ouvrir le guide",
-  "9e91e9a77b664e4e": "Impossible de démarrer un guide de revue"
+  "9e91e9a77b664e4e": "Impossible de démarrer un guide de revue",
+  "bcb1091975b32fd7": "Impossible de retirer le fil de son fil parent",
+  "b6cf030976d3b9a2": "Impossible d’imbriquer le fil",
+  "942a5b9928b3d2d8": "Nouveau fil enfant",
+  "828687d2e0f125d9": "Retirer du fil parent",
+  "76fe50249102a5bd": "Imbriquer",
+  "973e4d3791ea4b54": "Imbriqué sous"
 }

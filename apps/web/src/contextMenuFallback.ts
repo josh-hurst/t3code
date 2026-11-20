@@ -18,6 +18,10 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "circle", attrs: { cx: "12", cy: "14", r: "8" } },
   ],
   "chevron-right": [{ tag: "path", attrs: { d: "m9 19 7-7-7-7" } }],
+  "corner-up-left": [
+    { tag: "path", attrs: { d: "M20 20v-7a4 4 0 0 0-4-4H4" } },
+    { tag: "path", attrs: { d: "M9 14 4 9l5-5" } },
+  ],
   "circle-check": [
     { tag: "circle", attrs: { cx: "12", cy: "12", r: "10" } },
     { tag: "path", attrs: { d: "m9 12 2 2 4-4" } },

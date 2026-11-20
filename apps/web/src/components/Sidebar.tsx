@@ -215,6 +215,10 @@ import {
   resolveSidebarSweepKeys,
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
+  isSidebarRowWithin,
+  nestSidebarRows,
+  rehomeSidebarRowLabels,
+  sidebarThreadParentKey,
   resolveSidebarThreadSection,
   resolveSidebarReorderableThreadKeys,
   searchSidebarThreads,
@@ -568,7 +572,15 @@ function useSidebarThreads(input: {
     clockKey: `${nowMinute}:${snoozeWakeClock}:${inboxReturnsVersion}`,
   });
 
-  const { pinnedThreads, workingThreads, snoozedThreads, settledThreads } = partition;
+  const { workingThreads, snoozedThreads, settledThreads } = partition;
+  // Rows drawn under their parent in the same list, and how deep.
+  const nestDepthByKey = new Map<string, number>();
+  const nest = (list: readonly EnvironmentThreadShell[]) => {
+    const nested = nestSidebarRows(list, threadShellKey, sidebarThreadParentKey);
+    for (const [key, depth] of nested.depthByKey) nestDepthByKey.set(key, depth);
+    return nested.rows;
+  };
+  const pinnedThreads = nest(partition.pinnedThreads);
   // Needs you takes threads from the active list only: pinned threads keep their place and
   // working ones their shelf. Without project folders, In each project falls back to the top.
   const needsYouInFolders = needsYouPlacement === "project" && folderGroups !== null;
@@ -598,13 +610,26 @@ function useSidebarThreads(input: {
       routeKey: routeRowThreadKey,
       projectOf: groupProjectOf,
     });
-  const tideActive = tide ? arrangeTide(partition.activeThreads) : null;
+  const tideActive = (() => {
+    if (!tide) return null;
+    const arranged = arrangeTide(partition.activeThreads);
+    const visibleTrail = nest(arranged.visibleTrail);
+    const rehome = <Label,>(labels: ReadonlyMap<string, Label>) =>
+      rehomeSidebarRowLabels(arranged.visibleTrail.map(threadShellKey), nestDepthByKey, labels);
+    const divider = arranged.groupDividerKey;
+    return {
+      ...arranged,
+      needsYou: nest(arranged.needsYou),
+      visibleTrail,
+      groupLabelByKey: rehome(arranged.groupLabelByKey),
+      groupDividerKey:
+        divider === null ? null : ([...rehome(new Map([[divider, true]])).keys()][0] ?? null),
+    };
+  })();
   const activeThreads =
     tideActive !== null
       ? [...tideActive.needsYou, ...tideActive.trail]
-      : needsYouOnTop
-        ? liftNeedsYou(partition.activeThreads)
-        : partition.activeThreads;
+      : nest(needsYouOnTop ? liftNeedsYou(partition.activeThreads) : partition.activeThreads);
   const arrangeDraggedActive = (list: readonly EnvironmentThreadShell[]): DraggedActiveOrder => {
     if (!tide) {
       return {
@@ -615,11 +640,13 @@ function useSidebarThreads(input: {
       };
     }
     const arranged = arrangeTide(list);
+    const nestedKeys = (rows: readonly EnvironmentThreadShell[]) =>
+      nestSidebarRows(rows, threadShellKey, sidebarThreadParentKey).rows.map(threadShellKey);
     return {
       order: [...arranged.needsYou, ...arranged.trail].map(threadShellKey),
       zones: {
-        needsYou: arranged.needsYou.map(threadShellKey),
-        trail: arranged.visibleTrail.map(threadShellKey),
+        needsYou: nestedKeys(arranged.needsYou),
+        trail: nestedKeys(arranged.visibleTrail),
       },
     };
   };
@@ -657,7 +684,8 @@ function useSidebarThreads(input: {
   const tideHistory = tide
     ? arrangeTideHistory(listedSettledRows, { nowMs, projectOf: groupProjectOf })
     : null;
-  const renderedSettledThreads = tideHistory?.threads ?? listedSettledRows;
+  const unnestedSettledRows = tideHistory?.threads ?? listedSettledRows;
+  const renderedSettledThreads = nest(unnestedSettledRows);
   // A drag regroups the settled rows it projects the same way.
   const arrangeSettledKeys =
     tide && groupProjectOf !== null
@@ -671,14 +699,20 @@ function useSidebarThreads(input: {
       : undefined;
   const groupLabelByKey = new Map([
     ...(tideActive?.groupLabelByKey ?? []),
-    ...(tideHistory?.groupLabelByKey ?? []),
+    ...(tideHistory === null
+      ? []
+      : rehomeSidebarRowLabels(
+          unnestedSettledRows.map(threadShellKey),
+          nestDepthByKey,
+          tideHistory.groupLabelByKey,
+        )),
   ]);
-  const visibleSnoozedThreads = snoozedShelfExpanded
-    ? snoozedThreads
-    : routeThreadOnly(snoozedThreads, routeRowThreadKey);
-  const visibleWorkingThreads = workingShelfExpanded
-    ? workingThreads
-    : routeThreadOnly(workingThreads, routeRowThreadKey);
+  const visibleSnoozedThreads = nest(
+    snoozedShelfExpanded ? snoozedThreads : routeThreadOnly(snoozedThreads, routeRowThreadKey),
+  );
+  const visibleWorkingThreads = nest(
+    workingShelfExpanded ? workingThreads : routeThreadOnly(workingThreads, routeRowThreadKey),
+  );
   const projectFolders =
     folderGroups === null
       ? null
@@ -701,7 +735,7 @@ function useSidebarThreads(input: {
           return {
             group: folder.group,
             collapsed,
-            threads: collapsed ? threads.filter(staysVisible) : threads,
+            threads: nest(collapsed ? threads.filter(staysVisible) : threads),
             hiddenThreads: collapsed
               ? threads.filter((thread) => !staysVisible(thread))
               : EMPTY_THREADS,
@@ -736,8 +770,23 @@ function useSidebarThreads(input: {
   ] as const) {
     for (const thread of list) sectionByThreadKey.set(threadShellKey(thread), section);
   }
+  // A nested thread drawn away from its parent names it instead of indenting.
+  const nestedUnderTitleByKey = new Map<string, string>();
+  const detached = orderedThreads.filter(
+    (thread) => thread.nestedUnder && !nestDepthByKey.has(threadShellKey(thread)),
+  );
+  if (detached.length > 0) {
+    const byKey = new Map(threads.map((thread) => [threadShellKey(thread), thread] as const));
+    for (const thread of detached) {
+      const parent = byKey.get(sidebarThreadParentKey(thread) ?? "");
+      if (parent) nestedUnderTitleByKey.set(threadShellKey(thread), parent.title);
+    }
+  }
   return {
+    nestedUnderTitleByKey,
     ...partition,
+    pinnedThreads,
+    nestDepthByKey,
     activeThreads,
     // The Trail draws `visibleTrailThreads`; the rest of `trailThreads` sit under its expander.
     needsYouThreads: tideActive?.needsYou ?? EMPTY_THREADS,
@@ -1086,6 +1135,8 @@ function checkThreadOperations(
 }
 
 const SIDEBAR_DRAG_DISTANCE = 6;
+// How far right the pointer must move across a row to nest the dragged thread onto it.
+const SIDEBAR_NEST_SHIFT = 24;
 
 // dnd-kit's 20% edge zone at full speed runs the list away while the pointer rests near the bottom.
 const SIDEBAR_AUTO_SCROLL: AutoScrollOptions = { threshold: { x: 0, y: 0.05 }, acceleration: 3 };
@@ -1149,10 +1200,30 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     turnThreadIntoProject,
     reorderPinnedThread,
     reorderActiveThread,
+    nestThread,
     markThreadUnread,
     archiveThread,
     deleteThread,
   } = useThreadActions();
+  const supportsNesting = (environmentId: EnvironmentId) =>
+    serverConfigs.get(environmentId)?.environment.capabilities.threadNesting === true;
+  const runNest = (threadRef: ScopedThreadRef, parentThreadId: ThreadId | null) => {
+    void (async () => {
+      const result = await nestThread(threadRef, parentThreadId);
+      if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title:
+            parentThreadId === null
+              ? gt("Could not take the thread out of its parent")
+              : gt("Could not nest the thread"),
+          description:
+            thrownErrorMessage(squashAtomCommandFailure(result), m) ?? gt("An error occurred."),
+        }),
+      );
+    })();
+  };
   const laterActions = useThreadLaterActions();
   const attemptRecheck = useStableCallback((threadRef: ScopedThreadRef) => {
     void laterActions.recheckLater(threadRef);
@@ -1274,7 +1345,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     readonly activationY: number | null;
     readonly targetSection: SidebarSection | null;
     readonly contextDrag: boolean;
+    readonly nestTargetKey: string | null;
   } | null>(null);
+  // The row under the pointer and where the pointer entered it, read by the sensor's callbacks.
+  const nestHoverRef = useRef<{ readonly key: string; readonly x: number } | null>(null);
   const dragSensorRef = useRef<SidebarPointerSensor | null>(null);
   const contextDragKeyRef = useRef<string | null>(null);
   const dragScrollRef = useRef<{ readonly viewport: Element; readonly top: number } | null>(null);
@@ -1614,6 +1688,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     renderedSettledThreads,
     visibleSnoozedThreads,
     visibleWorkingThreads,
+    nestDepthByKey,
+    nestedUnderTitleByKey,
     orderedThreadKeys,
     threadByKey,
     settledThreadKeys,
@@ -2049,6 +2125,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const finishThreadDrag = (started: boolean) => {
     dragSensorRef.current = null;
     contextDragKeyRef.current = null;
+    nestHoverRef.current = null;
     dragScrollRef.current = null;
     endThreadContextDrag();
     if (started) {
@@ -2088,17 +2165,57 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const scroll = dragScrollRef.current;
     if (scroll && scroll.viewport.scrollTop !== scroll.top) scroll.viewport.scrollTop = scroll.top;
   };
+  // Nudged right while over another row, a dragged thread nests under it instead of moving.
+  // Measured from where the pointer entered that row, so a drag that drifts sideways still moves.
+  const nestTargetAt = (point: { x: number; y: number }) => {
+    const childKey = contextDragKeyRef.current;
+    const list = threadListRef.current;
+    if (childKey === null || list === null) return null;
+    // Sorting slides rows aside as a drag passes, so aim at where each row sits in the list.
+    const rowKey = [...list.querySelectorAll<HTMLElement>("[data-thread-item]:not([inert])")].find(
+      (row) => {
+        if (row.dataset.threadItem === childKey) return false;
+        const rect = row.getBoundingClientRect();
+        const slid = Number(
+          /translate3d\([^,]+,\s*(-?[\d.]+)px/.exec(row.style.transform)?.[1] ?? 0,
+        );
+        return point.y >= rect.top - slid && point.y < rect.bottom - slid;
+      },
+    )?.dataset.threadItem;
+    if (rowKey === undefined) {
+      nestHoverRef.current = null;
+      return null;
+    }
+    if (nestHoverRef.current?.key !== rowKey) nestHoverRef.current = { key: rowKey, x: point.x };
+    if (point.x - nestHoverRef.current.x < SIDEBAR_NEST_SHIFT) return null;
+    const threads = threadByKeyRef.current;
+    const child = threads.get(childKey);
+    const parent = threads.get(rowKey);
+    const valid =
+      child !== undefined &&
+      parent !== undefined &&
+      supportsNesting(child.environmentId) &&
+      parent.environmentId === child.environmentId &&
+      sidebarThreadParentKey(child) !== rowKey &&
+      !isSidebarRowWithin(rowKey, childKey, (candidate) => {
+        const thread = threads.get(candidate);
+        return thread ? sidebarThreadParentKey(thread) : null;
+      });
+    return valid ? rowKey : null;
+  };
   const moveThreadContextDrag = (point: { x: number; y: number }) => {
     // Search results cannot reorder, so their context preview starts inside the list.
     const contextDrag = searchResultsListRef.current !== null || pointerOutsideThreadList(point);
+    const nestTargetKey = contextDrag ? null : nestTargetAt(point);
     setDragState((current) =>
-      current === null || current.contextDrag === contextDrag
+      current === null ||
+      (current.contextDrag === contextDrag && current.nestTargetKey === nestTargetKey)
         ? current
-        : { ...current, contextDrag },
+        : { ...current, contextDrag, nestTargetKey },
     );
     if (!contextDrag) {
       endThreadContextDrag();
-      return false;
+      return nestTargetKey !== null;
     }
     restoreDragScroll();
     const folder = contextDragFolder();
@@ -2113,6 +2230,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     return true;
   };
   const dropThreadContextDrag = (point: { x: number; y: number }) => {
+    const nestTargetKey = searchResultsListRef.current === null ? nestTargetAt(point) : null;
+    const child = threadByKeyRef.current.get(contextDragKeyRef.current ?? "");
+    const parent = threadByKeyRef.current.get(nestTargetKey ?? "");
+    if (child !== undefined && parent !== undefined) {
+      if (checkThreadOperations([child])) {
+        runNest(scopeThreadRef(child.environmentId, child.id), parent.id);
+      }
+      return true;
+    }
     if (!pointerOutsideThreadList(point)) return false;
     restoreDragScroll();
     const folder = contextDragFolder();
@@ -2272,6 +2398,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeSection,
       targetSection: activeSection,
       contextDrag: false,
+      nestTargetKey: null,
       occurredAt: new Date().toISOString(),
       activationY: getEventCoordinates(event.activatorEvent)?.y ?? null,
     });
@@ -3109,6 +3236,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
               popout: "open",
               canRename: !fromSearch,
+              nesting: supportsNesting(thread.environmentId)
+                ? { isNested: thread.nestedUnder != null }
+                : null,
               supports: {
                 settlement: configLoaded,
                 autoSettleOptOut: supportsAutoSettleOptOut,
@@ -3181,6 +3311,28 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             }
             return;
           }
+          case "new-child-thread": {
+            const result = await settlePromise(() =>
+              handleNewThread(scopeProjectRef(thread.environmentId, thread.projectId), {
+                nestUnder: thread.id,
+              }),
+            );
+            if (result._tag === "Failure") {
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: gt("Could not create thread"),
+                  description:
+                    thrownErrorMessage(squashAtomCommandFailure(result), m) ??
+                    gt("An error occurred."),
+                }),
+              );
+            }
+            return;
+          }
+          case "unnest":
+            runNest(threadRef, null);
+            return;
           case "settle":
             attemptSettle(threadRef);
             return;
@@ -4132,9 +4284,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             pinningSupported={serverConfigs.has(thread.environmentId)}
                             isPinned={thread.pinnedAt != null}
                             dropVerb={
-                              dragState?.activeKey === threadKey
-                                ? resolveSidebarDropVerb(dragState.activeSection, dragTargetSection)
-                                : null
+                              dragState?.activeKey !== threadKey
+                                ? null
+                                : dragState.nestTargetKey !== null
+                                  ? "nest"
+                                  : resolveSidebarDropVerb(
+                                      dragState.activeSection,
+                                      dragTargetSection,
+                                    )
                             }
                             dragOverPinned={
                               dragState?.activeKey === threadKey && dragTargetSection === "pinned"
@@ -4186,6 +4343,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             groupLabel={groupLabelByKey.get(threadKey)}
                             groupDivider={groupDividerKey === threadKey}
                             projectNameOnRow={projectNameOnRow(thread, threadKey)}
+                            nestDepth={nestDepthByKey.get(threadKey) ?? 0}
+                            nestedUnderTitle={nestedUnderTitleByKey.get(threadKey) ?? null}
+                            isNestTarget={dragState?.nestTargetKey === threadKey}
                             panelLabelAction={
                               tide && (panel === "first" || panel === "only") ? (
                                 <SidebarNeedsYouNext
