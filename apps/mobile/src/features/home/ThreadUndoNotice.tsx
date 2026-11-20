@@ -2,6 +2,7 @@ import { useAndroidFloatingTabs } from "../settings/appearance/AppearancePrefere
 import { useState } from "react";
 import { useKeyboardState } from "react-native-keyboard-controller";
 import { Platform, View } from "react-native";
+import { useGT } from "gt-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Toast } from "../../components/ui/Toast";
 import {
@@ -19,6 +20,7 @@ import {
 } from "./thread-undo-notice";
 
 export function ThreadUndoNotice(props: { readonly visible: boolean }) {
+  const gt = useGT();
   const floatingTabsEnabled = useAndroidFloatingTabs();
   const notice = useThreadUndoNotice();
   const insets = useSafeAreaInsets();
@@ -83,12 +85,20 @@ export function ThreadUndoNotice(props: { readonly visible: boolean }) {
     >
       <Toast
         message={
-          (notice.count ?? 1) > 1
-            ? `${notice.action} ${notice.count} threads`
-            : `${notice.action} thread`
+          notice.action === "Settled"
+            ? gt("{count, plural, one {Settled thread} other {Settled {count} threads}}", {
+                count: notice.count ?? 1,
+              })
+            : notice.action === "Snoozed"
+              ? gt("{count, plural, one {Snoozed thread} other {Snoozed {count} threads}}", {
+                  count: notice.count ?? 1,
+                })
+              : gt("{count, plural, one {Unpinned thread} other {Unpinned {count} threads}}", {
+                  count: notice.count ?? 1,
+                })
         }
         action={{
-          label: "Undo",
+          label: gt("Undo"),
           onPress: () => {
             void notice.undo();
           },

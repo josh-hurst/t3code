@@ -1,3 +1,6 @@
+import { msg } from "gt-react-native";
+
+import { m } from "../../i18n/messages";
 import {
   AuthOrchestrationOperateScope,
   type CloudSpeechModelId,
@@ -183,7 +186,7 @@ export function runSpeech<A, E>(
             if (signal?.aborted || !canSend())
               throw new VoiceTranscriptionError({
                 code: "cancelled",
-                message: "Your transcription choice changed.",
+                message: m(msg("Your transcription choice changed.")),
               });
             return expoFetch(url, { ...options, redirect: "error" });
           }),
@@ -215,8 +218,11 @@ function environmentTranscriber(
       if (status.state === "missing-model")
         throw new VoiceTranscriptionError({
           code: "unavailable",
-          message:
-            "Install a transcription model for this environment in Settings → Voice, then try again.",
+          message: m(
+            msg(
+              "Install a transcription model for this environment in Settings → Voice, then try again.",
+            ),
+          ),
         });
       return status.languages
         ? effectiveSpeechLanguage(
@@ -232,7 +238,7 @@ function environmentTranscriber(
       if (!native?.decodeRecording)
         throw new VoiceTranscriptionError({
           code: "unavailable",
-          message: "Update T3 Code to transcribe on an environment.",
+          message: m(msg("Update T3 Code to transcribe on an environment.")),
         });
       return native.decodeRecording(uri);
     },

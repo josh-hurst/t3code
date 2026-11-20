@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import * as Electron from "electron";
 
 import * as DesktopLifecycle from "../../app/DesktopLifecycle.ts";
+import { applyLanguage } from "../../i18n/messages.ts";
 import * as DesktopClientSettings from "../../settings/DesktopClientSettings.ts";
 import * as DesktopSnapShot from "../../snapShot/DesktopSnapShot.ts";
 import * as IpcChannels from "../channels.ts";
@@ -29,6 +30,7 @@ export const setClientSettings = DesktopIpc.makeIpcMethod({
     const snapShot = yield* DesktopSnapShot.DesktopSnapShot;
     yield* clientSettings.set(settings);
     yield* snapShot.configure(settings);
+    yield* applyLanguage(settings.language);
     // Each window keeps its own copy; the writer already has these, and a refresh could race it.
     for (const window of Electron.BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed() && window.webContents.id !== event?.sender.id) {

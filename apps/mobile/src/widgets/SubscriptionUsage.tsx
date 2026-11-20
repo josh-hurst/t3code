@@ -95,9 +95,10 @@ function SubscriptionUsage(
           )
         : 0,
       detail: expired
-        ? "Open T3 to refresh"
+        ? (props.text?.refresh ?? "Open T3 to refresh")
         : !windows.length && period !== "auto" && provider.windows.length
-          ? "No " + period + " limit"
+          ? ((period === "session" ? props.text?.noSessionLimit : props.text?.noWeeklyLimit) ??
+            "No " + period + " limit")
           : provider.detail,
     };
   });
@@ -214,7 +215,10 @@ function SubscriptionUsage(
         modifiers={[frame({ maxWidth: Infinity, alignment: "leading" })]}
       >
         {label(provider, large ? 16 : 14)}
-        {large && provider.detail && provider.detail !== "Subscription remaining" && w ? (
+        {large &&
+        provider.detail &&
+        provider.detail !== (props.text?.subscriptionRemaining ?? "Subscription remaining") &&
+        w ? (
           <Text modifiers={[font({ size: 11 }), foregroundStyle(secondary), lineLimit(1)]}>
             {provider.detail}
           </Text>
@@ -355,7 +359,9 @@ function SubscriptionUsage(
             lineLimit(3),
           ]}
         >
-          {props.providers ? "No subscription limits available" : "Open T3 Code to connect"}
+          {props.providers
+            ? (props.text?.noLimits ?? "No subscription limits available")
+            : (props.text?.tapToConnect ?? "Open T3 Code to connect")}
         </Text>
       </VStack>
     );

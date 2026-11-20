@@ -1,14 +1,17 @@
+import { useGT } from "gt-react";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts/settings";
 
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 const LIMITS = Array.from({ length: 11 }, (_, limit) => limit);
 const limitLabel = (limit: number) => (limit === 0 ? "Off" : String(limit));
 
 export function LaterRecheckSettings() {
+  const gt = useGT();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const limit = settings.laterRecheckLimit;
@@ -21,7 +24,7 @@ export function LaterRecheckSettings() {
       resetAction={
         limit !== DEFAULT_SERVER_SETTINGS.laterRecheckLimit ? (
           <SettingResetButton
-            label="unattended re-checks"
+            ariaLabel={gt("Reset unattended re-checks to default")}
             onClick={() =>
               updateSettings({ laterRecheckLimit: DEFAULT_SERVER_SETTINGS.laterRecheckLimit })
             }

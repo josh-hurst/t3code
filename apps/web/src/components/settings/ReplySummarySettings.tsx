@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
 import * as Equal from "effect/Equal";
@@ -20,7 +21,7 @@ import {
   SettingsRow,
 } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import {
   useScopedSettings,
@@ -29,6 +30,8 @@ import {
 } from "./useScopedSettings";
 
 export function ReplySummarySettings() {
+  const gt = useGT();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const { environment, connectedEnvironments, target } = useSettingsScope();
@@ -90,7 +93,7 @@ export function ReplySummarySettings() {
           resetAction={
             isModelDirty ? (
               <SettingResetButton
-                label="reply summary model"
+                ariaLabel={gt("Reset reply summary model to default")}
                 onClick={() =>
                   updateSettings({
                     threadReplySummaryModelSelection:

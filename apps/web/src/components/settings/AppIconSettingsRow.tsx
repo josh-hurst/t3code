@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import type { DesktopAppIcon } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
 
@@ -5,7 +6,7 @@ import { isElectron } from "~/env";
 import { isMacPlatform } from "~/lib/utils";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 const APP_ICON_LABELS: Record<DesktopAppIcon, string> = {
   copper: "Copper",
@@ -13,6 +14,8 @@ const APP_ICON_LABELS: Record<DesktopAppIcon, string> = {
 };
 
 export function AppIconSettingsRow() {
+  const gt = useGT();
+  const searchableSetting = useSearchableSetting();
   const bridge = window.desktopBridge;
   const [icon, setIcon] = useState<DesktopAppIcon | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the choice the desktop main process stores
@@ -40,7 +43,10 @@ export function AppIconSettingsRow() {
       description="Choose the Dock icon. It follows light and dark mode."
       resetAction={
         icon !== "copper" ? (
-          <SettingResetButton label="app icon" onClick={() => choose("copper")} />
+          <SettingResetButton
+            ariaLabel={gt("Reset app icon to default")}
+            onClick={() => choose("copper")}
+          />
         ) : null
       }
       control={

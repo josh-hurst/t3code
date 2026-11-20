@@ -1,3 +1,5 @@
+import { msg, useMessages } from "gt-react";
+import { m } from "~/i18n/messages";
 import type {
   EnvironmentId,
   ProviderInstanceId,
@@ -33,6 +35,7 @@ export function useUsageLimitsPanel(input: {
     providers,
     sources,
   } = input;
+  const messages = useMessages();
   const [panel, setPanel] = useState<{
     readonly key: string;
     readonly threadKey: string;
@@ -56,6 +59,7 @@ export function useUsageLimitsPanel(input: {
           // Only Claude Code records what it charges each call to.
           providerDriver === "claudeAgent",
           () => setPanel(null),
+          messages,
         )
       : null;
   // Intercept /usage only when Limits has selected-provider data; otherwise the provider's runs.
@@ -73,7 +77,10 @@ export function useUsageLimitsPanel(input: {
       return true;
     }
     setPanel(null);
-    toastManager.add({ type: "info", title: "Usage limits are unavailable for this provider" });
+    toastManager.add({
+      type: "info",
+      title: m(msg("Usage limits are unavailable for this provider")),
+    });
     return false;
   });
   // Async responses may clear only their originating thread's panel.

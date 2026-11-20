@@ -1,5 +1,6 @@
 import type { VoiceInputPhase, VoiceInputState } from "@t3tools/client-runtime/voice-input";
 import { useIsFocused } from "@react-navigation/native";
+import { useGT } from "gt-react-native";
 import { memo, useEffect, useState, type ReactNode } from "react";
 import {
   Animated as NativeAnimated,
@@ -363,6 +364,7 @@ export function ComposerDictationError(props: {
   readonly error: string | null;
   readonly onDismiss: () => void;
 }) {
+  const gt = useGT();
   if (!props.error) return null;
   return (
     <View className="min-w-0 flex-row items-center gap-2 px-4 py-3">
@@ -370,7 +372,7 @@ export function ComposerDictationError(props: {
         {props.error}
       </Text>
       <Pressable
-        accessibilityLabel="Dismiss voice input error"
+        accessibilityLabel={gt("Dismiss voice input error")}
         accessibilityRole="button"
         className="size-7 items-center justify-center active:opacity-70"
         hitSlop={8}
@@ -391,6 +393,7 @@ const PREVIEW_TAIL_LENGTH = 240;
 
 /** What live dictation has heard so far; the last words may still change. */
 export function ComposerDictationPreview(props: { readonly ownerKey: string | null }) {
+  const gt = useGT();
   const preview = useVoiceTranscriptPreview(props.ownerKey);
   if (!preview || !(preview.committed || preview.tentative)) return null;
   // The newest words matter while speaking, so a long transcript shows its tail.
@@ -399,7 +402,7 @@ export function ComposerDictationPreview(props: { readonly ownerKey: string | nu
       ? `…${preview.committed.slice(-PREVIEW_TAIL_LENGTH).trimStart()}`
       : preview.committed;
   return (
-    <View accessibilityLabel="Live transcription" className="min-w-0 px-4 pt-3 pb-1">
+    <View accessibilityLabel={gt("Live transcription")} className="min-w-0 px-4 pt-3 pb-1">
       <Text accessibilityLiveRegion="polite" className="text-sm text-foreground">
         {committed}
         {committed && preview.tentative ? " " : ""}
@@ -455,11 +458,12 @@ export function ComposerDictationCancelAction(props: {
   readonly presentation: VoiceComposerPresentation;
   readonly onCancel: () => void;
 }) {
+  const gt = useGT();
   if (props.presentation.leadingAction !== "cancel") return null;
   return (
     <VoiceActionButton
       size={props.size}
-      accessibilityLabel="Cancel dictation"
+      accessibilityLabel={gt("Cancel dictation")}
       icon="xmark"
       onPress={props.onCancel}
     />
@@ -476,6 +480,7 @@ export function ComposerDictationPrimaryAction(props: {
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
 }) {
+  const gt = useGT();
   if (props.presentation.trailingAction === "confirm") {
     return (
       <VoiceActionButton
@@ -483,9 +488,9 @@ export function ComposerDictationPrimaryAction(props: {
         accessibilityLabel={
           props.presentation.confirmationEnabled
             ? props.state.phase === "post-processing"
-              ? "Skip cleanup"
-              : "Finish dictation"
-            : (props.presentation.statusLabel ?? "Preparing voice input")
+              ? gt("Skip cleanup")
+              : gt("Finish dictation")
+            : (props.presentation.statusLabel ?? gt("Preparing voice input"))
         }
         disabled={!props.presentation.confirmationEnabled}
         icon="checkmark"
@@ -507,12 +512,13 @@ export function ComposerDictationStartAction(props: {
   readonly onStart: () => void;
   readonly onCancel: () => void;
 }) {
+  const gt = useGT();
   if (!props.isAvailable) return null;
   const openSettings = props.state.phase === "error" && props.state.errorAction === "settings";
   return (
     <VoiceActionButton
       size={props.size}
-      accessibilityLabel={openSettings ? "Open microphone settings" : "Start dictation"}
+      accessibilityLabel={openSettings ? gt("Open microphone settings") : gt("Start dictation")}
       disabled={props.disabled}
       icon="mic"
       onPress={

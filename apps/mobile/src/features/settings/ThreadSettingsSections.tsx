@@ -1,3 +1,4 @@
+import { T, useGT } from "gt-react-native";
 import { Button } from "../../components/ui/Button";
 import {
   AuthSettingsWriteScope,
@@ -8,7 +9,7 @@ import { useEnvironmentsWithScope } from "../../state/session";
 import { AutoSettleDaysField } from "./components/AutoSettleDaysField";
 import { NumberField } from "../../components/ui/NumberField";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import type { ComponentProps } from "react";
 import { View } from "react-native";
@@ -18,7 +19,7 @@ import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useEnvironments } from "../../state/environments";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "./components/SettingsSection";
@@ -33,10 +34,11 @@ import {
 } from "./settings-scoped-server";
 
 export function SettingsLabsRouteScreen() {
+  const gt = useGT();
   const insets = useSafeAreaInsets();
 
   return (
-    <SettingsScreen title="Labs">
+    <SettingsScreen title={gt("Labs")}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -46,18 +48,22 @@ export function SettingsLabsRouteScreen() {
       >
         <ProjectFoldersSettingsSection />
         <MachineBetaSection
-          title="Linked environments"
+          title={gt("Linked environments")}
           icon="link"
           capability="peerLinks"
           setting="linkedEnvironmentsEnabled"
-          description="Let agents on a machine work on your other machines, and theirs on it. Turn it on for each machine. While off, nothing new starts over a link; running tasks finish."
+          description={gt(
+            "Let agents on a machine work on your other machines, and theirs on it. Turn it on for each machine. While off, nothing new starts over a link; running tasks finish.",
+          )}
         />
         <MachineBetaSection
-          title="Fast worktree checkout"
+          title={gt("Fast worktree checkout")}
           icon="bolt.circle"
           capability="fastWorktreeCheckout"
           setting="fastWorktreeCheckout"
-          description="On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache."
+          description={gt(
+            "On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+          )}
         />
       </ScrollView>
     </SettingsScreen>
@@ -74,6 +80,7 @@ export function AutoSettleSettingsRows(props: {
   readonly write: (patch: ServerSettingsPatch) => void;
   readonly pending: boolean;
 }) {
+  const gt = useGT();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
   const writableEnvironments = useEnvironmentsWithScope(selectedTargets, AuthSettingsWriteScope);
@@ -123,25 +130,29 @@ export function AutoSettleSettingsRows(props: {
 
   const disabled = !canWriteSettings || props.pending;
   const disabledFor = (...keys: string[]) =>
-    disabled || managedSettingReason(displayTargets, ...keys) !== undefined;
+    disabled || managedSettingReason(displayTargets, keys) !== undefined;
   const afterDays = referenceSettings.sidebarAutoSettleAfterDays;
 
   return (
     <View className="gap-6">
       {!projectSelected ? (
-        <SettingsSection title="Usage limits">
+        <SettingsSection title={gt("Usage limits")}>
           <SettingsSwitchRow
             icon="clock"
-            label="Resume after usage limits"
-            subtitle="Automatically resume threads when their usage limits reset. You can cancel auto-resume in each thread."
+            label={gt("Resume after usage limits")}
+            subtitle={gt(
+              "Automatically resume threads when their usage limits reset. You can cancel auto-resume in each thread.",
+            )}
             value={uniformMobileSetting(displayTargets, "autoResumeLimitedThreads")}
             disabled={disabledFor("autoResumeLimitedThreads")}
             onValueChange={(value) => writeToAll({ autoResumeLimitedThreads: value })}
           />
           <SettingsSwitchRow
             icon="clock"
-            label="Snooze until limits reset"
-            subtitle="Snooze threads until their usage limits reset. Enable auto-resume to continue the agent after the reset."
+            label={gt("Snooze until limits reset")}
+            subtitle={gt(
+              "Snooze threads until their usage limits reset. Enable auto-resume to continue the agent after the reset.",
+            )}
             value={uniformMobileSetting(displayTargets, "snoozeLimitedThreads")}
             disabled={disabledFor("snoozeLimitedThreads")}
             onValueChange={(value) => writeToAll({ snoozeLimitedThreads: value })}
@@ -149,41 +160,43 @@ export function AutoSettleSettingsRows(props: {
         </SettingsSection>
       ) : null}
       {!projectSelected ? (
-        <SettingsSection title="Later">
+        <SettingsSection title={gt("Later")}>
           <View className="gap-1 px-4 py-4 android:py-3">
             <View className="flex-row items-center gap-4">
               <Text className="flex-1 text-foreground text-lg android:text-base">
-                Unattended re-checks
+                <T>Unattended re-checks</T>
               </Text>
               <NumberField
                 value={referenceSettings.laterRecheckLimit}
                 min={0}
                 max={10}
-                label="Unattended re-checks per thread"
-                formatValue={(value) => (value === 0 ? "Off" : String(value))}
+                label={gt("Unattended re-checks per thread")}
+                formatValue={(value) => (value === 0 ? gt("Off") : String(value))}
                 disabled={disabledFor("laterRecheckLimit")}
                 onValueChange={(value) => writeToAll({ laterRecheckLimit: value })}
               />
             </View>
             <Text className="text-sm text-foreground-muted">
-              An agent can schedule its own re-check in a thread and run it later without you. After
-              this many in a row with no news, it must report what it found. Off stops agents from
-              scheduling re-checks; yours still work.
+              <T>
+                An agent can schedule its own re-check in a thread and run it later without you.
+                After this many in a row with no news, it must report what it found. Off stops
+                agents from scheduling re-checks; yours still work.
+              </T>
             </Text>
           </View>
         </SettingsSection>
       ) : null}
-      <SettingsSection title="Auto-settle">
+      <SettingsSection title={gt("Auto-settle")}>
         <SettingsSwitchRow
           icon="arrow.triangle.branch"
-          label="Auto-settle merged threads"
+          label={gt("Auto-settle merged threads")}
           value={referenceSettings.sidebarAutoSettleOnMerge}
           disabled={disabledFor("sidebarAutoSettleOnMerge")}
           onValueChange={(value) => writeToAll({ sidebarAutoSettleOnMerge: value })}
         />
         <SettingsSwitchRow
           icon="clock"
-          label="Auto-settle inactive threads"
+          label={gt("Auto-settle inactive threads")}
           value={afterDays !== null}
           disabled={disabledFor("sidebarAutoSettleAfterDays")}
           onValueChange={(value) =>
@@ -193,7 +206,9 @@ export function AutoSettleSettingsRows(props: {
         {afterDays !== null ? (
           <View className="flex-row items-center gap-4 px-4 py-4 android:min-h-14 android:py-3">
             <View className="w-[22px] android:w-6" />
-            <Text className="flex-1 text-foreground text-lg android:text-base">Inactive days</Text>
+            <Text className="flex-1 text-foreground text-lg android:text-base">
+              <T>Inactive days</T>
+            </Text>
             <AutoSettleDaysField
               value={afterDays}
               disabled={disabledFor("sidebarAutoSettleAfterDays")}
@@ -203,14 +218,16 @@ export function AutoSettleSettingsRows(props: {
         ) : null}
       </SettingsSection>
       {!props.pending && mismatches.length > 0 ? (
-        <SettingsSection title="Across environments">
+        <SettingsSection title={gt("Across environments")}>
           <View className="gap-3 p-4">
-            <Text className="text-base text-foreground">Auto-settle defaults differ</Text>
+            <Text className="text-base text-foreground">
+              <T>Auto-settle defaults differ</T>
+            </Text>
             <Text className="text-sm text-foreground-muted">
               {mismatches.map((mismatch) => mismatch.label).join(", ")}
             </Text>
             <Button
-              label="Apply auto-settle defaults"
+              label={gt("Apply auto-settle defaults")}
               tone="secondary"
               disabled={disabledFor("sidebarAutoSettleOnMerge", "sidebarAutoSettleAfterDays")}
               onPress={() => writeToAll(autoSettlePatch)}
@@ -223,7 +240,8 @@ export function AutoSettleSettingsRows(props: {
 }
 
 export function WorkingSectionSettings() {
-  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const gt = useGT();
+  const savePreferences = useAtomCommand(saveMobilePreferences);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const loaded = AsyncResult.isSuccess(preferences);
   const classic = loaded && preferences.value.classicThreadList === true;
@@ -231,53 +249,65 @@ export function WorkingSectionSettings() {
 
   return (
     <View className="gap-3">
-      <SettingsSection title="Sidebar">
+      <SettingsSection title={gt("Sidebar")}>
         <SettingsSwitchRow
           icon="line.3.horizontal"
-          label="Classic thread list"
+          label={gt("Classic thread list")}
           value={classic}
           disabled={!loaded}
-          onValueChange={(value) => savePreferences({ classicThreadList: value })}
+          onValueChange={(value) => {
+            void savePreferences({ classicThreadList: value });
+          }}
         />
         {classic ? (
           <SettingsSwitchRow
             icon="bolt.circle"
-            label="Working section"
+            label={gt("Working section")}
             value={workingShelfEnabled}
-            onValueChange={(value) => savePreferences({ workingShelfEnabled: value })}
+            onValueChange={(value) => {
+              void savePreferences({ workingShelfEnabled: value });
+            }}
           />
         ) : null}
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
         {classic
-          ? "Order active threads by hand. Fold working and monitoring threads into a Working section; they return to the top of the list when they need you. While Working is on, active threads are ordered by time and cannot be moved."
-          : "Threads are grouped into Needs you, Recent, Working, Later, and History. Recent lists threads by when you last sent a message. Turn on Classic thread list to order active threads by hand."}
+          ? gt(
+              "Order active threads by hand. Fold working and monitoring threads into a Working section; they return to the top of the list when they need you. While Working is on, active threads are ordered by time and cannot be moved.",
+            )
+          : gt(
+              "Threads are grouped into Needs you, Recent, Working, Later, and History. Recent lists threads by when you last sent a message. Turn on Classic thread list to order active threads by hand.",
+            )}
       </Text>
     </View>
   );
 }
 
 export function NewThreadSettingsSection() {
-  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const gt = useGT();
+  const savePreferences = useAtomCommand(saveMobilePreferences);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const useLastProject =
     AsyncResult.isSuccess(preferences) && preferences.value.useLastProjectForNewThreads !== false;
 
   return (
-    <SettingsSection title="New threads">
+    <SettingsSection title={gt("New threads")}>
       <SettingsSwitchRow
         icon="square.and.pencil"
-        label="Use last project"
-        subtitle="Start new threads in the last project you used on this device."
+        label={gt("Use last project")}
+        subtitle={gt("Start new threads in the last project you used on this device.")}
         value={useLastProject}
-        onValueChange={(value) => savePreferences({ useLastProjectForNewThreads: value })}
+        onValueChange={(value) => {
+          void savePreferences({ useLastProjectForNewThreads: value });
+        }}
       />
     </SettingsSection>
   );
 }
 
 function ProjectFoldersSettingsSection() {
-  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const gt = useGT();
+  const savePreferences = useAtomCommand(saveMobilePreferences);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const loaded = AsyncResult.isSuccess(preferences);
   const projectFoldersEnabled = loaded && preferences.value.projectFoldersEnabled === true;
@@ -286,17 +316,21 @@ function ProjectFoldersSettingsSection() {
 
   return (
     <View className="gap-3">
-      <SettingsSection title="Beta">
+      <SettingsSection title={gt("Beta")}>
         <SettingsSwitchRow
           icon="folder"
-          label="Group by project"
+          label={gt("Group by project")}
           value={projectFoldersEnabled}
-          onValueChange={(value) => savePreferences({ projectFoldersEnabled: value })}
+          onValueChange={(value) => {
+            void savePreferences({ projectFoldersEnabled: value });
+          }}
         />
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
-        Group threads into project folders. Pinned threads stay on top, and Working, Snoozed and
-        Settled stay below the folders.
+        <T>
+          Group threads into project folders. Pinned threads stay on top, and Working, Snoozed and
+          Settled stay below the folders.
+        </T>
       </Text>
     </View>
   );
@@ -318,6 +352,7 @@ function MachineBetaSection({
   readonly setting: MachineBetaSetting;
   readonly description: string;
 }) {
+  const gt = useGT();
   const { environments } = useEnvironments();
   const supported = environments.filter(
     (environment) =>
@@ -332,7 +367,7 @@ function MachineBetaSection({
   if (supported.length === 0) return null;
   return (
     <View className="gap-3">
-      <SettingsSection title={`Beta: ${title}`}>
+      <SettingsSection title={gt("Beta: {feature}", { feature: title })}>
         {supported.map((environment) => {
           const policy = environment.serverConfig?.managedPolicy;
           const managed = isManagedSettingPath(policy, setting);
@@ -341,7 +376,13 @@ function MachineBetaSection({
               key={environment.environmentId}
               icon={icon}
               label={environment.label}
-              {...(managed ? { subtitle: `Managed by ${policy?.organization}.` } : {})}
+              {...(managed
+                ? {
+                    subtitle: gt("Managed by {organization}.", {
+                      organization: policy?.organization,
+                    }),
+                  }
+                : {})}
               value={environment.serverConfig?.settings[setting] === true}
               disabled={managed || !writable.has(environment.environmentId)}
               onValueChange={(value) =>

@@ -1,7 +1,9 @@
 import * as Dialog from "./Dialog";
 import { requireNativeModule } from "expo";
+import { msg, useGT } from "gt-react-native";
 import { useEffect, useEffectEvent, useId } from "react";
 
+import { m } from "../../i18n/messages";
 import type {
   FilePreviewModalProps,
   FilePreviewViewerProps,
@@ -33,13 +35,18 @@ function NativeFilePreview(props: {
   readonly onOpenError?: (error: unknown) => void;
   readonly onPresent?: (isFinished: () => boolean) => void;
 }) {
+  const gt = useGT();
   const identifier = useId();
   const { uri, name, sourceIdentifier } = props.source;
   const onRequestClose = useEffectEvent(props.onRequestClose);
   const onPresent = useEffectEvent((isFinished: () => boolean) => props.onPresent?.(isFinished));
   const onOpenError = useEffectEvent((error: unknown) => {
     if (props.onOpenError) props.onOpenError(error);
-    else Dialog.alert("Could not open preview", "The file could not be loaded. Please try again.");
+    else
+      Dialog.alert(
+        gt("Could not open preview"),
+        gt("The file could not be loaded. Please try again."),
+      );
   });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- presents the native file preview and dismisses it on cleanup
@@ -47,7 +54,12 @@ function NativeFilePreview(props: {
     let canceled = false;
     // Files download first so Quick Look can refuse a format the caller should share instead.
     onPresent(() => NativeControls.isFilePreviewFinished(identifier));
-    void NativeControls.presentFile(uri, name ?? "Preview", sourceIdentifier ?? "", identifier)
+    void NativeControls.presentFile(
+      uri,
+      name ?? m(msg("Preview", { $context: "noun, preview window title" })),
+      sourceIdentifier ?? "",
+      identifier,
+    )
       .catch((error: unknown) => {
         if (!canceled) onOpenError(error);
       })

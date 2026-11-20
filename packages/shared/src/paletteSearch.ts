@@ -919,7 +919,17 @@ export interface ThreadSearchMatch {
   readonly groupQuality: number;
 }
 
+export type SearchMatchHintField =
+  | "pull-request"
+  | "branch"
+  | "summary"
+  | "topic"
+  | "project"
+  | "environment"
+  | "reference";
+
 export interface SearchMatchHint {
+  readonly field: SearchMatchHintField;
   readonly label: string;
   readonly text: string;
   readonly ranges: ReadonlyArray<SearchRange>;
@@ -955,23 +965,28 @@ function matchHint(
   thread: ThreadSearchSubject,
   typos: boolean,
 ): SearchMatchHint | undefined {
-  const candidates: Array<{ readonly label: string; readonly text: string | null | undefined }> = [
+  const candidates: Array<{
+    readonly field: SearchMatchHintField;
+    readonly label: string;
+    readonly text: string | null | undefined;
+  }> = [
     ...(thread.pullRequests ?? []).map((pullRequest) => ({
+      field: "pull-request" as const,
       label: "PR",
       text: `#${pullRequest.number}${pullRequest.title ? ` ${pullRequest.title}` : ""}`,
     })),
-    { label: "Branch", text: searchableBranch(thread.branch) },
-    { label: "Summary", text: thread.cardLine },
-    { label: "Topic", text: thread.topics?.join(", ") },
-    { label: "Project", text: thread.projectTitle },
-    { label: "Environment", text: thread.environmentLabel },
+    { field: "branch", label: "Branch", text: searchableBranch(thread.branch) },
+    { field: "summary", label: "Summary", text: thread.cardLine },
+    { field: "topic", label: "Topic", text: thread.topics?.join(", ") },
+    { field: "project", label: "Project", text: thread.projectTitle },
+    { field: "environment", label: "Environment", text: thread.environmentLabel },
   ];
   const holds = (text: string, query: string) =>
     matchSearchFields(query, [{ value: text, weight: 1 }], { typos })?.primaryRanges;
   const hintFor = (query: string) => {
-    for (const { label, text } of candidates) {
+    for (const { field, label, text } of candidates) {
       const ranges = text ? holds(text, query) : undefined;
-      if (text && ranges) return { label, text, ranges };
+      if (text && ranges) return { field, label, text, ranges };
     }
     return undefined;
   };
@@ -1067,7 +1082,7 @@ export function scoreThreadSearch(
     ? undefined
     : (): SearchMatchHint | undefined =>
         referenceMatch
-          ? { label: "ID or link", text: normalizedQuery, ranges: [] }
+          ? { field: "reference", label: "ID or link", text: normalizedQuery, ranges: [] }
           : (checkedHint ?? matchHint(fieldQuery, thread, typos));
   const pick = options?.picks === false ? undefined : activePick(thread, normalizedQuery, now);
   return {

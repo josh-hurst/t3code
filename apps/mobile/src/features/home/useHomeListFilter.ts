@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react-native";
 import { useMemo } from "react";
 
 import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
@@ -21,6 +22,7 @@ const NO_THREADS: ReadonlyArray<EnvironmentThreadShell> = [];
  * Projects list most recently active first; without threads they fall back to project activity.
  */
 export function useHomeListFilter(threads = NO_THREADS) {
+  const m = useMessages();
   const projects = useProjects();
   const { environments: workspaceEnvironments } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
@@ -37,12 +39,15 @@ export function useHomeListFilter(threads = NO_THREADS) {
   const selectedEnvironmentId = listOptions.selectedEnvironmentId;
   const projectScopes = useMemo(
     () =>
-      buildHomeProjectScopes({
-        projects,
-        environmentId: selectedEnvironmentId,
-        projectGroupingMode: listOptions.projectGroupingMode,
-      }),
-    [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
+      buildHomeProjectScopes(
+        {
+          projects,
+          environmentId: selectedEnvironmentId,
+          projectGroupingMode: listOptions.projectGroupingMode,
+        },
+        m,
+      ),
+    [listOptions.projectGroupingMode, projects, selectedEnvironmentId, m],
   );
   const projectFilterOptions = useMemo(
     () =>
@@ -80,13 +85,16 @@ export function useHomeListFilter(threads = NO_THREADS) {
     activeLabels: [selectedEnvironmentLabel, selectedProjectLabel].filter(
       (label): label is string => label !== null,
     ),
-    menuItems: buildHomeListFilterMenuItems({
-      environments,
-      projects: projectFilterOptions,
-      selectedEnvironmentId,
-      selectedProjectKey,
-      onEnvironmentChange: setSelectedEnvironmentId,
-      onProjectChange: setSelectedProjectKey,
-    }),
+    menuItems: buildHomeListFilterMenuItems(
+      {
+        environments,
+        projects: projectFilterOptions,
+        selectedEnvironmentId,
+        selectedProjectKey,
+        onEnvironmentChange: setSelectedEnvironmentId,
+        onProjectChange: setSelectedProjectKey,
+      },
+      m,
+    ),
   };
 }

@@ -3,6 +3,7 @@ import { PROJECT_FAVICON_MAX_DATA_URL_LENGTH } from "@t3tools/client-runtime/pro
 import { Atom } from "effect/reactivity";
 import { requireOptionalNativeModule } from "expo";
 
+import { m, type MessageResolver } from "../i18n/messages";
 import { resolveProjectIconSymbol } from "../lib/projectIcon";
 import { appAtomRegistry } from "../state/atom-registry";
 import {
@@ -12,15 +13,35 @@ import {
 
 let generation = 0;
 let unsubscribe: (() => void) | undefined;
+let last: { readonly source: AgentActivityWidgetSource; readonly publishedAt: number } | null =
+  null;
 
-export async function publishAgentActivityWidget(source: AgentActivityWidgetSource) {
+export async function publishAgentActivityWidget(
+  source: AgentActivityWidgetSource,
+  resolve: MessageResolver = m,
+) {
+  const publishedAt = Date.now();
+  last = { source, publishedAt };
+  await updateTimeline(source, publishedAt, resolve);
+}
+
+/** Re-renders the last published state for a UI language switch, keeping its stale deadline. */
+export async function republishAgentActivityWidget(resolve: MessageResolver) {
+  if (last !== null) await updateTimeline(last.source, last.publishedAt, resolve);
+}
+
+async function updateTimeline(
+  source: AgentActivityWidgetSource,
+  publishedAt: number,
+  resolve: MessageResolver,
+) {
   const current = ++generation;
   unsubscribe?.();
   unsubscribe = undefined;
   if (!requireOptionalNativeModule("ExpoWidgets")) return;
   const { default: widget } = await import("./AgentActivityWidget");
   if (generation !== current) return;
-  const timeline = agentActivityWidgetTimeline(source, Date.now());
+  const timeline = agentActivityWidgetTimeline(source, publishedAt, resolve);
   const rows = source.kind === "snapshot" ? source.aggregate?.activities : undefined;
   if (!rows?.length) {
     widget.updateTimeline(timeline);

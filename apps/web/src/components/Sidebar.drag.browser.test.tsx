@@ -133,6 +133,7 @@ it("keeps focus in the search box when a click picks a search result", async () 
           projectNameOnRow={null}
           onHighlight={() => {}}
           onSelect={onSelect}
+          onContextMenu={() => {}}
           onFileDropThreads={() => {}}
         />
       </ul>

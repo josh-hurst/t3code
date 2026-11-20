@@ -1,3 +1,4 @@
+import { useGT } from "gt-react-native";
 import { createContext, useContext } from "react";
 import { Platform, View } from "react-native";
 import ImageViewing from "react-native-image-viewing";
@@ -17,15 +18,16 @@ const ImageGalleryPreviewContext = createContext<ImageGalleryPreviewProps | null
 function ImageGalleryPreviewHeader(header: { readonly imageIndex: number }) {
   const props = useContext(ImageGalleryPreviewContext)!;
   const source = props.source.images[header.imageIndex];
+  const gt = useGT();
   const mediaActions = useMediaActions(source?.actionsSource, props.onRequestClose);
   return (
     <View className="bg-black/70">
       {/* Measures itself: the screen underneath reports insets that include its own header. */}
       <SafeAreaView edges={["top"]}>
         <MediaPreviewHeader
-          title={source?.name ?? "Image"}
+          title={source?.name ?? gt("Image")}
           media={mediaActions}
-          closeAccessibilityLabel="Close image"
+          closeAccessibilityLabel={gt("Close image")}
           onClose={props.onRequestClose}
         />
       </SafeAreaView>

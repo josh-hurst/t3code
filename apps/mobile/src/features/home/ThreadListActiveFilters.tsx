@@ -1,3 +1,4 @@
+import { useGT } from "gt-react-native";
 import { Pressable, View } from "react-native";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -8,6 +9,7 @@ export function ThreadListActiveFilters(props: {
   readonly labels: ReadonlyArray<string>;
   readonly onReset: () => void;
 }) {
+  const gt = useGT();
   if (props.labels.length === 0) return null;
   return (
     <View className="flex-row items-center gap-1.5 px-9 pb-1 pt-1">
@@ -22,7 +24,7 @@ export function ThreadListActiveFilters(props: {
       </Text>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Reset thread filters"
+        accessibilityLabel={gt("Reset thread filters")}
         hitSlop={10}
         onPress={props.onReset}
         className="ml-0.5"

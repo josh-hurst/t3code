@@ -56,21 +56,21 @@ export function AgentActivityWidget(
           rank: 0,
           color: dark ? "#F7BB81" : "#9B4D1C",
           symbol: "hand.raised.fill",
-          label: "Approval",
+          label: props?.text?.approval ?? "Approval",
         } as const;
       case "waiting_for_input":
         return {
           rank: 0,
           color: dark ? "#F7BB81" : "#9B4D1C",
           symbol: "bubble.left.fill",
-          label: "Input",
+          label: props?.text?.input ?? "Input",
         } as const;
       case "failed":
         return {
           rank: 1,
           color: dark ? "#FFA69E" : "#AA3937",
           symbol: "exclamationmark.triangle.fill",
-          label: "Failed",
+          label: props?.text?.failed ?? "Failed",
         } as const;
       case "starting":
       case "running":
@@ -85,14 +85,14 @@ export function AgentActivityWidget(
           rank: 3,
           color: dark ? "#A3B6AE" : "#52685F",
           symbol: "clock",
-          label: "Out of date",
+          label: props?.text?.outOfDate ?? "Out of date",
         } as const;
       case "completed":
         return {
           rank: 4,
           color: dark ? "#72DB95" : "#207540",
           symbol: "checkmark",
-          label: "Done",
+          label: props?.text?.done ?? "Done",
         } as const;
     }
   };

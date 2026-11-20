@@ -1,5 +1,6 @@
 import { EnvironmentId, type ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import { AsyncResult, Atom } from "effect/reactivity";
+import * as Effect from "effect/Effect";
+import { Atom } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
@@ -51,7 +52,7 @@ function visits() {
 
 it("marks the thread read when you switch away, not when it opens", async () => {
   mocks.visitRun.mockReset();
-  mocks.visitRun.mockResolvedValue(AsyncResult.success(undefined));
+  mocks.visitRun.mockReturnValue(Effect.void);
   setShell(threadA, "2026-01-02T00:00:00.000Z");
   setShell(threadB, "2026-01-03T00:00:00.000Z");
 

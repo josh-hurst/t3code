@@ -3,7 +3,7 @@
 T3 Code writes some text for you: thread titles, commit messages, pull request titles and
 descriptions, branch names, voice transcript cleanup, and, when you turn them on,
 [thread summaries](./thread-sidebar.md#choose-what-shows-under-a-threads-title). Pick the model
-for this in **Settings → Threads → Text generation model**. **Settings → Source control**,
+for this in **Settings → Threads → Text generation model**. **Settings → Source control & issues**,
 **Settings → Voice**, and the summaries' **Reply summary model** can each pick a different one.
 
 By default, a coding agent such as Codex or Claude writes this text, starting a session for each
@@ -43,6 +43,6 @@ model.
 
 Review guides read the checkout over many steps, so they always use a coding agent. If your source
 control writer model is a text generator, review guides use Codex or Claude instead, and fail if
-neither is set up. To choose which, pick one in **Settings → Source control → Review guide model**.
+neither is set up. To choose which, pick one in **Settings → Source control & issues → Review guide model**.
 
 A [managed policy](./managed-policy.md) that limits providers also turns off text generators.

@@ -49,7 +49,28 @@ export interface AgentActivityRowProps {
   readonly deepLink: string;
 }
 
+/**
+ * Copy for the widget extension, which runs without the app's catalogs. Count-keyed tables hold
+ * one string per count. Live Activities updated by push have none and fall back to English.
+ */
+export interface AgentActivityText {
+  readonly outOfDate: string;
+  readonly failed: string;
+  readonly done: string;
+  readonly workFailed: string;
+  readonly workCompleted: string;
+  readonly statusOutOfDate: string;
+  readonly approval: string;
+  readonly input: string;
+  readonly noActiveAgents: string;
+  readonly activeAgents: Readonly<Record<string, string>>;
+  readonly active: Readonly<Record<string, string>>;
+  readonly needAttention: Readonly<Record<string, string>>;
+  readonly needYou: Readonly<Record<string, string>>;
+}
+
 export interface AgentActivityProps {
+  readonly text?: AgentActivityText;
   readonly title: string;
   readonly subtitle: string;
   readonly activeCount: number;
@@ -117,7 +138,7 @@ function AgentActivity(
         return {
           rank: 3,
           glyph: "clock",
-          label: "Out of date",
+          label: props.text?.outOfDate ?? "Out of date",
           light: "#596960",
           dark: "#B7C4BD",
         } as const;
@@ -146,7 +167,7 @@ function AgentActivity(
         : "completed";
   const focus = style(phase);
   const total = host.isStale ? 0 : props.activeCount;
-  const countLabel = total ? total + " active" : focus.label;
+  const countLabel = total ? (props.text?.active[String(total)] ?? total + " active") : focus.label;
   const accent: Ink = system ? primary : dark ? focus.dark : focus.light;
   const islandInk: Ink = system ? primary : focus.dark;
   const destination = (row?: AgentActivityRowProps) =>
