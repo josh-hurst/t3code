@@ -326,16 +326,11 @@ it.effect(
           messageId: MessageId.make("message:settlement:question"),
           at: DateTime.formatIso(old),
           runId: RunId.make("run:settlement:question"),
-          settle: "keep",
         },
       });
       yield* createRun(asking);
       const candidates = yield* store.getSettlementCandidates();
-      // The sweep reads the stored card, whose run and settle verdict the shell's summary omits.
-      assert.deepInclude(candidates.find((thread) => thread.id === asking)?.card, {
-        runId: RunId.make("run:settlement:question"),
-        settle: "keep",
-      });
+      assert.isTrue(candidates.some((thread) => thread.id === asking));
       const shell = yield* store.getShellSnapshot({ location: "active" });
       const eligible = candidates.filter((thread) =>
         isAutoSettlementCandidate(thread, DateTime.toEpochMillis(now)),

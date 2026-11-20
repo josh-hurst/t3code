@@ -23,7 +23,12 @@ import {
   isThreadWokeUnseen,
   snoozeWakeAtMs,
 } from "@t3tools/client-runtime/state/thread-settled";
-import { threadLaterStatusLabel } from "@t3tools/client-runtime/state/thread-zones";
+import {
+  AUTO_SETTLE_SOON_MS,
+  threadAutoSettleAt,
+  threadAutoSettleLabel,
+  threadLaterStatusLabel,
+} from "@t3tools/client-runtime/state/thread-zones";
 import type { WorktreeSetupCardProps } from "./worktree-setup-card";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
@@ -587,6 +592,7 @@ function ThreadDetailBody(
   const unsettleThread = useAtomCommand(threadEnvironment.unsettle, { reportFailure: false });
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
+  const setAutoSettle = useAtomCommand(threadEnvironment.setAutoSettle, { reportFailure: false });
   const anyRunStop = useAtomValue(
     props.selectedThreadDetailRef === null
       ? NO_RUN_STOP_ATOM
@@ -682,7 +688,15 @@ function ThreadDetailBody(
     lastVisitedAt: props.selectedThread.lastVisitedAt,
     latestRunCompletedAt: props.selectedThread.latestRun?.completedAt ?? null,
   });
-  const runStatusAction = async (action: "stop" | "wake" | "unsettle" | "dismiss") => {
+  // Offered only where the server can turn the timer off, since Keep open is the way out.
+  const settlesAtMs =
+    configLoaded && props.serverConfig?.environment.capabilities.threadAutoSettleOptOut === true
+      ? threadAutoSettleAt(props.selectedThread)
+      : null;
+  const settlingSoon = useDeadlinePassed(
+    settlesAtMs === null ? null : settlesAtMs - AUTO_SETTLE_SOON_MS,
+  );
+  const runStatusAction = async (action: "stop" | "wake" | "unsettle" | "dismiss" | "keep") => {
     if (statusPending || !props.canOperateThread) return;
     const request: BackgroundWorkStopRequest = {
       threadKey: selectedThreadKey,
@@ -722,10 +736,12 @@ function ThreadDetailBody(
             : await unsnoozeThread({ ...target, input: { ...target.input, reason: "user" } })
           : action === "unsettle"
             ? await unsettleThread({ ...target, input: { ...target.input, reason: "user" } })
-            : await visitThread({
-                ...target,
-                input: { ...target.input, visitedAt: wokeAt ?? lifecycleNow },
-              });
+            : action === "keep"
+              ? await setAutoSettle({ ...target, input: { ...target.input, enabled: false } })
+              : await visitThread({
+                  ...target,
+                  input: { ...target.input, visitedAt: wokeAt ?? lifecycleNow },
+                });
     props.setStatusRequests((current) =>
       current[request.threadKey] !== request
         ? current
@@ -872,6 +888,19 @@ function ThreadDetailBody(
           disabled: !props.canOperateThread || statusPending,
           onPress: () =>
             void runStatusAction(lifecycleSnoozed ? "wake" : settled ? "unsettle" : "dismiss"),
+        },
+      };
+    }
+    if (contentPresentationKind === "ready" && settlesAtMs !== null && settlingSoon) {
+      return {
+        kind: "lifecycle",
+        state: "settling",
+        label: threadAutoSettleLabel(settlesAtMs, { now: lifecycleNow }),
+        action: {
+          label: statusPending ? "Keeping..." : "Keep open",
+          accessibilityLabel: "Keep open",
+          disabled: !props.canOperateThread || statusPending,
+          onPress: () => void runStatusAction("keep"),
         },
       };
     }

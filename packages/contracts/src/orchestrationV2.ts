@@ -45,12 +45,7 @@ import { AuthMcpClientAccess } from "./auth.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
-import {
-  ThreadCard,
-  ThreadCardOpenKind,
-  ThreadCardSettle,
-  ThreadCardSummary,
-} from "./threadCard.ts";
+import { ThreadCard, ThreadCardOpenKind, ThreadCardSummary } from "./threadCard.ts";
 import {
   ContentsBackfillEstimate,
   ContentsBackfillEstimateInput,
@@ -472,6 +467,17 @@ export const OrchestrationV2LimitRecoveryUpdate = Schema.Struct({
 export type OrchestrationV2LimitRecoveryUpdate = typeof OrchestrationV2LimitRecoveryUpdate.Type;
 
 /**
+ * When inactivity will settle a thread if nothing changes, as the server last worked it out.
+ * `basisAt` is the thread activity it was worked out from, so later activity voids the plan.
+ * Times are epoch milliseconds. A time already past means the thread is held while the owner is away.
+ */
+export const OrchestrationV2AutoSettlePlan = Schema.Struct({
+  at: Schema.Finite,
+  basisAt: Schema.Finite,
+});
+export type OrchestrationV2AutoSettlePlan = typeof OrchestrationV2AutoSettlePlan.Type;
+
+/**
  * `score` is an open count that halves every two weeks, as of `openedAt`.
  * `picks` stores lowercase palette queries, newest first.
  * Times are epoch milliseconds for ranking arithmetic.
@@ -559,6 +565,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   guestShare: Schema.optional(Schema.NullOr(ThreadGuestShare)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  autoSettlePlan: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePlan)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** Absent on threads written before tags existed; read as empty. */
@@ -2066,6 +2073,7 @@ export const OrchestrationV2DomainEvent = Schema.Union([
       "thread.unsnoozed",
       "thread.pinned",
       "thread.auto-settle-set",
+      "thread.auto-settle-planned",
       "thread.unpinned",
       "thread.pin-reordered",
       "thread.active-reordered",
@@ -2345,6 +2353,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  autoSettlePlan: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePlan)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** Absent on threads written before tags existed; read as empty. */
@@ -2521,6 +2530,7 @@ export const OrchestrationV2AppThreadJson = OrchestrationV2AppThread.mapFields((
   lastSnoozeWakeAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  autoSettlePlan: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePlan)),
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtcFromString).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -2977,6 +2987,7 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  autoSettlePlan: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePlan)),
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   titleRegeneration: Schema.optional(
     Schema.NullOr(
@@ -3030,6 +3041,7 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
       "thread.unsnoozed",
       "thread.pinned",
       "thread.auto-settle-set",
+      "thread.auto-settle-planned",
       "thread.unpinned",
       "thread.pin-reordered",
       "thread.active-reordered",
@@ -3817,6 +3829,13 @@ const OrchestrationV2InternalCommand = Schema.Union([
     threadId: ThreadId,
     dueAt: IsoDateTime,
   }),
+  /** The settlement sweep's forecast for a thread; null clears it. Never bumps updatedAt. */
+  Schema.Struct({
+    type: Schema.Literal("thread.auto-settle.plan"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    plan: Schema.NullOr(OrchestrationV2AutoSettlePlan),
+  }),
   /** What a completed run left behind, written by the server after it reads the reply. */
   Schema.Struct({
     type: Schema.Literal("thread.card.record"),
@@ -3829,7 +3848,6 @@ const OrchestrationV2InternalCommand = Schema.Union([
     line: ThreadCardSummary.fields.line,
     topics: ThreadCardSummary.fields.topics,
     open: ThreadCardSummary.fields.open,
-    settle: Schema.optional(ThreadCardSettle),
     /** Absent: write the card only. */
     run: Schema.optional(
       Schema.Struct({

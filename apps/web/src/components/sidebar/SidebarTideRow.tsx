@@ -8,6 +8,7 @@ import {
   ListTodoIcon,
   MessageCircleQuestionIcon,
   ShieldQuestionIcon,
+  TimerIcon,
   UserRoundIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const STATUS_LOOK: Record<TideStatusTone, { icon: LucideIcon; className: string 
   plan: { icon: ListTodoIcon, className: "text-violet-600 dark:text-violet-300" },
   completed: { icon: CircleCheckIcon, className: "text-success-foreground" },
   woke: { icon: AlarmClockIcon, className: "text-warning-foreground" },
+  settling: { icon: TimerIcon, className: "text-muted-foreground" },
 };
 
 /** The status word that leads a row's last line, with its icon, in its status colour. */

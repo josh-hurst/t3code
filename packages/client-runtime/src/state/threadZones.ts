@@ -14,6 +14,7 @@ import type { EnvironmentThreadShell, ThreadRunSummary, ThreadRuntimeSummary } f
 import {
   effectiveSnoozed,
   laterWhenLabel,
+  snoozeWakeLabel,
   threadLaterAt,
   type ThreadLaterShell,
   type ThreadSnoozeShell,
@@ -356,6 +357,38 @@ export function threadLaterStatusLabel(
   const when = laterWhenLabel(thread, options);
   if (when === null || when === "now") return word;
   return when === "due" ? `${word}, due` : `${word}, wakes in ${when}`;
+}
+
+/** How long before its settle time a quiet thread's row says so. */
+export const AUTO_SETTLE_SOON_MS = 60 * 60 * 1_000;
+export const AUTO_SETTLE_SOON_WORD = "Settling soon";
+
+type AutoSettleInput = Pick<
+  EnvironmentThreadShell,
+  "archivedAt" | "settledOverride" | "pinnedAt" | "latestRun" | "latestUserMessageAt"
+> &
+  Partial<Pick<EnvironmentThreadShell, "autoSettlePlan" | "autoSettleDisabledAt">>;
+
+/**
+ * When the server will settle a quiet thread, in epoch ms. Null without a plan, and once the
+ * thread has moved on from the activity the plan was worked out from: the server rewrites it
+ * only when the thread goes quiet again, and never for a thread it has stopped sweeping.
+ */
+export function threadAutoSettleAt(thread: AutoSettleInput): number | null {
+  const plan = thread.autoSettlePlan;
+  if (plan == null || thread.archivedAt !== null || thread.settledOverride !== null) return null;
+  if (thread.pinnedAt !== null || thread.autoSettleDisabledAt != null) return null;
+  const run = thread.latestRun;
+  const moved = [thread.latestUserMessageAt, run?.requestedAt, run?.startedAt, run?.completedAt]
+    .map((value) => (value == null ? Number.NaN : Date.parse(value)))
+    .some((atMs) => atMs > plan.basisAt);
+  return moved ? null : plan.at;
+}
+
+/** "Settles in 3h". A time already past is held until the owner is back, which the server decides. */
+export function threadAutoSettleLabel(atMs: number, options: { readonly now: string }): string {
+  const when = snoozeWakeLabel(DateTime.formatIso(DateTime.makeUnsafe(atMs)), options);
+  return when === "now" ? "Settles soon after your next message" : `Settles in ${when}`;
 }
 
 /** Later, soonest first; rows with no time (set aside, standing checks) last, oldest hold first. */

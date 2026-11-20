@@ -116,6 +116,7 @@ function shouldPublishAgentAwarenessEvent(
     case "thread.unsnoozed":
     case "thread.follow-up-updated":
     case "thread.auto-settle-set":
+    case "thread.auto-settle-planned":
     case "thread.pinned":
     case "thread.unpinned":
     case "thread.pin-reordered":

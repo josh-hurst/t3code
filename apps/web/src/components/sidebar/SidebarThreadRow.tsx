@@ -60,6 +60,7 @@ import {
   ShieldQuestionIcon,
   SquarePenIcon,
   TerminalIcon,
+  TimerIcon,
   Undo2Icon,
   UserRoundIcon,
   XIcon,
@@ -130,6 +131,10 @@ import { TideOwedLabel, TideProject, TideRowBody, TideStatusLabel } from "./Side
 import { SearchMatchHintLine, ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import type { SearchMatchHint } from "@t3tools/shared/paletteSearch";
 import {
+  AUTO_SETTLE_SOON_MS,
+  AUTO_SETTLE_SOON_WORD,
+  threadAutoSettleAt,
+  threadAutoSettleLabel,
   threadCardOpenItemLabel,
   threadLaterLabel,
   threadWorkingLine,
@@ -188,6 +193,12 @@ function StandingCheckNextRun(props: { environmentId: EnvironmentId; threadId: T
   )?.nextRunAt;
   if (nextRunAt == null) return null;
   return <>{laterTimeText(snoozeWakeLabel(nextRunAt, { now: `${nowMinute}:00.000Z` }))}</>;
+}
+
+/** When the thread settles on its own, counted on the minute tick only while the card is open. */
+function AutoSettleNote(props: { atMs: number }) {
+  const nowMinute = useNowMinute();
+  return <>{threadAutoSettleLabel(props.atMs, { now: `${nowMinute}:00.000Z` })}</>;
 }
 
 /** A Later row's time as shown: "in 3h", or "now" and "due" as they are. */
@@ -298,6 +309,7 @@ function SidebarThreadTooltip({
   terminalProcessCount,
   cardText = null,
   timeNote = null,
+  settlesAtMs = null,
   showCard = false,
 }: {
   thread: SidebarThreadSummary;
@@ -320,6 +332,8 @@ function SidebarThreadTooltip({
   cardText?: string | null;
   // What the row's time means, as an absolute time.
   timeNote?: string | null;
+  // When inactivity settles the thread, from the server's plan.
+  settlesAtMs?: number | null;
   // The new layout's rows add the card's outcome and every open item, which rows shorten.
   showCard?: boolean;
 }) {
@@ -367,6 +381,14 @@ function SidebarThreadTooltip({
           <div className="flex min-w-0 items-center gap-2">
             <ClockIcon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />
             <div className="min-w-0 text-foreground/75">{timeNote}</div>
+          </div>
+        ) : null}
+        {settlesAtMs !== null ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <TimerIcon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />
+            <div className="min-w-0 text-foreground/75">
+              <AutoSettleNote atMs={settlesAtMs} />
+            </div>
           </div>
         ) : null}
         {projectDisplayName ? (
@@ -1002,6 +1024,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         },
       )
     : null;
+  // Only rows still in the active list: Later and History rows are already put away.
+  const settlesAtMs = props.tide && variantAction === "settle" ? threadAutoSettleAt(thread) : null;
+  const settlingSoon = useDeadlinePassed(
+    settlesAtMs === null ? null : settlesAtMs - AUTO_SETTLE_SOON_MS,
+  );
   const tideDone = tideLead?.lead?.kind === "status" && tideLead.lead.tone === "completed";
   const brightTitle = tideDone || (props.tide && props.needsYou);
   const tideText = tideLead?.text ?? null;
@@ -1033,6 +1060,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       terminalProcessCount={terminalProcessCount}
       cardText={tideText}
       showCard={props.tide}
+      settlesAtMs={settlesAtMs}
       timeNote={
         tideTime === null
           ? null
@@ -1461,7 +1489,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   if (props.tide) {
     const isCardRow = variant === "card";
-    const lead = tideLead?.lead ?? null;
+    // A row with nothing owed and no status of its own says when it is about to leave the list.
+    const lead =
+      tideLead?.lead ??
+      (settlingSoon
+        ? ({ kind: "status", tone: "settling", word: AUTO_SETTLE_SOON_WORD } as const)
+        : null);
     const isRunning =
       lead?.kind === "status" && (lead.tone === "working" || lead.tone === "connecting");
     const label =

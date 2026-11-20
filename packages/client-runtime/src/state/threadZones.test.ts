@@ -20,6 +20,8 @@ import {
   sortNeedsYouThreads,
   sortTrailThreads,
   splitTrail,
+  threadAutoSettleAt,
+  threadAutoSettleLabel,
   threadNeedsYou,
   threadCardOwedLabel,
   threadCardRowLine,
@@ -363,6 +365,41 @@ describe("threadLaterLead", () => {
       "Set aside",
     );
     expect(threadLaterLead(held({ snoozedUntil: T3 }), limit)).toBeNull();
+  });
+
+  it("shows a settle plan only while the thread is where the plan left it", () => {
+    const quiet = (overrides: Partial<EnvironmentThreadShell> = {}) =>
+      shell(
+        "planned",
+        {
+          latestRunId: RunId.make("run-1"),
+          latestRunRequestedAt: DateTime.makeUnsafe(T0),
+          latestRunCompletedAt: DateTime.makeUnsafe(T1),
+          latestUserMessageAt: DateTime.makeUnsafe(T0),
+        },
+        { autoSettlePlan: { at: Date.parse(T3), basisAt: Date.parse(T1) }, ...overrides },
+      );
+    expect(threadAutoSettleAt(quiet())).toBe(Date.parse(T3));
+    // A message or run after the plan's basis restarts the wait before the server says so.
+    expect(threadAutoSettleAt(quiet({ latestUserMessageAt: T2 }))).toBeNull();
+    const rerun = quiet().latestRun;
+    expect(
+      threadAutoSettleAt(quiet({ latestRun: rerun && { ...rerun, requestedAt: T2 } })),
+    ).toBeNull();
+    // The server stops sweeping these threads, so their last plan is never cleared.
+    for (const stale of [
+      { pinnedAt: T2 },
+      { autoSettleDisabledAt: T2 },
+      { settledOverride: "settled" as const },
+      { archivedAt: T2 },
+      { autoSettlePlan: null },
+    ]) {
+      expect(threadAutoSettleAt(quiet(stale))).toBeNull();
+    }
+    expect(threadAutoSettleLabel(Date.parse(T3), { now: T1 })).toBe("Settles in 2h");
+    expect(threadAutoSettleLabel(Date.parse(T1), { now: T2 })).toBe(
+      "Settles soon after your next message",
+    );
   });
 
   it("puts the lead and the time on a held thread's status line", () => {

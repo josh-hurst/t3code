@@ -30,15 +30,9 @@ export const ThreadCardSummary = Schema.Struct({
 });
 export type ThreadCardSummary = typeof ThreadCardSummary.Type;
 
-/** How a reply changes its thread's inactivity timer: settle after hours, or never by timer. */
-export const ThreadCardSettle = Schema.Literals(["soon", "keep"]);
-export type ThreadCardSettle = typeof ThreadCardSettle.Type;
-
 export const ThreadCard = Schema.Struct({
   ...ThreadCardSummary.fields,
   runId: RunId,
-  /** Only the server's settlement sweep reads it, so it stays off the summary clients list. */
-  settle: Schema.optional(ThreadCardSettle),
 });
 export type ThreadCard = typeof ThreadCard.Type;
 

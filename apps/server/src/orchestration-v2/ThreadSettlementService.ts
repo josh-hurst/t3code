@@ -7,10 +7,12 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import {
   CommandId,
+  isCompactionCommandMessage,
   isOrchestrationV2WorkActive,
   threadCardHasOpenAsk,
   threadFollowUpIsArmed,
   type ThreadId,
+  type OrchestrationV2AutoSettlePlan,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
@@ -48,9 +50,33 @@ export interface SettlementPullRequest {
   readonly mergedAt?: string | null;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1_000;
-/** Inactivity that settles a thread whose last reply left nothing open. */
-const SOON_SETTLE_AFTER_MS = 4 * 60 * 60 * 1_000;
+const HOUR_MS = 60 * 60 * 1_000;
+const DAY_MS = 24 * HOUR_MS;
+/**
+ * Fitted to a month of one owner's threads: past this wait about 1 thread in 40 was written in
+ * again, and a model reading the reply predicted that no better than the elapsed time alone.
+ * A thread that ran for hours is returned to far more often than a quick one, so its age adds on.
+ */
+const EARLY_SETTLE_BASE_MS = 12 * HOUR_MS;
+const EARLY_SETTLE_PER_AGE = 12;
+/** The owner counts as away once they have written nowhere for this long. */
+const AWAY_AFTER_MS = 2 * HOUR_MS;
+/** A thread settles early only this long after the owner came back, and after they last opened it. */
+const BACK_FOR_MS = 2 * HOUR_MS;
+
+/** When the owner last wrote in any thread, and when that unbroken stretch of writing began. */
+export interface OwnerPresence {
+  readonly lastAtMs: number;
+  readonly sinceAtMs: number;
+}
+
+/** @internal Exported for tests. */
+export function ownerPresenceAfter(presence: OwnerPresence | null, atMs: number): OwnerPresence {
+  if (presence === null || atMs - presence.lastAtMs > AWAY_AFTER_MS) {
+    return { lastAtMs: atMs, sinceAtMs: atMs };
+  }
+  return atMs <= presence.lastAtMs ? presence : { ...presence, lastAtMs: atMs };
+}
 const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 
 function toMillis(value: DateTime.Utc | null | undefined): number | null {
@@ -226,18 +252,27 @@ export function isSnoozed(
   return !wokeOnError;
 }
 
-export function resolveAutoSettlementAt(input: {
+interface AutoSettlementInput {
   readonly thread: ProjectionStore.ProjectionSettlementCandidate;
   readonly pullRequest: SettlementPullRequest | null;
   readonly nowMs: number;
   readonly autoSettleAfterDays: number | null;
   readonly autoSettleOnMerge: boolean;
   readonly autoSettleKeepPullRequests?: boolean;
-}): DateTime.Utc | null {
+  /** Absent or null: the owner counts as away, so only the full window settles. */
+  readonly presence?: OwnerPresence | null;
+}
+
+const NO_SETTLEMENT = { settledAt: null, plan: null } as const;
+
+function resolveAutoSettlement(input: AutoSettlementInput): {
+  readonly settledAt: DateTime.Utc | null;
+  readonly plan: OrchestrationV2AutoSettlePlan | null;
+} {
   const { thread } = input;
   let pullRequest = input.pullRequest;
   const links = settlementPullRequestLinks(thread.pullRequests ?? []);
-  if (links.some((link) => link.snapshot === null)) return null;
+  if (links.some((link) => link.snapshot === null)) return NO_SETTLEMENT;
   // An open link means the pull request has not finished, so only inactivity
   // can settle the thread, never a merged or closed lookup.
   const hasOpenLink = links.some((link) => link.snapshot?.state === "open");
@@ -256,45 +291,62 @@ export function resolveAutoSettlementAt(input: {
             closedAt: latest.snapshot.closedAt ?? null,
           };
   }
-  if (!isAutoSettlementCandidate(thread, input.nowMs)) return null;
+  if (!isAutoSettlementCandidate(thread, input.nowMs)) return NO_SETTLEMENT;
   const activityAtMs = threadActivityAtMs(thread);
   if (pullRequest !== null && pullRequestSettles(thread, pullRequest, input.autoSettleOnMerge)) {
-    return DateTime.makeUnsafe(activityAtMs);
+    return { settledAt: DateTime.makeUnsafe(activityAtMs), plan: null };
   }
   const hasPullRequest =
     hasOpenLink ||
     pullRequest !== null ||
     thread.linkedPullRequest != null ||
     thread.branchPullRequest != null;
-  if (input.autoSettleKeepPullRequests === true && hasPullRequest) return null;
-  if (input.autoSettleAfterDays === null) return null;
-  // A standing thread stays one until a later card says otherwise; a failed run writes no card.
-  if (thread.card?.settle === "keep") return null;
+  if (input.autoSettleKeepPullRequests === true && hasPullRequest) return NO_SETTLEMENT;
+  if (input.autoSettleAfterDays === null) return NO_SETTLEMENT;
   const snoozedUntilMs = toMillis(thread.snoozedUntil);
   const timerWakeAtMs =
     snoozedUntilMs !== null && snoozedUntilMs <= input.nowMs ? snoozedUntilMs : null;
   const inactivityAtMs =
     latestMillis([activityAtMs, toMillis(thread.lastSnoozeWakeAt), timerWakeAtMs]) ?? activityAtMs;
-  const windowMs = input.autoSettleAfterDays * DAY_MS;
+  const windowAtMs = inactivityAtMs + input.autoSettleAfterDays * DAY_MS;
   const completedAtMs = toMillis(thread.latestRunCompletedAt);
   const visitedAtMs = toMillis(thread.lastVisitedAt);
-  // Seen as the clients mark it, so a reply that lands overnight does not settle unread. That
-  // watermark is in the thread's own time; the last open says when the user actually looked.
-  const settlesSoon =
-    thread.card?.settle === "soon" &&
-    // "Nothing left to do" describes one reply, so a later run without a card voids it.
-    thread.card.runId === thread.latestRunId &&
-    // The parser drops soon beside an open item; one restored afterwards owes the user again.
-    thread.card.open.length === 0 &&
+  const presence = input.presence ?? null;
+  let atMs = windowAtMs;
+  // Seen as the clients mark it, so a reply that lands overnight does not settle early unread.
+  if (
     !hasPullRequest &&
+    (thread.card?.open.length ?? 0) === 0 &&
     completedAtMs !== null &&
     visitedAtMs !== null &&
-    visitedAtMs >= completedAtMs;
-  const idleSinceMs = settlesSoon
-    ? Math.max(inactivityAtMs, thread.opens?.openedAt ?? inactivityAtMs)
-    : inactivityAtMs;
-  const waitMs = settlesSoon ? Math.min(windowMs, SOON_SETTLE_AFTER_MS) : windowMs;
-  return idleSinceMs < input.nowMs - waitMs ? DateTime.makeUnsafe(inactivityAtMs) : null;
+    visitedAtMs >= completedAtMs
+  ) {
+    const ageMs = Math.max(0, activityAtMs - DateTime.toEpochMillis(thread.createdAt));
+    atMs = Math.min(
+      windowAtMs,
+      Math.max(
+        inactivityAtMs + EARLY_SETTLE_BASE_MS + EARLY_SETTLE_PER_AGE * ageMs,
+        (thread.opens?.openedAt ?? 0) + BACK_FOR_MS,
+        presence === null ? 0 : presence.sinceAtMs + BACK_FOR_MS,
+      ),
+    );
+  }
+  const away = presence === null || input.nowMs - presence.lastAtMs > AWAY_AFTER_MS;
+  // The window is the owner's own setting, so it settles whether or not they are around.
+  return input.nowMs > (away ? windowAtMs : atMs)
+    ? { settledAt: DateTime.makeUnsafe(inactivityAtMs), plan: null }
+    : { settledAt: null, plan: { at: atMs, basisAt: activityAtMs } };
+}
+
+export function resolveAutoSettlementAt(input: AutoSettlementInput): DateTime.Utc | null {
+  return resolveAutoSettlement(input).settledAt;
+}
+
+/** When inactivity will settle the thread if nothing changes; null when it will not, or settles now. */
+export function resolveAutoSettlePlan(
+  input: AutoSettlementInput,
+): OrchestrationV2AutoSettlePlan | null {
+  return resolveAutoSettlement(input).plan;
 }
 
 export class ThreadSettlementServiceV2 extends Context.Service<
@@ -377,6 +429,8 @@ export const make = Effect.gen(function* () {
   // Repeated thread.settled retains settledAt; run the action only once per settlement.
   const settleActionRunAt = new Map<ThreadId, number>();
   const noPullRequestRechecks = makeNoPullRequestRechecks();
+  // Unknown until the first sweep reads it, which only delays early settling.
+  let presence: OwnerPresence | null = null;
 
   const sweep = Effect.fn("ThreadSettlementServiceV2.sweep")(function* (
     mergedPullRequest: PullRequestService.PullRequestMergeEvent | null,
@@ -394,6 +448,11 @@ export const make = Effect.gen(function* () {
     for (const [key, readAtMs] of quietOpenReadAt) {
       if (nowMs - readAtMs >= QUIET_SYNC_INTERVAL_MS) quietOpenReadAt.delete(key);
     }
+    // Running threads are not candidates, so message events keep this current between sweeps.
+    const wroteAtMs = latestMillis(
+      threads.map((thread) => toMillis(thread.latestUserAuthoredMessageAt)),
+    );
+    if (wroteAtMs !== null) presence = ownerPresenceAfter(presence, wroteAtMs);
     // Merge events resweep all candidates because unlinked threads settle through branch lookup.
     const candidates = threads.filter(
       (thread) =>
@@ -429,6 +488,7 @@ export const make = Effect.gen(function* () {
           autoSettleAfterDays: currentSettings.sidebarAutoSettleAfterDays,
           autoSettleOnMerge: currentSettings.sidebarAutoSettleOnMerge,
           autoSettleKeepPullRequests: currentSettings.sidebarAutoSettleKeepPullRequests,
+          presence,
         });
         if (settledAt === null) return thread;
         const uuid = yield* random.uuidV4();
@@ -454,21 +514,58 @@ export const make = Effect.gen(function* () {
         ),
     );
 
+    // The time clients show comes from the decision that settles, so the two cannot disagree.
+    const planThread = (
+      thread: (typeof threads)[number],
+      plan: OrchestrationV2AutoSettlePlan | null,
+    ) => {
+      const stored = thread.autoSettlePlan ?? null;
+      if (stored?.at === plan?.at && stored?.basisAt === plan?.basisAt) return Effect.void;
+      return random.uuidV4().pipe(
+        Effect.flatMap((uuid) =>
+          orchestrator.dispatch({
+            type: "thread.auto-settle.plan",
+            commandId: CommandId.make(`server:auto-settle-plan:${thread.id}:${uuid}`),
+            threadId: thread.id,
+            plan,
+          }),
+        ),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterruptsOnly(cause),
+          (cause) =>
+            Effect.logWarning("automatic thread settlement plan skipped", {
+              threadId: thread.id,
+              cause: Cause.pretty(cause),
+            }),
+        ),
+        Effect.asVoid,
+      );
+    };
+    const settling = new Set(candidates);
+    yield* Effect.forEach(
+      threads.filter((thread) => !settling.has(thread)),
+      (thread) => planThread(thread, null),
+      { concurrency: 8, discard: true },
+    );
+
     const lookupCandidates = (yield* Effect.forEach(
       candidates,
       (thread) => {
         if (thread.lineage.relationshipToParent === "subagent") return settleThread(thread, null);
         const projectSettings = resolveProjectSettings(settings, thread.projectId).settings;
         // Skip no-op decisions; actual settlement still reads fresh settings before dispatch.
-        const settledAt = resolveAutoSettlementAt({
+        const decision = resolveAutoSettlement({
           thread,
           pullRequest: null,
           nowMs,
           autoSettleAfterDays: projectSettings.sidebarAutoSettleAfterDays,
           autoSettleOnMerge: projectSettings.sidebarAutoSettleOnMerge,
           autoSettleKeepPullRequests: projectSettings.sidebarAutoSettleKeepPullRequests,
+          presence,
         });
-        return settledAt === null ? Effect.succeed(thread) : settleThread(thread, null);
+        return decision.settledAt === null
+          ? planThread(thread, decision.plan).pipe(Effect.as(thread))
+          : settleThread(thread, null);
       },
       { concurrency: 8 },
     ))
@@ -546,6 +643,7 @@ export const make = Effect.gen(function* () {
             autoSettleAfterDays: settings.sidebarAutoSettleAfterDays,
             autoSettleOnMerge: settings.sidebarAutoSettleOnMerge,
             autoSettleKeepPullRequests: settings.sidebarAutoSettleKeepPullRequests,
+            presence,
           }) !== null
         );
       });
@@ -789,6 +887,17 @@ export const make = Effect.gen(function* () {
       case "thread.archived":
       case "thread.deleted":
         return enqueueFullSweep();
+      // The same messages the candidates count as the owner writing: not a schedule's, not a compaction.
+      case "message.updated":
+        if (
+          event.payload.role === "user" &&
+          event.payload.createdBy === "user" &&
+          event.payload.scheduledTaskId === undefined &&
+          !isCompactionCommandMessage(event.payload)
+        ) {
+          presence = ownerPresenceAfter(presence, DateTime.toEpochMillis(event.payload.createdAt));
+        }
+        return Effect.void;
       case "thread.pull-request-link-updated":
       case "thread.pull-request-synced":
       case "provider-session.detached":

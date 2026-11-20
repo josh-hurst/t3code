@@ -323,6 +323,7 @@ export function applyOrchestrationV2ProjectionEvent(
       return { ...base, thread: event.payload };
     // Visited tracking, tags and follow-ups are not activity: skip the updatedAt bump.
     case "thread.visited":
+    case "thread.auto-settle-planned":
     case "thread.tags-updated":
     case "thread.marked-unread":
     case "thread.follow-up-updated":

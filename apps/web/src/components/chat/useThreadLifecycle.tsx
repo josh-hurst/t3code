@@ -28,7 +28,12 @@ import {
   snoozeWakeAtMs,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
-import { threadLaterStatusLabel } from "@t3tools/client-runtime/state/thread-zones";
+import {
+  AUTO_SETTLE_SOON_MS,
+  threadAutoSettleAt,
+  threadAutoSettleLabel,
+  threadLaterStatusLabel,
+} from "@t3tools/client-runtime/state/thread-zones";
 import {
   BACKGROUND_WORK_STOP_RETRY_AFTER_MS,
   type BackgroundWorkStopRequest,
@@ -49,7 +54,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { useUiStateStore } from "../../uiStateStore";
 import { type ChatMessage, DEFAULT_INTERACTION_MODE } from "../../types";
-import { AlarmClockIcon, CheckCircle2Icon } from "lucide-react";
+import { AlarmClockIcon, CheckCircle2Icon, TimerIcon } from "lucide-react";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { titleRegenerationToast } from "../threadTitleRegenerationToast";
 import { newMessageId } from "~/lib/utils";
@@ -183,7 +188,8 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   } = input;
   const navigate = useNavigate();
   const router = useRouter();
-  const { settleThread, pinThread, confirmAndUnpinThread } = useThreadActions();
+  const { settleThread, pinThread, confirmAndUnpinThread, setThreadAutoSettle } =
+    useThreadActions();
   const laterActions = useThreadLaterActions();
   const recheckLimit = useAtomValue(serverEnvironment.laterRecheckLimitAtom(environmentId));
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
@@ -268,6 +274,26 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     setUnsettlingThreadKey((current) => (current === threadKey ? null : current));
   };
   const handleUnsettleActiveThreadStable = useStableCallback(handleUnsettleActiveThread);
+  const activeSettlesAtMs =
+    activeThreadShell !== null && serverConfigLoaded ? threadAutoSettleAt(activeThreadShell) : null;
+  const activeSettlingSoon = useDeadlinePassed(
+    activeSettlesAtMs === null ? null : activeSettlesAtMs - AUTO_SETTLE_SOON_MS,
+  );
+  const keepActiveThreadOpen = async () => {
+    if (activeThreadRef === null) return;
+    const result = await setThreadAutoSettle(activeThreadRef, false);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to update auto-settle",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    }
+  };
+  const keepActiveThreadOpenStable = useStableCallback(keepActiveThreadOpen);
   const unsnoozeThreadMutation = useOrchestrationCommand(threadEnvironment.unsnooze, {
     reportFailure: false,
   });
@@ -653,6 +679,15 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       label="Woke from snooze"
       actionLabel="Dismiss"
       onAction={acknowledgeActiveThreadWokeStable}
+    />
+  ) : activeSettlesAtMs !== null && activeSettlingSoon ? (
+    <ThreadStatusLine
+      icon={<TimerIcon />}
+      label={threadAutoSettleLabel(activeSettlesAtMs, { now: `${nowMinute}:00.000Z` })}
+      clockMinute={nowMinute}
+      actionLabel="Keep open"
+      actionDisabled={!canOperateThread}
+      onAction={() => void keepActiveThreadOpenStable()}
     />
   ) : null;
   const toastThreadActionFailure =

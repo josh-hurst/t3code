@@ -95,8 +95,6 @@ export class ThreadCardService extends Context.Service<
     readonly execute: (input: {
       readonly threadId: ThreadId;
       readonly runId: RunId;
-      /** From the run's checkpoint; anything but false means its files may have changed. */
-      readonly workspaceChanged?: boolean | undefined;
     }) => Effect.Effect<void>;
   }
 >()("t3/orchestration-v2/ThreadCardService") {}
@@ -115,7 +113,6 @@ const make = Effect.gen(function* () {
   const generate = Effect.fn("ThreadCardService.generate")(function* (input: {
     readonly threadId: ThreadId;
     readonly runId: RunId;
-    readonly workspaceChanged?: boolean | undefined;
   }) {
     const settings = yield* serverSettings.getSettings;
     if (settings.threadReplySummariesEnabled !== true) return;
@@ -186,9 +183,6 @@ const make = Effect.gen(function* () {
     });
     const card = parseThreadCard(generated.transcription, DateTime.toEpochMillis(now));
     if (card === null) return;
-    // The model reads only the reply. Changed files may still need the user, whatever it says.
-    const settle =
-      card.settle === "soon" && input.workspaceChanged !== false ? undefined : card.settle;
 
     yield* threads.dispatch({
       type: "thread.card.record",
@@ -200,7 +194,6 @@ const make = Effect.gen(function* () {
       line: card.line,
       topics: card.topics,
       open: card.open,
-      ...(settle === undefined ? {} : { settle }),
       ...(stored === null
         ? {}
         : {

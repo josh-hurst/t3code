@@ -135,8 +135,6 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("thread-card.generate"),
     runId: RunId,
-    /** False only when the run's checkpoint is ready and lists no file the run changed. */
-    workspaceChanged: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     type: Schema.Literal("thread-contents.regroup"),

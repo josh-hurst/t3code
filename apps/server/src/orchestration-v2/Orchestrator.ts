@@ -671,6 +671,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.follow-up.release":
     case "thread.standing-check.set":
     case "thread.auto-settle.set":
+    case "thread.auto-settle.plan":
     case "thread.pin":
     case "thread.unpin":
     case "thread.pin.reorder":
@@ -4259,7 +4260,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       line: command.line,
       topics: command.topics,
       open: command.open,
-      settle: command.settle,
       at: DateTime.formatIso(occurredAt),
       // A wake starts a newer run without answering anything, so runs are not compared.
       answered: lastWroteAt !== null && DateTime.toEpochMillis(lastWroteAt) > repliedAtMs,
@@ -4709,6 +4709,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           | "thread.snooze"
           | "thread.unsnooze"
           | "thread.auto-settle.set"
+          | "thread.auto-settle.plan"
           | "thread.pin"
           | "thread.unpin"
           | "thread.pin.reorder"
@@ -5307,6 +5308,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             updatedAt: alreadyAwake ? thread.updatedAt : now,
           };
         }
+        // A forecast is not activity: updatedAt stays, as it does for a visit or a card.
+        case "thread.auto-settle.plan":
+          return { ...thread, autoSettlePlan: command.plan };
         case "thread.auto-settle.set": {
           const unchanged = command.enabled === (thread.autoSettleDisabledAt == null);
           return {
@@ -5790,6 +5794,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return "thread.unsnoozed" as const;
         case "thread.auto-settle.set":
           return "thread.auto-settle-set" as const;
+        case "thread.auto-settle.plan":
+          return "thread.auto-settle-planned" as const;
         case "thread.pin":
           return "thread.pinned" as const;
         case "thread.unpin":
@@ -15757,6 +15763,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.snooze":
       case "thread.unsnooze":
       case "thread.auto-settle.set":
+      case "thread.auto-settle.plan":
       case "thread.pin":
       case "thread.unpin":
       case "thread.pin.reorder":

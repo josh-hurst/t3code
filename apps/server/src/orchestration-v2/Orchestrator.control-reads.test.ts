@@ -617,6 +617,22 @@ it.effect(
         assert.ok(shell);
         assert.equal(shell.autoSettleDisabledAt == null, enabled);
       }
+      // A forecast reaches the shell without counting as activity, which would restart its own timer.
+      const beforePlan = yield* projections.getThreadShell(threadId);
+      assert.ok(beforePlan);
+      yield* TestClock.adjust("1 minute");
+      for (const plan of [{ at: 2_000, basisAt: 1_000 }, null]) {
+        yield* orchestrator.dispatch({
+          type: "thread.auto-settle.plan",
+          commandId: CommandId.make(`auto-settle-plan-${plan?.at ?? "clear"}`),
+          threadId,
+          plan,
+        });
+        assert.deepEqual(yield* projections.getThreadShell(threadId), {
+          ...beforePlan,
+          autoSettlePlan: plan,
+        });
+      }
       yield* sql`INSERT INTO orchestration_v2_projection_messages
       (message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at, payload_json)
       VALUES ('obsolete', ${threadId}, NULL, NULL, 'assistant', 0, ${DateTime.formatIso(now)}, ${DateTime.formatIso(now)}, '{"obsolete":true}')`;

@@ -46,8 +46,6 @@ const Results = Schema.fromJsonString(
       open: Schema.optional(Schema.Array(Schema.String)),
       // Absent in results written before cards filed runs under entries.
       entries: Schema.optional(Schema.Array(Schema.String)),
-      // Absent in results written before cards could adjust the inactivity timer.
-      settle: Schema.optional(Schema.String),
     }),
   ),
 );
@@ -106,7 +104,6 @@ await Effect.runPromise(
               ? `${entry.ref} | ${entry.outcome}`
               : `${entry.ref} | ${entry.title} | ${entry.outcome}`,
           ),
-          settle: card?.settle ?? "none",
         };
         results.push({ id: fixture.id, sample, ...row, raw: transcription });
         const first = !previous || (yield* Random.nextBoolean);
@@ -115,13 +112,11 @@ await Effect.runPromise(
           topics: previous.topics ?? [],
           open: previous.open ?? [],
           entries: previous.entries ?? [],
-          settle: previous.settle ?? "none",
         };
         review.push({
           id: fixture.id,
           rubric: fixture.rubric,
           ...(fixture.expectEntries === undefined ? {} : { expectEntries: fixture.expectEntries }),
-          ...(fixture.expectSettle === undefined ? {} : { expectSettle: fixture.expectSettle }),
           sample,
           A: first ? row : before,
           B: first ? before : row,

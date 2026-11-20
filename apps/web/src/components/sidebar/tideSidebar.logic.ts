@@ -252,8 +252,8 @@ export function resolveTideRowTime(input: {
   };
 }
 
-/** A row's status colour: the shared status kinds plus the web's usage limit and woken snooze. */
-export type TideStatusTone = ThreadStatusKind | "limited" | "woke";
+/** A row's status colour: the shared status kinds plus the web's usage limit, woken snooze and settle notice. */
+export type TideStatusTone = ThreadStatusKind | "limited" | "woke" | "settling";
 
 export type TideRowLead =
   | { readonly kind: "status"; readonly tone: TideStatusTone; readonly word: string }

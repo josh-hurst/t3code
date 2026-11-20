@@ -74,7 +74,6 @@ export const layer: Layer.Layer<
         preservedCheckpointOrdinals,
         sideChat,
         listed,
-        changedFiles,
       } = yield* projections.getCheckpointCaptureContext(input.threadId, input);
       // Stopped runs remain terminal; their checkpoint is the next message's rollback point.
       const stopped = run?.status === "interrupted" || run?.status === "cancelled";
@@ -148,16 +147,7 @@ export const layer: Layer.Layer<
         effects:
           stopped || !listed
             ? []
-            : [
-                threadCardGenerationEffect({
-                  commandId,
-                  threadId: input.threadId,
-                  runId: run.id,
-                  // An earlier run's changes can still be uncommitted when a later one changes nothing.
-                  workspaceChanged:
-                    changedFiles || checkpoint.status !== "ready" || checkpoint.files.length > 0,
-                }),
-              ],
+            : [threadCardGenerationEffect({ commandId, threadId: input.threadId, runId: run.id })],
         events: [
           ...(threadStartCheckpoint === null
             ? []

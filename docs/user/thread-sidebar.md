@@ -330,15 +330,21 @@ but an old closed or merged pull request does not settle work you
 resumed after it closed. Only your own messages count as resuming. A turn that
 finished background work or a pull request watch starts on its own does not.
 
-When [thread summaries](#choose-what-shows-under-a-threads-title) are on, the summary of a
-thread's latest finished run can change that wait. In a thread where no run has changed
-a file, a reply that leaves you nothing to do, such as an answered question or a status
-report, settles the thread four hours after you last opened it, once you have read the
-reply and moved on. A thread you keep coming back to, such as a running log, is not
-settled for inactivity at all; a merged or closed pull request still settles it. A thread
-where a run changed files, a thread with a pull request, and a reply that still owes you
-a check, a commit, or a publish all keep the usual wait. Each finished run decides again,
-and **Un-settle thread** brings back one that went too early.
+A short thread settles sooner than that setting. Once you have read its latest reply, a
+thread settles 12 hours after its last activity, plus 12 hours for each hour it had been
+going, and never later than the setting. A thread ten minutes old leaves after about 14
+hours, and one that ran for three hours waits the full time. A thread with a pull request,
+or whose summary still lists something for you, keeps the full wait.
+
+Nothing settles early while you are away. After two hours without a message from you in
+any thread, early settling pauses, and it resumes two hours after you next write. A thread
+you opened in the last two hours also waits.
+
+A thread within an hour of settling shows **Settling soon** in the thread list, and the
+open thread shows the time left with **Keep open**, which turns auto-settle off for that
+thread. On web and desktop, a thread's hover card and its details panel show the time left
+at any point, and the details panel has the switch to turn it back on. **Un-settle thread**
+brings back one that went too early.
 
 To keep one thread out of the settled shelf no matter how long it sits idle, open its menu,
 choose **Auto-settle behavior**, and pick **Never**. The current option is checked. Pick

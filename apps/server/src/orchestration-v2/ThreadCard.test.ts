@@ -44,12 +44,6 @@ describe("nextThreadCard", () => {
     expect(nextThreadCard(input(1, { open })).open).toEqual(open);
     expect(nextThreadCard(input(1, { open, answered: true })).open).toEqual([open[1]]);
   });
-
-  it("takes the settle verdict from the newest run alone", () => {
-    const previous = nextThreadCard(input(1, { settle: "keep" }));
-    expect(previous.settle).toBe("keep");
-    expect(nextThreadCard(input(2, { previous }))).not.toHaveProperty("settle");
-  });
 });
 
 describe("cardCallsForRetitle", () => {

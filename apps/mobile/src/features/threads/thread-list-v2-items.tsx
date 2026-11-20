@@ -41,7 +41,13 @@ import { toServerClock } from "@t3tools/client-runtime/clock";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { nonMainlineBranchName } from "@t3tools/shared/git";
-import { threadCardOwedLabel, threadWorkingLine } from "@t3tools/client-runtime/state/thread-zones";
+import {
+  AUTO_SETTLE_SOON_MS,
+  AUTO_SETTLE_SOON_WORD,
+  threadAutoSettleAt,
+  threadCardOwedLabel,
+  threadWorkingLine,
+} from "@t3tools/client-runtime/state/thread-zones";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useMemo, useState, type ComponentProps, type ReactNode } from "react";
@@ -59,7 +65,7 @@ import {
   ProviderInstanceIcon,
   providerInstanceNameLabel,
 } from "../../components/ProviderIcon";
-import { useNowAfter } from "../../lib/clock";
+import { useDeadlinePassed, useNowAfter } from "../../lib/clock";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { copyThreadReference } from "../../lib/copyThreadReference";
@@ -159,6 +165,13 @@ const DONE_STATUS_LABEL: StatusLabel = {
   icon: "checkmark.circle",
   className: "text-adaptive-emerald-700-300",
   iconTintClassName: "accent-adaptive-emerald-700-300",
+};
+// A quiet thread inside its last hour before it settles on its own.
+const SETTLING_STATUS_LABEL: StatusLabel = {
+  label: AUTO_SETTLE_SOON_WORD,
+  icon: "clock",
+  className: "text-foreground-muted",
+  iconTintClassName: "accent-foreground-muted",
 };
 // A seen thread that its card's open question keeps in Needs you.
 const QUESTION_STATUS_LABEL: StatusLabel = {
@@ -1041,6 +1054,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
   const workingLabel = STATUS_LABEL_BY_STATUS[status];
   const showsWoke = status === "ready" && props.wokeAt !== null;
+  // Later and History rows are already put away, so only an active row says it is about to go.
+  const settlesAtMs =
+    status === "ready" && !snoozedRow && thread.settledOverride === null
+      ? threadAutoSettleAt(thread)
+      : null;
+  const settlingSoon = useDeadlinePassed(
+    settlesAtMs === null ? null : settlesAtMs - AUTO_SETTLE_SOON_MS,
+  );
   const statusLabel =
     (status === "working" && workingLabel !== undefined && thread.goal?.status === "active"
       ? { ...workingLabel, label: "Goal" }
@@ -1049,7 +1070,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ? QUESTION_STATUS_LABEL
       : isUnread
         ? DONE_STATUS_LABEL
-        : undefined);
+        : settlingSoon
+          ? SETTLING_STATUS_LABEL
+          : undefined);
   const recede = shouldRecedeThreadRow({ status, selected });
   const showsDone =
     statusLabel === DONE_STATUS_LABEL &&
