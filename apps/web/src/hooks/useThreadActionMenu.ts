@@ -24,6 +24,7 @@ import {
 import { titleRegenerationToast } from "../components/threadTitleRegenerationToast";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { copyThreadReference } from "../lib/copyThreadReference";
+import { openCommandPalette } from "../commandPaletteBus";
 import { popOutThread, returnThreadToMainWindow } from "../lib/threadPopout";
 import { isThreadPopoutWindow } from "../lib/threadPopoutWindow";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
@@ -200,6 +201,9 @@ export function useThreadActionMenu(input: {
           return;
         case "open-in-main-window":
           returnThreadToMainWindow(router, threadRef);
+          return;
+        case "popout-new-thread":
+          openCommandPalette({ open: "new-thread-in" });
           return;
         case "project-settings": {
           const project = projects.find(

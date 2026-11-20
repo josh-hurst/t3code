@@ -530,9 +530,13 @@ On desktop, the window stays on the Space where it opened; move it to another Sp
 would any window. On macOS, tiling window managers such as yabai float it rather than tile
 it when it opens, and you can still tile it with your usual float toggle.
 
-Links to other threads, Settings, and other pages open in the main window. To send the
-thread back, choose **Open in main window** from its menu, or close the window. Browser
-previews stay in the main window. In a browser, allow pop-ups for the site.
+A pop-out can show a different thread: click the thread name at the top to open the thread
+list, with the same sections as the sidebar, and choose another thread or start a new one.
+Links to other threads and the command palette also stay in the pop-out. Right-click the
+header for the thread's actions. Settings and other pages
+open in the main window. To send the thread back, choose **Open in main window** from its menu,
+or close the window. Browser previews stay in the main window. In a browser, allow pop-ups for
+the site.
 
 ## Snooze until later
 

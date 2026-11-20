@@ -3,6 +3,7 @@ import { PullRequestMergeMethod } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "@t3tools/client-runtime/state/projects";
+import { isThreadPopoutWindow } from "./lib/threadPopoutWindow";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
 const THREAD_CHANGED_FILES_EXPANSION_VERSION = 2;
@@ -481,7 +482,11 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     ),
 }));
 
-useUiStateStore.subscribe((state) => debouncedPersistState.maybeExecute(state));
+// A pop-out keeps its sidebar state (such as its project filter) for its own life; saving it
+// would overwrite the main window's.
+if (!isThreadPopoutWindow) {
+  useUiStateStore.subscribe((state) => debouncedPersistState.maybeExecute(state));
+}
 
 if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
   window.addEventListener("beforeunload", () => {

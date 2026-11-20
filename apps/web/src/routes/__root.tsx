@@ -8,7 +8,9 @@ import {
   type ErrorComponentProps,
   useLocation,
   useNavigate,
+  useParams,
   useRouter,
+  useRouterState,
 } from "@tanstack/react-router";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
@@ -55,7 +57,9 @@ import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { useHostedPromptLinkLanding } from "../components/promptLinks/HostedPromptLinkLanding";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { navigateMainWindow } from "../lib/threadPopout";
-import { isThreadPopoutPath, isThreadPopoutWindow } from "../lib/threadPopoutWindow";
+import { THREAD_POPOUT_STANDBY_PATH, isThreadPopoutWindow } from "../lib/threadPopoutWindow";
+import { ThreadPopoutView } from "../components/ThreadPopoutView";
+import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useAtomValue } from "@effect/atom-react";
 import { primaryServerConfigAtom, primaryServerWelcomeAtom } from "../state/server";
 import { readProject } from "../state/entities";
@@ -179,7 +183,7 @@ function RootRouteBranch() {
     return <Outlet />;
   }
 
-  if (isThreadPopoutWindow) return <ThreadPopoutRoot pathname={pathname} />;
+  if (isThreadPopoutWindow) return <ThreadPopoutRoot />;
 
   // Settings can reopen /welcome mid-session, so it mounts everything the app does except the
   // first-run gate and the event router, whose first navigation would leave the page.
@@ -242,20 +246,27 @@ function RootRouteBranch() {
 }
 
 /**
- * A pop-out shows only its thread. Anywhere else it is sent (another thread, Settings) opens in
- * the main window, and the pop-out stays on its thread.
+ * A pop-out shows one thread or draft and can switch to another or start one. Anywhere else it is
+ * sent (Settings, History) opens in the main window, and the pop-out stays where it was.
  */
-function ThreadPopoutRoot({ pathname }: { pathname: string }) {
+function ThreadPopoutRoot() {
   const router = useRouter();
-  const href = useLocation({ select: (location) => location.href });
-  const leftThread = !isThreadPopoutPath(pathname);
-  // Where a handoff returns: this pop-out's latest thread, since a standby window gets one later.
+  // The rendered route's location, so it always agrees with the params: mid-navigation the
+  // address moves first, and reading it then would hand a thread route to the main window.
+  const resolved = useRouterState({
+    select: (state) => state.resolvedLocation ?? state.location,
+  });
+  const { pathname, href } = resolved;
+  const target = resolveThreadRouteTarget(useParams({ strict: false }));
+  const standby = pathname === THREAD_POPOUT_STANDBY_PATH;
+  // Home ("/") is an empty pop-out, such as after its thread was deleted.
+  const stays = target !== null || standby || pathname === "/";
+  // Where a handoff returns: the pop-out's latest thread, since a standby window gets one later.
   const [home, setHome] = useState(href);
-  if (!leftThread && home !== href) setHome(href);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands a navigation that left the pop-out's thread to the main window
+  if (stays && !standby && home !== href) setHome(href);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands a navigation that left the pop-out's threads to the main window
   useEffect(() => {
-    if (!leftThread) return;
-    const href = router.state.location.href;
+    if (stays) return;
     if (navigateMainWindow(href)) {
       void router.navigate({ href: home, replace: true });
       return;
@@ -263,15 +274,15 @@ function ThreadPopoutRoot({ pathname }: { pathname: string }) {
     // No main window left to take it: this window becomes one.
     window.location.replace(router.history.createHref(href));
     if (isElectron) window.location.reload();
-  }, [home, leftThread, router]);
-  if (leftThread) return null;
+  }, [home, href, stays, router]);
+  if (!stays) return null;
   return (
     <CommandPalette>
       <ConfirmDialogHost />
       <CustomSnoozeDialogHost />
       <LaterRecheckDialogHost />
       <GuestShareDialogHost />
-      <Outlet />
+      <ThreadPopoutView target={target} standby={standby} />
     </CommandPalette>
   );
 }

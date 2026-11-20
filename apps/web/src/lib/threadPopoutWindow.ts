@@ -3,7 +3,9 @@ import { isElectron } from "../env";
 // A thread, or `standby`: a pop-out pre-loaded while hidden, waiting for one.
 const POPOUT_PATH = /^\/popout\/(standby|[^/]+\/[^/]+)\/?$/;
 
-export function isThreadPopoutPath(pathname: string): boolean {
+export const THREAD_POPOUT_STANDBY_PATH = "/popout/standby";
+
+function isThreadPopoutPath(pathname: string): boolean {
   return POPOUT_PATH.test(pathname);
 }
 

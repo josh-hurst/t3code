@@ -96,6 +96,7 @@ describe("buildThreadActionMenuItems", () => {
   it.each([
     ["open", "pop-out"],
     ["return", "open-in-main-window"],
+    ["return", "popout-new-thread"],
   ] as const)(
     "keeps moving a thread between windows open to read-only clients (%s)",
     (popout, id) => {

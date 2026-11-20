@@ -5,6 +5,7 @@ export type ThreadActionMenuId =
   | "find"
   | "pop-out"
   | "open-in-main-window"
+  | "popout-new-thread"
   | "new-thread-on-branch"
   | "filter-by-project"
   | "hide-project"
@@ -116,6 +117,7 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     "find",
     "pop-out",
     "open-in-main-window",
+    "popout-new-thread",
     "new-thread-on-branch",
     "hide-project",
     "project-settings",
@@ -144,6 +146,11 @@ export function buildThreadActionMenuItems(
               id: "open-in-main-window" as const,
               label: "Open in main window",
               icon: "picture-in-picture",
+            },
+            {
+              id: "popout-new-thread" as const,
+              label: "New thread…",
+              icon: "message-square-plus",
             },
           ]
         : []),

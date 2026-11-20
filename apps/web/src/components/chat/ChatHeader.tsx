@@ -23,6 +23,11 @@ import { isTrailingDoubleClick } from "../Sidebar.logic";
 import { Badge } from "../ui/badge";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { PopoutThreadList } from "../PopoutThreadList";
+import { useCommandPaletteStore } from "~/commandPaletteStore";
+import { isThreadPopoutWindow } from "~/lib/threadPopoutWindow";
+import { useLocation } from "@tanstack/react-router";
 import { toastManager } from "../ui/toast";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { readLocalApi } from "~/localApi";
@@ -345,6 +350,8 @@ export const ChatHeader = memo(function ChatHeader({
               onFocus={(event) => event.currentTarget.select()}
               onKeyDown={handleRenameKeyDown}
             />
+          ) : isThreadPopoutWindow ? (
+            <PopoutThreadSwitcher title={activeThreadTitle} />
           ) : isServerThread ? (
             <Tooltip>
               <TooltipTrigger
@@ -402,3 +409,36 @@ export const ChatHeader = memo(function ChatHeader({
     </div>
   );
 });
+
+/**
+ * In a pop-out the thread name opens the thread list, so the window can show another thread;
+ * right-clicking the header still opens the thread's actions. The list closes once the window
+ * moves to another thread, or when the command palette opens (New thread's project picker).
+ */
+function PopoutThreadSwitcher({ title }: { readonly title: string }) {
+  const href = useLocation({ select: (location) => location.href });
+  const paletteOpen = useCommandPaletteStore((state) => state.open);
+  const [openAt, setOpenAt] = useState<string | null>(null);
+  if (paletteOpen && openAt !== null) setOpenAt(null);
+  return (
+    <Popover open={openAt === href} onOpenChange={(open) => setOpenAt(open ? href : null)}>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`Switch thread from ${title}`}
+            className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          />
+        }
+      >
+        <h2 className="min-w-0" dir={textDirection(title)}>
+          <WorkspaceBreadcrumbText>{title}</WorkspaceBreadcrumbText>
+        </h2>
+        <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      </PopoverTrigger>
+      <PopoverPopup align="start" padding="none">
+        <PopoutThreadList className="h-[min(70vh,36rem)] w-[min(22rem,calc(100vw-2rem))]" />
+      </PopoverPopup>
+    </Popover>
+  );
+}

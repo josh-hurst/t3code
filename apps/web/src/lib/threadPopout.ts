@@ -14,9 +14,36 @@ const NAVIGATE_MESSAGE = "t3code:popout-navigate";
 const POPOUT_FEATURES = "popup,width=640,height=820";
 const STANDBY_DELAY_MS = 1500;
 
-const openPopouts = new Map<string, Window>();
+const popouts = new Set<Window>();
 let standby: Window | null = null;
-let standbyCount = 0;
+let windowCount = 0;
+
+const threadKey = (environmentId: string, threadId: string) => `${environmentId}/${threadId}`;
+
+/** The thread a pop-out shows now; it can switch threads after opening. */
+function popoutThreadKey(view: Window): string | null {
+  try {
+    if (view.closed) return null;
+    // Desktop uses hash history, so a window's route lives in its fragment.
+    const path = isElectron
+      ? (view.location.hash.replace(/^#/, "").split("?")[0] ?? "")
+      : view.location.pathname;
+    const match = /^(?:\/popout)?\/([^/]+)\/([^/]+)\/?$/.exec(path);
+    if (match === null || match[1] === "popout" || match[1] === "draft") return null;
+    return threadKey(decodeURIComponent(match[1]!), decodeURIComponent(match[2]!));
+  } catch {
+    return null;
+  }
+}
+
+function findThreadPopout(threadRef: ScopedThreadRef): Window | null {
+  const key = threadKey(threadRef.environmentId, threadRef.threadId);
+  for (const view of popouts) {
+    if (view.closed) popouts.delete(view);
+    else if (popoutThreadKey(view) === key) return view;
+  }
+  return null;
+}
 
 /**
  * Desktop keeps one pop-out loaded and hidden once pop-outs are in use, so the next one shows
@@ -24,11 +51,11 @@ let standbyCount = 0;
  */
 function warmStandbyPopout(router: AppRouter): void {
   if (!isElectron || (standby !== null && !standby.closed)) return;
-  if (standbyCount === 0) window.addEventListener("pagehide", () => standby?.close());
-  standbyCount += 1;
+  if (windowCount === 0) window.addEventListener("pagehide", () => standby?.close());
+  windowCount += 1;
   standby = window.open(
     router.history.createHref(router.buildLocation({ to: "/popout/standby" }).href),
-    `${THREAD_POPOUT_STANDBY_FRAME_PREFIX}${standbyCount}`,
+    `${THREAD_POPOUT_STANDBY_FRAME_PREFIX}${windowCount}`,
     POPOUT_FEATURES,
   );
 }
@@ -44,9 +71,8 @@ function takeStandbyPopout(threadHref: string): Window | null {
 
 /** Opens `threadRef` in its own floating window, or focuses the one already open. */
 function openThreadPopout(router: AppRouter, threadRef: ScopedThreadRef): boolean {
-  const key = `${threadRef.environmentId}/${threadRef.threadId}`;
-  const existing = openPopouts.get(key);
-  if (existing && !existing.closed) {
+  const existing = findThreadPopout(threadRef);
+  if (existing !== null) {
     existing.focus();
     return true;
   }
@@ -54,15 +80,16 @@ function openThreadPopout(router: AppRouter, threadRef: ScopedThreadRef): boolea
     to: "/popout/$environmentId/$threadId",
     params: buildThreadRouteParams(threadRef),
   });
+  // Each window gets its own name: reusing one would navigate a pop-out that switched threads.
   const view =
     takeStandbyPopout(location.href) ??
     window.open(
       router.history.createHref(location.href),
-      `${THREAD_POPOUT_FRAME_PREFIX}${key.replace(/[^\w-]/g, "_")}`,
+      `${THREAD_POPOUT_FRAME_PREFIX}${++windowCount}`,
       POPOUT_FEATURES,
     );
   if (view === null) return false;
-  openPopouts.set(key, view);
+  popouts.add(view);
   // After the pop-out it just opened has had time to load.
   setTimeout(() => warmStandbyPopout(router), STANDBY_DELAY_MS);
   return true;
@@ -70,9 +97,9 @@ function openThreadPopout(router: AppRouter, threadRef: ScopedThreadRef): boolea
 
 /** Whether a pop-out this window opened shows the thread and has focus. */
 export function isThreadPopoutFocused(threadRef: ScopedThreadRef): boolean {
-  const view = openPopouts.get(`${threadRef.environmentId}/${threadRef.threadId}`);
+  const view = findThreadPopout(threadRef);
   try {
-    return view !== undefined && !view.closed && view.document.hasFocus();
+    return view !== null && view.document.hasFocus();
   } catch {
     return false;
   }
@@ -126,7 +153,9 @@ export function startThreadPopoutNavigationRelay(router: AppRouter): void {
       data.type !== NAVIGATE_MESSAGE ||
       !("href" in data) ||
       typeof data.href !== "string" ||
-      !data.href.startsWith("/")
+      !data.href.startsWith("/") ||
+      // Pop-out routes render nothing in the main window.
+      data.href.startsWith("/popout/")
     ) {
       return;
     }

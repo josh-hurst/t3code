@@ -1,20 +1,20 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { ThreadPopoutView } from "../components/ThreadPopoutView";
-import { resolveThreadRouteRef } from "../threadRoutes";
+import { isThreadPopoutWindow } from "../lib/threadPopoutWindow";
 
-// A thread in its own floating window. The root renders this outside the app shell.
+// A thread in its own floating window. The root renders pop-outs outside the app shell.
 export const Route = createFileRoute("/popout/$environmentId/$threadId")({
-  beforeLoad: ({ context }) => {
+  beforeLoad: ({ context, params }) => {
     if (
       context.authGateState.status !== "authenticated" &&
       context.authGateState.status !== "hosted-static"
     ) {
       throw redirect({ to: "/pair", replace: true });
     }
+    // Only a pop-out window renders this route; anywhere else it shows the thread normally.
+    if (!isThreadPopoutWindow) {
+      throw redirect({ to: "/$environmentId/$threadId", params, replace: true });
+    }
   },
-  component: function ThreadPopoutRoute() {
-    const threadRef = resolveThreadRouteRef(Route.useParams());
-    return threadRef === null ? null : <ThreadPopoutView threadRef={threadRef} />;
-  },
+  component: () => null,
 });
