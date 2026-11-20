@@ -333,8 +333,9 @@ finished background work or a pull request watch starts on its own does not.
 A short thread settles sooner than that setting. Once you have read its latest reply, a
 thread settles 12 hours after its last activity, plus 12 hours for each hour it had been
 going, and never later than the setting. A thread ten minutes old leaves after about 14
-hours, and one that ran for three hours waits the full time. A thread with a pull request,
-or whose summary still lists something for you, keeps the full wait.
+hours, and one that ran for three hours waits the full time. A thread with a pull request
+keeps the full wait. Something its summary lists for you to check, commit, or publish does not
+hold it, but a question for you keeps it from settling on its own.
 
 Nothing settles early while you are away. After two hours without a message from you in
 any thread, early settling pauses, and it resumes two hours after you next write. A thread

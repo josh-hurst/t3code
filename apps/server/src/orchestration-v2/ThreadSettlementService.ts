@@ -314,9 +314,10 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
   const presence = input.presence ?? null;
   let atMs = windowAtMs;
   // Seen as the clients mark it, so a reply that lands overnight does not settle early unread.
+  // A summary's checks, commits and releases do not hold it: most replies that change code list
+  // one, and the history the timing was fitted to settled them all the same. A question does.
   if (
     !hasPullRequest &&
-    (thread.card?.open.length ?? 0) === 0 &&
     completedAtMs !== null &&
     visitedAtMs !== null &&
     visitedAtMs >= completedAtMs

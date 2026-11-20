@@ -384,17 +384,22 @@ describe("resolveAutoSettlementAt", () => {
       quiet(19 * HOUR_MS, { lastVisitedAt: at(-20 * HOUR_MS) }),
       quiet(19 * HOUR_MS, { lastVisitedAt: null }),
       quiet(19 * HOUR_MS, { pullRequests: [persistedLink("open", at(-DAY_MS))] }),
-      quiet(19 * HOUR_MS, {
-        card: {
-          open: [{ kind: "verify", text: "Check the totals" }],
-          at: DateTime.formatIso(at(-19 * HOUR_MS)),
-        },
-      }),
     ];
     for (const thread of waitsForWindow) {
       expect(settles(thread)).toBeNull();
       expect(planned(thread)?.at).toBe(window(19 * HOUR_MS));
     }
+    // Something left to check or commit does not hold a thread; a question for the owner does.
+    const owes = (kind: "verify" | "ask") =>
+      quiet(19 * HOUR_MS, {
+        card: {
+          open: [{ kind, text: "Check the totals" }],
+          at: DateTime.formatIso(at(-19 * HOUR_MS)),
+        },
+      });
+    expect(settles(owes("verify"))).toEqual(at(-19 * HOUR_MS));
+    expect(settles(owes("ask"))).toBeNull();
+    expect(planned(owes("ask"))).toBeNull();
 
     // Opened an hour ago, or the owner came back an hour ago: two hours must pass first.
     const opened = quiet(19 * HOUR_MS, {
