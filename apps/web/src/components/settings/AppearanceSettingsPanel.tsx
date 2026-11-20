@@ -25,6 +25,7 @@ import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { ThemeLibrary } from "./ThemeSettings";
 import {
@@ -39,7 +40,7 @@ import { AppIconSettingsRow } from "./AppIconSettingsRow";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 import { TypographySection } from "./TypographySettings";
 import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
-import { isNativeWindowGlassSupported } from "../../lib/windowGlass";
+import { isNativeWindowGlassSupported, windowGlassAtLaunch } from "../../lib/windowGlass";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
@@ -131,6 +132,9 @@ export function AppearanceSettingsPanel() {
     "--settings-slider-progress": `${glassOpacityRatio * 100}%`,
     "--settings-slider-fill-offset": `${0.5 - glassOpacityRatio}rem`,
   } as CSSProperties;
+  // A window's glass is fixed when it is created, so a change waits for a relaunch.
+  const windowGlassPendingRelaunch =
+    settings.windowGlassEnabled !== (windowGlassAtLaunch() ?? settings.windowGlassEnabled);
   const appearanceContrastRatio =
     (settings.appearanceContrast - MIN_APPEARANCE_CONTRAST) /
     (MAX_APPEARANCE_CONTRAST - MIN_APPEARANCE_CONTRAST);
@@ -265,7 +269,11 @@ export function AppearanceSettingsPanel() {
           <>
             <SettingsRow
               {...searchableSetting("window-glass")}
-              description="Show the blurred desktop behind the app window."
+              description={
+                windowGlassPendingRelaunch
+                  ? "Relaunch T3 Code to apply this change."
+                  : "Show the blurred desktop behind the app window."
+              }
               resetAction={
                 settings.windowGlassEnabled !== DEFAULT_UNIFIED_SETTINGS.windowGlassEnabled ? (
                   <SettingResetButton
@@ -279,13 +287,24 @@ export function AppearanceSettingsPanel() {
                 ) : null
               }
               control={
-                <Switch
-                  checked={settings.windowGlassEnabled}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ windowGlassEnabled: Boolean(checked) })
-                  }
-                  aria-label="Window glass"
-                />
+                <div className="flex items-center gap-2">
+                  {windowGlassPendingRelaunch ? (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => void window.desktopBridge?.relaunchForWindowGlass?.()}
+                    >
+                      Relaunch
+                    </Button>
+                  ) : null}
+                  <Switch
+                    checked={settings.windowGlassEnabled}
+                    onCheckedChange={(checked) =>
+                      updateSettings({ windowGlassEnabled: Boolean(checked) })
+                    }
+                    aria-label="Window glass"
+                  />
+                </div>
               }
             />
             <GlassTransparencyRow

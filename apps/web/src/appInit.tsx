@@ -32,7 +32,11 @@ import { resolveServerBackedAppDisplayName, resolveWindowTitle } from "./brandin
 import { isElectron } from "./env";
 import { startThreadPopoutNavigationRelay } from "./lib/threadPopout";
 import { isThreadPopoutWindow } from "./lib/threadPopoutWindow";
-import { isNativeWindowGlassSupported } from "./lib/windowGlass";
+import {
+  isNativeWindowGlassSupported,
+  noteWindowGlassAtLaunch,
+  windowGlassAtLaunch,
+} from "./lib/windowGlass";
 import {
   subscribeComposerDraftModelReconciliation,
   subscribeDraftThreadPromotion,
@@ -45,8 +49,10 @@ import { readLocalStorageValue, subscribeLocalStorageKey } from "./hooks/useLoca
 import { startHostEnvironmentLookup } from "./state/primaryEnvironment";
 import {
   getClientSettings,
+  getClientSettingsHydratedSnapshot,
   startModelPreferencesMigration,
   subscribeClientSettings,
+  subscribeClientSettingsHydration,
 } from "./hooks/useSettings";
 import { syncBrowserChromeTheme } from "./hooks/useTheme";
 import { startThreadVisitedMigration } from "./hooks/useThreadVisitedMigration";
@@ -69,24 +75,33 @@ import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPicke
 import { environmentThreadShells, threadEnvironment } from "./state/threads";
 import { resolveActiveThreadRouteRef, resolveThreadRouteTarget } from "./threadRoutes";
 
-/** Writes appearance settings onto the document, touching only the groups that changed. */
 /**
- * Pop-outs are always glass. The main window is glass when the setting is on and the OS can blur
- * the desktop behind it; without that a pop-out gets a CSS wash instead.
+ * Pop-outs are always glass. The main window is glass when its window was created transparent,
+ * which the desktop decides from the saved setting at launch; until then a pop-out without
+ * native glass gets a CSS wash.
  */
-function applyWindowGlass(root: HTMLElement, settings: ClientSettings): void {
-  const native = isNativeWindowGlassSupported();
-  if (isThreadPopoutWindow || (native && settings.windowGlassEnabled)) {
-    root.dataset.windowGlass = native ? "native" : "css";
-  } else {
-    delete root.dataset.windowGlass;
-  }
-  const transparency = isThreadPopoutWindow
-    ? settings.popoutGlassTransparency
-    : settings.windowGlassTransparency;
-  root.style.setProperty("--window-glass-tint", `${100 - transparency}%`);
+function startWindowGlass(): void {
+  const root = document.documentElement;
+  const apply = () => {
+    const settings = getClientSettings();
+    if (getClientSettingsHydratedSnapshot()) noteWindowGlassAtLaunch(settings.windowGlassEnabled);
+    const native = isNativeWindowGlassSupported();
+    if (isThreadPopoutWindow || (native && windowGlassAtLaunch() === true)) {
+      root.dataset.windowGlass = native ? "native" : "css";
+    } else {
+      delete root.dataset.windowGlass;
+    }
+    const transparency = isThreadPopoutWindow
+      ? settings.popoutGlassTransparency
+      : settings.windowGlassTransparency;
+    root.style.setProperty("--window-glass-tint", `${100 - transparency}%`);
+  };
+  subscribeClientSettings(apply);
+  subscribeClientSettingsHydration(apply);
+  apply();
 }
 
+/** Writes appearance settings onto the document, touching only the groups that changed. */
 function startClientAppearance(): void {
   const root = document.documentElement;
   let applied: ClientSettings | null = null;
@@ -110,13 +125,6 @@ function startClientAppearance(): void {
     }
     if (previous?.appearanceContrast !== settings.appearanceContrast) {
       applyAppearanceContrast(root, settings.appearanceContrast);
-    }
-    if (
-      previous?.windowGlassEnabled !== settings.windowGlassEnabled ||
-      previous.windowGlassTransparency !== settings.windowGlassTransparency ||
-      previous.popoutGlassTransparency !== settings.popoutGlassTransparency
-    ) {
-      applyWindowGlass(root, settings);
     }
     if (previous?.glassOpacity !== settings.glassOpacity) {
       root.style.setProperty("--glass-opacity", `${settings.glassOpacity}%`);
@@ -296,6 +304,7 @@ export function startAppServices(): AppRouter {
   installDesktopPasteAsText(window.desktopBridge, window);
 
   startClientAppearance();
+  startWindowGlass();
   startI18n();
   startDocumentTitle(router);
   startHostEnvironmentLookup();

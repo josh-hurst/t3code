@@ -17,17 +17,3 @@ export function windowGlassOptions(
   if (platform === "win32") return { backgroundMaterial: "acrylic", backgroundColor: "#00000000" };
   return {};
 }
-
-export function setWindowGlass(
-  window: Electron.BrowserWindow,
-  glass: boolean,
-  platform: NodeJS.Platform,
-  shouldUseDarkColors: boolean,
-): void {
-  if (window.isDestroyed() || !windowGlassSupported(platform)) return;
-  if (platform === "darwin") window.setVibrancy(glass ? "under-window" : null);
-  else window.setBackgroundMaterial(glass ? "acrylic" : "none");
-  window.setBackgroundColor(
-    glass ? "#00000000" : getInitialWindowBackgroundColor(shouldUseDarkColors),
-  );
-}

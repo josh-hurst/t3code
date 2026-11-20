@@ -439,6 +439,8 @@ export const make = Effect.gen(function* () {
   const primaryPaste = yield* DesktopPrimaryPaste.DesktopPrimaryPaste;
   const sidebarWindows = new WeakSet<Electron.BrowserWindow>();
   const threadPopoutWindows = new WeakSet<Electron.BrowserWindow>();
+  // Windows created transparent; glass cannot be switched on a live window.
+  const glassWindows = new WeakSet<Electron.BrowserWindow>();
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const clientSettings = yield* DesktopClientSettings.DesktopClientSettings;
   const readMainWindowGlass = clientSettings.get.pipe(
@@ -564,6 +566,7 @@ export const make = Effect.gen(function* () {
     }
 
     pendingMainReveals.set(window, Effect.void);
+    if (mainWindowGlass) glassWindows.add(window);
     yield* rendererHistory.register(window.webContents, { surface: "main" });
     if (environment.platform === "darwin") {
       window.setAutoHideCursor(false);
@@ -1363,8 +1366,6 @@ export const make = Effect.gen(function* () {
     }),
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
-      const main = Option.getOrNull(yield* electronWindow.main);
-      const mainGlass = yield* readMainWindowGlass;
       yield* electronWindow.syncAllAppearance((window, { titleBarOverlay }) => {
         const popout = threadPopoutWindows.has(window);
         return syncWindowAppearance(
@@ -1373,7 +1374,7 @@ export const make = Effect.gen(function* () {
           shouldUseDarkColors,
           environment.platform,
           !sidebarWindows.has(window),
-          windowGlassSupported(environment.platform) && (popout || (window === main && mainGlass)),
+          windowGlassSupported(environment.platform) && (popout || glassWindows.has(window)),
         );
       });
     }).pipe(Effect.withSpan("desktop.window.syncAppearance")),

@@ -1106,6 +1106,8 @@ export interface DesktopBridge {
   setClientSettings: (settings: ClientSettings) => Promise<void>;
   /** Another window of this app saved client settings. */
   onClientSettingsChanged?: (listener: () => void) => () => void;
+  /** Window glass is fixed when a window is created, so changing it relaunches the app. */
+  relaunchForWindowGlass?: () => Promise<void>;
   getConnectionCatalog: () => Promise<string | null>;
   setConnectionCatalog: (catalog: string) => Promise<boolean>;
   discoverSshHosts: () => Promise<readonly DesktopDiscoveredSshHost[]>;

@@ -24,7 +24,7 @@ of the selected theme.
 ## Window glass
 
 In the desktop app on macOS and Windows, turn on **Window glass** in **Settings → Appearance** to
-show the blurred desktop behind the app window. Move the **Window transparency** slider to choose
+show the blurred desktop behind the app window, then choose **Relaunch** to apply it. Move the **Window transparency** slider to choose
 how much of the desktop shows through; the rest is your theme's color. Thread pop-outs are always
 glass; set theirs with **Pop-out transparency**, which is also available on web. Menus, dialogs,
 and the composer stay solid.

@@ -164,6 +164,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>
     ipcRenderer.invoke(IpcChannels.SET_CLIENT_SETTINGS_CHANNEL, settings),
+  relaunchForWindowGlass: () => ipcRenderer.invoke(IpcChannels.RELAUNCH_FOR_WINDOW_GLASS_CHANNEL),
   onClientSettingsChanged: (listener) => {
     const handler = () => listener();
     ipcRenderer.on(IpcChannels.CLIENT_SETTINGS_CHANGED_CHANNEL, handler);

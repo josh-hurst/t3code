@@ -5,3 +5,15 @@ import { isMacPlatform, isWindowsPlatform } from "./utils";
 export function isNativeWindowGlassSupported(): boolean {
   return isElectron && (isMacPlatform(navigator.platform) || isWindowsPlatform(navigator.platform));
 }
+
+let glassAtLaunch: boolean | null = null;
+
+/** Records the first saved Window glass setting this page sees: the one its window was created with. */
+export function noteWindowGlassAtLaunch(enabled: boolean): void {
+  glassAtLaunch ??= enabled;
+}
+
+/** Whether this window was created with glass; null until settings have loaded. */
+export function windowGlassAtLaunch(): boolean | null {
+  return glassAtLaunch;
+}
