@@ -117,49 +117,66 @@ interface StatusLabel {
   readonly icon: AppSymbolName;
   readonly className: string;
   readonly iconTintClassName: string;
+  // Washed over the row's surface; null leaves the row untinted.
+  readonly tint: string | null;
 }
+const STATUS_TINT = {
+  warning: "#f59e0b",
+  indigo: "#6366f1",
+  fuchsia: "#d946ef",
+  sky: "#0ea5e9",
+  danger: "#ef4444",
+  emerald: "#10b981",
+} as const;
 const STATUS_LABEL_BY_STATUS: Partial<Record<ThreadListV2Status, StatusLabel>> = {
   approval: {
     label: msg("Approval", { $context: "thread status, waiting for approval" }),
     icon: "exclamationmark.shield",
     className: "text-warning-foreground",
     iconTintClassName: "accent-warning-foreground",
+    tint: STATUS_TINT.warning,
   },
   input: {
     label: msg("Input", { $context: "thread status, waiting for user input" }),
     icon: "questionmark.bubble",
     className: "text-adaptive-indigo-600-300",
     iconTintClassName: "accent-adaptive-indigo-600-300",
+    tint: STATUS_TINT.indigo,
   },
   request: {
     label: msg("Request", { $context: "thread status, a guest request is waiting" }),
     icon: "person.crop.circle",
     className: "text-adaptive-fuchsia-600-300",
     iconTintClassName: "accent-adaptive-fuchsia-600-300",
+    tint: STATUS_TINT.fuchsia,
   },
   working: {
     label: null,
     icon: "circle.dashed",
     className: "text-adaptive-sky-600-400",
     iconTintClassName: "accent-adaptive-sky-600-400",
+    tint: STATUS_TINT.sky,
   },
   waiting: {
     label: null,
     icon: "circle.dashed.inset.filled",
     className: "text-foreground-muted",
     iconTintClassName: "accent-foreground-muted",
+    tint: null,
   },
   failed: {
     label: msg("Failed", { $context: "thread status" }),
     icon: "exclamationmark.circle",
     className: "text-danger-foreground",
     iconTintClassName: "accent-danger-foreground",
+    tint: STATUS_TINT.danger,
   },
   limited: {
     label: msg("Limited", { $context: "thread status, usage limit reached" }),
     icon: "exclamationmark.circle",
     className: "text-warning-foreground",
     iconTintClassName: "accent-warning-foreground",
+    tint: STATUS_TINT.warning,
   },
 };
 const DONE_STATUS_LABEL: StatusLabel = {
@@ -167,6 +184,7 @@ const DONE_STATUS_LABEL: StatusLabel = {
   icon: "checkmark.circle",
   className: "text-adaptive-emerald-700-300",
   iconTintClassName: "accent-adaptive-emerald-700-300",
+  tint: STATUS_TINT.emerald,
 };
 // A quiet thread inside its last hour before it settles on its own.
 const SETTLING_STATUS_LABEL: StatusLabel = {
@@ -174,6 +192,7 @@ const SETTLING_STATUS_LABEL: StatusLabel = {
   icon: "clock",
   className: "text-foreground-muted",
   iconTintClassName: "accent-foreground-muted",
+  tint: null,
 };
 // A seen thread that its card's open question keeps in Needs you.
 const QUESTION_STATUS_LABEL: StatusLabel = {
@@ -181,6 +200,7 @@ const QUESTION_STATUS_LABEL: StatusLabel = {
   icon: "questionmark.bubble",
   className: "text-adaptive-indigo-600-300",
   iconTintClassName: "accent-adaptive-indigo-600-300",
+  tint: STATUS_TINT.indigo,
 };
 
 // DM Sans has no tabular figures, so a ticking timer in it reflows the row every second.
@@ -1128,10 +1148,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       }
     : rowAppearance.swipeContainerStyle;
   // The Needs you card takes the primary tint, as on web.
-  const needsYouDark = isDarkThemeColor(theme["--color-screen"]);
+  const screenIsDark = isDarkThemeColor(theme["--color-screen"]);
   const needsYouTint =
     grouped && props.needsYou === true
-      ? needsYouDark
+      ? screenIsDark
         ? flattenThemeColor(
             themeColorWithAlpha(theme["--color-primary"], 0.15),
             theme["--color-grouped-card"],
@@ -1139,9 +1159,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         : // The deep primary reads lavender as a pale wash, so light mode uses a brighter blue.
           flattenThemeColor(themeColorWithAlpha("#2f6bff", 0.12), "#ffffff")
       : null;
-  const rowSurfaceClassName =
-    needsYouTint !== null ? undefined : grouped ? "bg-grouped-card" : rowAppearance.className;
-  const rowSurfaceStyle = needsYouTint !== null ? { backgroundColor: needsYouTint } : undefined;
 
   const status = resolveThreadListV2Status(thread);
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
@@ -1174,6 +1191,21 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     label: statusEntry.label === null ? null : m(statusEntry.label),
   };
   const recede = shouldRecedeThreadRow({ status, selected });
+  const statusTint = selected
+    ? null
+    : showsWoke
+      ? STATUS_TINT.warning
+      : (statusEntry?.tint ?? null);
+  const rowTint =
+    statusTint === null
+      ? needsYouTint
+      : flattenThemeColor(
+          themeColorWithAlpha(statusTint, screenIsDark ? 0.14 : 0.08),
+          needsYouTint ??
+            (grouped ? theme["--color-grouped-card"] : rowAppearance.swipeBackgroundColor),
+        );
+  const rowSurfaceClassName =
+    rowTint !== null ? undefined : grouped ? "bg-grouped-card" : rowAppearance.className;
   const showsDone =
     statusEntry === DONE_STATUS_LABEL &&
     !showsWoke &&
@@ -2192,7 +2224,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           close();
           selectThread();
         }}
-        style={rowSurfaceStyle ?? rowAppearance.cardStyle}
+        style={
+          rowTint === null
+            ? rowAppearance.cardStyle
+            : { ...rowAppearance.cardStyle, backgroundColor: rowTint }
+        }
       >
         {sidebarPane ? (
           fadedCardContent
@@ -2224,7 +2260,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           close();
           selectThread();
         }}
-        style={rowAppearance.style}
+        style={
+          rowTint === null
+            ? rowAppearance.style
+            : { ...rowAppearance.style, backgroundColor: rowTint }
+        }
       >
         <View
           className={cn(
@@ -2327,8 +2367,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         dormant={dormant}
         threadKey={`${thread.environmentId}:${thread.id}`}
         backgroundColor={
-          needsYouTint ??
-          (grouped ? theme["--color-grouped-card"] : rowAppearance.swipeBackgroundColor)
+          rowTint ?? (grouped ? theme["--color-grouped-card"] : rowAppearance.swipeBackgroundColor)
         }
         compactActions={variant === "slim"}
         containerStyle={swipeContainerStyle}

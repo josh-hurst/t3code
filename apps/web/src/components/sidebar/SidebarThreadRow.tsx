@@ -946,60 +946,70 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 : gt("Working", { $context: "thread status" }),
           icon: "working" as const,
           className: "text-info-foreground",
+          tintClassName: "bg-info/5 hover:bg-info/9",
         }
       : status === "waiting"
         ? {
             label: gt("Waiting", { $context: "thread status" }),
             icon: "waiting" as const,
             className: "text-muted-foreground",
+            tintClassName: null,
           }
         : status === "approval"
           ? {
               label: gt("Approval", { $context: "thread status: needs approval" }),
               icon: "approval" as const,
               className: "text-warning-foreground",
+              tintClassName: "bg-warning/7 hover:bg-warning/11",
             }
           : status === "input"
             ? {
                 label: gt("Input", { $context: "thread status: needs user input" }),
                 icon: "input" as const,
                 className: "text-indigo-600 dark:text-indigo-300",
+                tintClassName: "bg-indigo-500/6 hover:bg-indigo-500/10",
               }
             : status === "request"
               ? {
                   label: gt("Request", { $context: "thread status: guest request" }),
                   icon: "request" as const,
                   className: "text-guest-foreground",
+                  tintClassName: "bg-guest/6 hover:bg-guest/10",
                 }
               : status === "limited"
                 ? {
                     label: gt("Limited", { $context: "thread status: usage limited" }),
                     icon: "failed" as const,
                     className: "text-warning-foreground",
+                    tintClassName: "bg-warning/7 hover:bg-warning/11",
                   }
                 : status === "failed"
                   ? {
                       label: gt("Failed", { $context: "thread status" }),
                       icon: "failed" as const,
                       className: "text-error-foreground",
+                      tintClassName: "bg-error/6 hover:bg-error/10",
                     }
                   : isWoke
                     ? {
                         label: gt("Woke", { $context: "thread status: woke from snooze" }),
                         icon: "woke" as const,
                         className: "text-warning-foreground",
+                        tintClassName: "bg-warning/7 hover:bg-warning/11",
                       }
                     : isUnread
                       ? {
                           label: gt("Done", { $context: "thread status" }),
                           icon: "done" as const,
                           className: "text-success-foreground",
+                          tintClassName: "bg-success/6 hover:bg-success/10",
                         }
                       : threadCardHasOpenAsk(thread.card)
                         ? {
                             label: gt("Question", { $context: "thread status" }),
                             icon: "input" as const,
                             className: "text-indigo-600 dark:text-indigo-300",
+                            tintClassName: "bg-indigo-500/6 hover:bg-indigo-500/10",
                           }
                         : null;
   const isWokeStatus = topStatus?.icon === "woke";
@@ -1237,9 +1247,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         ? "bg-sidebar-row-selected text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
         : hasUnsentDraft
           ? cn(draftSurfaceClassName, "text-sidebar-foreground")
-          : shouldRecede
-            ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-            : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
+          : cn(
+              shouldRecede
+                ? "text-sidebar-muted-foreground/75 hover:text-sidebar-foreground"
+                : "text-sidebar-foreground",
+              topStatus?.tintClassName ?? "bg-transparent hover:bg-sidebar-row-hover",
+            ),
     shouldRecede &&
       (status === "preparing" || status === "working") &&
       "opacity-70 transition-opacity hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
