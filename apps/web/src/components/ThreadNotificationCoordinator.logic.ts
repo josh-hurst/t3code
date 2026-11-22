@@ -16,9 +16,11 @@ export interface ThreadNotificationObservation {
   readonly completedAt: number | null;
   /** The latest run answers a background-work progress wake, like a Monitor line. */
   readonly backgroundWake: boolean;
+  /** The latest run completed, but background work it waits on, like a subagent, still holds it. */
+  readonly held: boolean;
 }
 
-/** Matches the push relay's completion confirmation: a final wake can start right after a progress wake. */
+/** Matches the push relay's completion confirmation: a wake can start right after held work ends. */
 export const RELEASED_COMPLETION_GRACE_MS = 5_000;
 
 /**
@@ -104,7 +106,8 @@ export function createThreadNotificationGate<Key>(
       }
       const at = next.completedAt;
       if (!next.settled || at === null || at <= (handled.get(key) ?? -Infinity)) return;
-      if (next.backgroundWake) {
+      // The server queues the wake for ended work after the commit that releases the hold.
+      if (next.backgroundWake || prior.held) {
         release(key, at);
         return;
       }

@@ -296,6 +296,10 @@ export function startThreadNotifications(
         settled,
         completedAt: settled ? completedAt : null,
         backgroundWake: rawThread.latestRunBackgroundWake === true,
+        held:
+          !settled &&
+          thread.latestRun?.status === "completed" &&
+          (status === "waiting" || status === "ready"),
       };
       next.set(thread.id, state);
       changed.push([prior, state]);

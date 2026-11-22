@@ -13,6 +13,7 @@ const working: ThreadNotificationObservation = {
   settled: false,
   completedAt: null,
   backgroundWake: false,
+  held: false,
 };
 const completed = (at: number): ThreadNotificationObservation => ({
   attention: null,
@@ -20,7 +21,9 @@ const completed = (at: number): ThreadNotificationObservation => ({
   settled: true,
   completedAt: at,
   backgroundWake: false,
+  held: false,
 });
+const held: ThreadNotificationObservation = { ...working, held: true };
 const waking: ThreadNotificationObservation = { ...working, backgroundWake: true };
 const woke = (at: number): ThreadNotificationObservation => ({
   ...completed(at),
@@ -171,6 +174,26 @@ describe("createThreadNotificationGate", () => {
       ["thread", "completion"],
       ["thread", "completion"],
     ]);
+  });
+
+  it("waits out the grace when held background work releases a completion, so the wake it starts replaces it", () => {
+    using _timers = fakeTimers();
+    const { notify, observe } = harness();
+    observe(working);
+    observe(held);
+    // The subagent ended; the parent's wake run is queued in a later commit.
+    observe(completed(1));
+    expect(notify).not.toHaveBeenCalled();
+    observe(working);
+    vi.advanceTimersByTime(RELEASED_COMPLETION_GRACE_MS);
+    expect(notify).not.toHaveBeenCalled();
+    observe(completed(2));
+    expect(notify.mock.calls).toEqual([["thread", "completion"]]);
+    observe(working);
+    observe(held);
+    observe(completed(3));
+    vi.advanceTimersByTime(RELEASED_COMPLETION_GRACE_MS);
+    expect(notify).toHaveBeenCalledTimes(2);
   });
 
   it("notifies a wake's completion once after the grace when no run follows, even across a pause", () => {
