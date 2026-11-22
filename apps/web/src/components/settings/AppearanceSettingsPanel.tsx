@@ -41,6 +41,8 @@ import { AppIconSettingsRow } from "./AppIconSettingsRow";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 import { TypographySection } from "./TypographySettings";
 import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
+import { isElectron } from "~/env";
+import { isMacPlatform } from "~/lib/utils";
 import { isNativeWindowGlassSupported, windowGlassAtLaunch } from "../../lib/windowGlass";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
@@ -408,6 +410,35 @@ export function AppearanceSettingsPanel() {
           }
         />
         <AppIconSettingsRow />
+        {isElectron && isMacPlatform(navigator.platform) ? (
+          <SettingsRow
+            {...searchableSetting("menu-bar-item")}
+            description={gt(
+              "Show T3 Code in the macOS menu bar to open threads or start a new one.",
+            )}
+            resetAction={
+              settings.menuBarItemEnabled !== DEFAULT_UNIFIED_SETTINGS.menuBarItemEnabled ? (
+                <SettingResetButton
+                  ariaLabel={gt("Reset menu bar item to default")}
+                  onClick={() =>
+                    updateSettings({
+                      menuBarItemEnabled: DEFAULT_UNIFIED_SETTINGS.menuBarItemEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.menuBarItemEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ menuBarItemEnabled: Boolean(checked) })
+                }
+                aria-label={gt("Show in menu bar")}
+              />
+            }
+          />
+        ) : null}
         <SettingsRow
           {...searchableSetting("math-rendering")}
           description={gt(

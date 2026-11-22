@@ -83,8 +83,10 @@ const makeSweep = Effect.gen(function* () {
       const requested = yield* threads
         .dispatch({
           type: "thread.contents.regroup.request",
+          // One request per state of the contents: a thread made due again at the same run
+          // (its regroup failed, or the rules changed) must not replay an old receipt.
           commandId: CommandId.make(
-            `contents-regroup-idle:${candidate.threadId}:${candidate.state.lastRunOrdinal}`,
+            `contents-regroup-idle:${candidate.threadId}:${candidate.state.lastRunOrdinal}:${candidate.state.revision}`,
           ),
           threadId: candidate.threadId,
           kind: "idle",

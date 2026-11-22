@@ -83,8 +83,8 @@ const clamp = (text: string, max: number) => text.trim().slice(0, max).trim();
 
 /**
  * Port of the experiment's tolerant parser: an optional `topic:` label, fields split on `|`, the
- * last field holds run numbers, a trailing open/done field is dropped (open state never comes
- * from this model), and `Title: outcome` in one field is accepted. Null when no topic parses.
+ * last field holds run numbers or ranges, a trailing open/done field is dropped (open state never
+ * comes from this model), and `Title: outcome` in one field is accepted. Null when no topic parses.
  */
 export function parseTopics(raw: string, runCount: number): ReadonlyArray<RegroupTopic> | null {
   const topics: Array<RegroupTopic> = [];
@@ -96,14 +96,17 @@ export function parseTopics(raw: string, runCount: number): ReadonlyArray<Regrou
     const fields = line.split("|").map((field) => field.trim());
     if (fields.length < 2) continue;
     const last = fields.at(-1)!;
-    if (last.replace(/[r\d\s,]/gi, "") !== "") continue;
+    if (last.replace(/[r\d\s,–-]/gi, "") !== "") continue;
+    // A model writes one long topic as a range, "1-30".
     const runs = [
       ...new Set(
-        [...last.matchAll(/\br?(\d+)\b/gi)]
-          .map((match) => Number(match[1]))
-          .filter((run) => run >= 1 && run <= runCount),
+        [...last.matchAll(/\br?(\d+)(?:\s*[–-]\s*r?(\d+))?/gi)].flatMap((match) => {
+          const from = Number(match[1]);
+          const to = Math.min(match[2] === undefined ? from : Number(match[2]), runCount);
+          return Array.from({ length: Math.max(0, to - from + 1) }, (_, index) => from + index);
+        }),
       ),
-    ];
+    ].filter((run) => run >= 1 && run <= runCount);
     if (runs.length === 0) continue;
     let body = fields.slice(0, -1);
     const state = body.at(-1)?.toLowerCase();
@@ -153,63 +156,56 @@ export function repairTopics(
   };
 }
 
+const TOPIC_RUNS_MIN = 3;
+const REPAIRED_SHARE_MAX = 0.25;
+
 /**
- * One sample: as it is. Two or three: two runs share a topic when at least two samples put them
- * together, and topics are the connected groups, so each run ends in exactly one. A group takes
- * the title and outcome of the sample topic sharing most runs with it (earliest on a tie).
- * Only a run's first topic votes: a status check in two topics would join them in every sample.
+ * A topic of one or two runs is a tangent of the job it came up in, whatever the model was told:
+ * its runs join the topic of the run before it, or of the run after it at the thread's start.
+ * The owner can still give one message a topic of its own by hand; a regroup leaves that alone.
  */
-export function combineSamples(
-  samples: ReadonlyArray<ReadonlyArray<RegroupTopic>>,
+export function foldSmallTopics(topics: ReadonlyArray<RegroupTopic>): ReadonlyArray<RegroupTopic> {
+  let kept = topics;
+  for (;;) {
+    const small = kept
+      .filter((topic) => topic.runs.length < TOPIC_RUNS_MIN)
+      .toSorted((left, right) => Math.min(...left.runs) - Math.min(...right.runs))[0];
+    if (small === undefined || kept.length < 2) return kept;
+    const first = Math.min(...small.runs);
+    const others = kept.filter((topic) => topic !== small);
+    const elsewhere = others.flatMap((topic) => topic.runs);
+    const before = Math.max(...elsewhere.filter((run) => run < first));
+    const neighbour = Number.isFinite(before) ? before : Math.min(...elsewhere);
+    const home = others.find((topic) => topic.runs.includes(neighbour))!;
+    const runs = [...new Set([...home.runs, ...small.runs])].sort((left, right) => left - right);
+    kept = others.map((topic) => (topic === home ? { ...topic, runs } : topic));
+  }
+}
+
+/**
+ * One model reply as the topics a regroup may store: parsed, repaired and folded. Null when it is
+ * unusable: nothing parsed, or so many runs had to be repaired that lines were lost, which would
+ * otherwise read as a thread with few topics.
+ */
+export function readSample(
+  raw: string,
   runCount: number,
+): { readonly topics: ReadonlyArray<RegroupTopic>; readonly repaired: number } | null {
+  const parsed = parseTopics(raw, runCount);
+  if (parsed === null) return null;
+  const { topics, repaired } = repairTopics(parsed, runCount);
+  if (repaired > runCount * REPAIRED_SHARE_MAX) return null;
+  return { topics: foldSmallTopics(topics), repaired };
+}
+
+/**
+ * The sample with the fewest topics, the earliest on a tie. Samples disagree where a thread reads
+ * either way, and there the owner keeps it together: a split has to show in every sample.
+ */
+export function fewestTopics(
+  samples: ReadonlyArray<ReadonlyArray<RegroupTopic>>,
 ): ReadonlyArray<RegroupTopic> {
-  if (samples.length === 1) return samples[0]!;
-  const memberships = samples.map((sample) => {
-    const byRun: Array<Set<number>> = Array.from({ length: runCount + 1 }, () => new Set());
-    sample.forEach((topic, index) =>
-      topic.runs.forEach((run) => {
-        if (byRun[run]?.size === 0) byRun[run]!.add(index);
-      }),
-    );
-    return byRun;
-  });
-  const parent = Array.from({ length: runCount + 1 }, (_, run) => run);
-  const find = (run: number): number => {
-    while (parent[run] !== run) {
-      parent[run] = parent[parent[run]!]!;
-      run = parent[run]!;
-    }
-    return run;
-  };
-  const together = (byRun: ReadonlyArray<Set<number>>, left: number, right: number) =>
-    [...byRun[left]!].some((topic) => byRun[right]!.has(topic));
-  for (let left = 1; left <= runCount; left++) {
-    for (let right = left + 1; right <= runCount; right++) {
-      const votes = memberships.filter((byRun) => together(byRun, left, right)).length;
-      if (votes >= 2) parent[find(left)] = find(right);
-    }
-  }
-  const groups = new Map<number, Array<number>>();
-  for (let run = 1; run <= runCount; run++) {
-    if (memberships.every((byRun) => byRun[run]!.size === 0)) continue;
-    const root = find(run);
-    groups.set(root, [...(groups.get(root) ?? []), run]);
-  }
-  return [...groups.values()].map((runs) => {
-    const members = new Set(runs);
-    let best: RegroupTopic | undefined;
-    let bestShared = 0;
-    for (const sample of samples) {
-      for (const topic of sample) {
-        const shared = topic.runs.filter((run) => members.has(run)).length;
-        if (shared > bestShared) {
-          best = topic;
-          bestShared = shared;
-        }
-      }
-    }
-    return { title: best?.title ?? "", outcome: best?.outcome ?? "", runs };
-  });
+  return samples.reduce((best, sample) => (sample.length < best.length ? sample : best));
 }
 
 const jaccard = (left: ReadonlySet<RunId>, right: ReadonlySet<RunId>) => {

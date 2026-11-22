@@ -9,6 +9,7 @@ import {
   type OrchestrationV2ThreadShell,
   type ProjectChangeCommit,
   type ProjectChangeCounts,
+  type ProjectChangePeriod,
   type ProjectChangesResult,
   type ProjectId,
   type RunId,
@@ -497,6 +498,76 @@ export function projectChangeTimeline(
     }
   }
   return days;
+}
+
+/** One stretch of a project's changelog: what a publish shipped, or what waits for the next. */
+export interface ProjectChangeSection {
+  readonly key: string;
+  /** The publish that closed it; null for work not published yet. */
+  readonly publishedAt: string | null;
+  /** The owner's commits there; null when the stretch holds none of theirs. */
+  readonly period: ProjectChangePeriod | null;
+  /** Other authors' commits that landed in it. */
+  readonly others: { readonly count: number; readonly authors: ReadonlyArray<string> } | null;
+}
+
+/**
+ * The changelog's periods with every publish and other authors' commits put back in place,
+ * newest first. A publish that shipped none of the owner's commits still gets its section, and
+ * a commit belongs to the first publish at or after it, as the server cuts the periods.
+ */
+export function projectChangeSections(
+  changes: Pick<ProjectChangesResult, "commits" | "publishes"> & {
+    readonly periods: ReadonlyArray<ProjectChangePeriod>;
+  },
+): Array<ProjectChangeSection> {
+  const theirs = changes.commits.flatMap((commit) =>
+    commit.own ? [] : [{ atMs: Date.parse(commit.committedAt), author: commit.author }],
+  );
+  const othersIn = (afterMs: number, throughMs: number) => {
+    const held = theirs.filter((commit) => commit.atMs > afterMs && commit.atMs <= throughMs);
+    return held.length === 0
+      ? null
+      : { count: held.length, authors: [...new Set(held.map((commit) => commit.author))] };
+  };
+  const publishes = [...new Map(changes.publishes.map((at) => [Date.parse(at), at]))]
+    .map(([atMs, at]) => ({ atMs, at }))
+    .sort((left, right) => right.atMs - left.atMs);
+  if (publishes.length === 0) {
+    // Never published: the periods are weeks, each running until the next one's first commit.
+    if (changes.periods.length === 0) {
+      const others = othersIn(Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY);
+      return others === null ? [] : [{ key: "others", publishedAt: null, period: null, others }];
+    }
+    return changes.periods.map((period, index) => ({
+      key: period.key,
+      publishedAt: null,
+      period,
+      others: othersIn(
+        index === changes.periods.length - 1
+          ? Number.NEGATIVE_INFINITY
+          : Date.parse(period.startedAt) - 1,
+        index === 0
+          ? Number.POSITIVE_INFINITY
+          : Date.parse(changes.periods[index - 1]!.startedAt) - 1,
+      ),
+    }));
+  }
+  return [null, ...publishes].flatMap((publish, index, bounds) => {
+    const period =
+      changes.periods.find((candidate) =>
+        candidate.publishedAt === null
+          ? publish === null
+          : Date.parse(candidate.publishedAt) === publish?.atMs,
+      ) ?? null;
+    const others = othersIn(
+      bounds[index + 1]?.atMs ?? Number.NEGATIVE_INFINITY,
+      publish?.atMs ?? Number.POSITIVE_INFINITY,
+    );
+    // Nothing waiting for the next publish is not a section; a publish always is.
+    if (publish === null && period === null && others === null) return [];
+    return [{ key: publish?.at ?? "open", publishedAt: publish?.at ?? null, period, others }];
+  });
 }
 
 /**

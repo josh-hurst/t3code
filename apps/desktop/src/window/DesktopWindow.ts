@@ -12,8 +12,10 @@ import * as Electron from "electron";
 import { msg } from "gt-i18n";
 
 import {
+  type DesktopMenuBarBounds,
   type DesktopSnapShotEvent,
   DEFAULT_CLIENT_SETTINGS,
+  MENU_BAR_POPOVER_FRAME_PREFIX,
   THREAD_POPOUT_FRAME_PREFIX,
   THREAD_POPOUT_STANDBY_FRAME_PREFIX,
 } from "@t3tools/contracts";
@@ -30,6 +32,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
   MENU_ACTION_CHANNEL,
+  MENU_BAR_ITEM_TOGGLE_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
   SNAP_SHOT_EVENT_CHANNEL,
   TRACKPAD_SCROLL_BEGIN_CHANNEL,
@@ -49,6 +52,11 @@ import { m } from "../i18n/messages.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
+import {
+  computeMenuBarPopoverBounds,
+  decideMenuBarTrayClick,
+  type ScreenRect,
+} from "./menuBarPopover.ts";
 import {
   getInitialWindowBackgroundColor,
   windowGlassOptions,
@@ -151,6 +159,10 @@ export class DesktopWindow extends Context.Service<
     readonly dispatchSnapShotEvent: (
       event: DesktopSnapShotEvent,
     ) => Effect.Effect<void, DesktopWindowError>;
+    readonly handleMenuBarItemClick: (
+      trayBounds: DesktopMenuBarBounds,
+    ) => Effect.Effect<void, DesktopWindowError>;
+    readonly closeMenuBarPopover: Effect.Effect<void>;
     // Electron zoom roles target focused guests; zoomMain must always target the app.
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
     readonly runMainContentsCommand: (command: MainWindowContentsCommand) => Effect.Effect<void>;
@@ -440,7 +452,11 @@ export const make = Effect.gen(function* () {
   const previewPasskeys = yield* PreviewPasskeys.PreviewPasskeys;
   const primaryPaste = yield* DesktopPrimaryPaste.DesktopPrimaryPaste;
   const sidebarWindows = new WeakSet<Electron.BrowserWindow>();
+  const menuBarWindows = new WeakSet<Electron.BrowserWindow>();
   const threadPopoutWindows = new WeakSet<Electron.BrowserWindow>();
+  let menuBarPopover: Electron.BrowserWindow | null = null;
+  let lastMenuBarTrayBounds: DesktopMenuBarBounds | null = null;
+  let lastMenuBarBlurDismissedAtMs: number | null = null;
   // Windows created transparent; glass cannot be switched on a live window.
   const glassWindows = new WeakSet<Electron.BrowserWindow>();
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
@@ -463,7 +479,38 @@ export const make = Effect.gen(function* () {
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
+  const runSync = Effect.runSyncWith(context);
   const mainWindowMutex = yield* Semaphore.make(1);
+  const closeMenuBarPopoverSync = () => {
+    const popup = menuBarPopover;
+    menuBarPopover = null;
+    if (popup !== null && !popup.isDestroyed()) {
+      popup.close();
+    }
+  };
+  const resolveMenuBarPopoverBounds = (): ScreenRect => {
+    const fallbackWorkArea = (() => {
+      try {
+        return Electron.screen.getPrimaryDisplay().workArea;
+      } catch {
+        return { x: 0, y: 0, width: 1440, height: 900 };
+      }
+    })();
+    const trayBounds = lastMenuBarTrayBounds ?? {
+      x: fallbackWorkArea.x + fallbackWorkArea.width - 24,
+      y: fallbackWorkArea.y,
+      width: 24,
+      height: 0,
+    };
+    const workArea = (() => {
+      try {
+        return Electron.screen.getDisplayMatching(trayBounds).workArea;
+      } catch {
+        return fallbackWorkArea;
+      }
+    })();
+    return computeMenuBarPopoverBounds({ trayBounds, workArea });
+  };
   const pendingMainReveals = new WeakMap<Electron.BrowserWindow, Effect.Effect<void>>();
   const revealMain = Effect.fn("desktop.window.revealMain")((window: Electron.BrowserWindow) =>
     Effect.suspend(() => pendingMainReveals.get(window) ?? electronWindow.reveal(window)),
@@ -822,6 +869,32 @@ export const make = Effect.gen(function* () {
     });
 
     window.webContents.setWindowOpenHandler(({ url, frameName }) => {
+      if (url === "about:blank" && frameName.startsWith(MENU_BAR_POPOVER_FRAME_PREFIX)) {
+        const bounds = resolveMenuBarPopoverBounds();
+        return {
+          action: "allow",
+          overrideBrowserWindowOptions: {
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+            frame: false,
+            resizable: false,
+            movable: false,
+            minimizable: false,
+            maximizable: false,
+            fullscreenable: false,
+            skipTaskbar: true,
+            alwaysOnTop: true,
+            hasShadow: true,
+            roundedCorners: true,
+            show: false,
+            // Non-activating macOS panel opens on the active Space without raising the main window.
+            ...(environment.platform === "darwin" ? { type: "panel" as const } : {}),
+            backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
+          },
+        };
+      }
       if (url === "about:blank" && frameName.startsWith("t3code-threads-")) {
         return {
           action: "allow",
@@ -905,6 +978,42 @@ export const make = Effect.gen(function* () {
             if (!popup.isVisible() && isThreadPopoutUrl(url)) popup.show();
           });
         }
+        return;
+      }
+      if (details.frameName.startsWith(MENU_BAR_POPOVER_FRAME_PREFIX)) {
+        closeMenuBarPopoverSync();
+        menuBarPopover = popup;
+        menuBarWindows.add(popup);
+        popup.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+        popup.webContents.on("will-navigate", (event) => event.preventDefault());
+        closeOnCloseShortcut(popup);
+        const bounds = resolveMenuBarPopoverBounds();
+        if (environment.platform === "darwin") {
+          // Without skipTransformProcessType every open hides the Dock icon and windows briefly.
+          popup.setVisibleOnAllWorkspaces(true, {
+            visibleOnFullScreen: true,
+            skipTransformProcessType: true,
+          });
+          popup.setAlwaysOnTop(true, "pop-up-menu");
+        }
+        popup.setBounds(bounds);
+        popup.show();
+        popup.focus();
+        let closing = false;
+        popup.on("close", () => {
+          closing = true;
+        });
+        popup.on("blur", () => {
+          if (closing || popup.isDestroyed()) return;
+          closing = true;
+          lastMenuBarBlurDismissedAtMs = runSync(Clock.currentTimeMillis);
+          popup.close();
+        });
+        popup.on("closed", () => {
+          if (menuBarPopover === popup) {
+            menuBarPopover = null;
+          }
+        });
         return;
       }
       if (!details.frameName.startsWith("t3code-threads-")) return;
@@ -1180,6 +1289,7 @@ export const make = Effect.gen(function* () {
 
     window.on("closed", () => {
       if (!backendHasStarted) mainClosedDuringStartup = true;
+      closeMenuBarPopoverSync();
       clearDevelopmentLoadRetry();
       clearBoundsPersist();
       void runPromise(electronWindow.clearMain(Option.some(window)));
@@ -1306,6 +1416,59 @@ export const make = Effect.gen(function* () {
     yield* dispatch;
   });
 
+  const activate = Effect.gen(function* () {
+    if (yield* Ref.get(desktopState.quitting)) return;
+    const existingWindow = yield* currentMainWindow;
+    if (Option.isSome(existingWindow)) {
+      yield* revealMain(existingWindow.value);
+      return;
+    }
+    if (mainClosedDuringStartup) {
+      yield* ensureMain;
+      return;
+    }
+    const backendReady = yield* Ref.get(backendReadyRef);
+    if (!backendReady) {
+      const splash = yield* Ref.get(splashWindowRef);
+      if (Option.isSome(splash)) {
+        yield* electronWindow.reveal(splash.value);
+        return;
+      }
+    }
+    yield* createMainIfBackendReady;
+  }).pipe(Effect.withSpan("desktop.window.activate"));
+
+  const handleMenuBarItemClick = Effect.fn("desktop.window.handleMenuBarItemClick")(function* (
+    trayBounds: DesktopMenuBarBounds,
+  ) {
+    if (yield* Ref.get(desktopState.quitting)) return;
+    const existingMain = yield* electronWindow.main;
+    if (Option.isNone(existingMain)) {
+      yield* activate;
+      return;
+    }
+    const nowMs = yield* Clock.currentTimeMillis;
+    const decision = decideMenuBarTrayClick({
+      isOpen: menuBarPopover !== null && !menuBarPopover.isDestroyed(),
+      lastDismissedByBlurAtMs: lastMenuBarBlurDismissedAtMs,
+      nowMs,
+    });
+    if (decision === "close") {
+      closeMenuBarPopoverSync();
+      return;
+    }
+    if (decision === "ignore") {
+      lastMenuBarBlurDismissedAtMs = null;
+      return;
+    }
+    lastMenuBarTrayBounds = trayBounds;
+    yield* dispatchRendererEvent(
+      MENU_BAR_ITEM_TOGGLE_CHANNEL,
+      { bounds: trayBounds },
+      { reveal: false },
+    );
+  });
+
   return DesktopWindow.of({
     createMain: createMain.pipe(Effect.flatMap(requireWindow)),
     ensureMain: ensureMain.pipe(Effect.flatMap(requireWindow)),
@@ -1316,27 +1479,7 @@ export const make = Effect.gen(function* () {
         yield* electronWindow.prepareReveal(existingWindow.value);
       }
     }),
-    activate: Effect.gen(function* () {
-      if (yield* Ref.get(desktopState.quitting)) return;
-      const existingWindow = yield* currentMainWindow;
-      if (Option.isSome(existingWindow)) {
-        yield* revealMain(existingWindow.value);
-        return;
-      }
-      if (mainClosedDuringStartup) {
-        yield* ensureMain;
-        return;
-      }
-      const backendReady = yield* Ref.get(backendReadyRef);
-      if (!backendReady) {
-        const splash = yield* Ref.get(splashWindowRef);
-        if (Option.isSome(splash)) {
-          yield* electronWindow.reveal(splash.value);
-          return;
-        }
-      }
-      yield* createMainIfBackendReady;
-    }).pipe(Effect.withSpan("desktop.window.activate")),
+    activate,
     createMainIfBackendReady,
     showConnectingSplash,
     handleBackendReady: Effect.fn("desktop.window.handleBackendReady")(function* (httpBaseUrl) {
@@ -1364,6 +1507,8 @@ export const make = Effect.gen(function* () {
         reveal: event.type === "started",
       });
     }),
+    handleMenuBarItemClick,
+    closeMenuBarPopover: Effect.sync(closeMenuBarPopoverSync),
     zoomMain: Effect.fn("desktop.window.zoomMain")(function* (direction) {
       yield* Effect.annotateCurrentSpan({ direction });
       const window = yield* electronWindow.main;
@@ -1391,7 +1536,7 @@ export const make = Effect.gen(function* () {
           titleBarOverlay || (popout && environment.platform !== "darwin"),
           shouldUseDarkColors,
           environment.platform,
-          !sidebarWindows.has(window),
+          !sidebarWindows.has(window) && !menuBarWindows.has(window),
           windowGlassSupported(environment.platform) && (popout || glassWindows.has(window)),
         );
       });

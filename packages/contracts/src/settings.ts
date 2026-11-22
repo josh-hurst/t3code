@@ -504,6 +504,8 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   /** Desktop on macOS and Windows: the main window shows the blurred desktop behind it. */
   windowGlassEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Desktop on macOS: show a menu bar icon to open threads or start a new one. */
+  menuBarItemEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   windowGlassTransparency: WindowGlassTransparency.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_WINDOW_GLASS_TRANSPARENCY)),
   ),
@@ -2159,6 +2161,7 @@ export const ClientSettingsPatch = Schema.Struct({
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
   windowGlassEnabled: Schema.optionalKey(Schema.Boolean),
+  menuBarItemEnabled: Schema.optionalKey(Schema.Boolean),
   windowGlassTransparency: Schema.optionalKey(WindowGlassTransparency),
   popoutGlassTransparency: Schema.optionalKey(WindowGlassTransparency),
   onboardingCompletedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),

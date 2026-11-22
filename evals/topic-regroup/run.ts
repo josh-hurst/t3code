@@ -17,10 +17,9 @@ import * as ServerConfig from "../../apps/server/src/config.ts";
 import { runOwnerText } from "../../apps/server/src/orchestration-v2/ThreadEntries.ts";
 import {
   buildOutline,
-  combineSamples,
-  parseTopics,
+  fewestTopics,
   type RegroupTopic,
-  repairTopics,
+  readSample,
 } from "../../apps/server/src/orchestration-v2/ThreadRegroup.ts";
 import { makeCodexTextGeneration } from "../../apps/server/src/textGeneration/CodexTextGeneration.ts";
 import { buildThreadRegroupPrompt } from "../../apps/server/src/textGeneration/ThreadRegroup.ts";
@@ -136,12 +135,11 @@ await Effect.runPromise(
             options: [{ id: "reasoningEffort", value: effort }],
           },
         });
-        const topics = parseTopics(transcription, runCount);
-        const repaired = topics === null ? null : repairTopics(topics, runCount);
+        const repaired = readSample(transcription, runCount);
         if (repaired !== null) parsed.push(repaired.topics);
         const result =
           repaired === null
-            ? { f: 0, topics: 0, repaired: runCount, pass: false, failures: ["nothing parsed"] }
+            ? { f: 0, topics: 0, repaired: runCount, pass: false, failures: ["unusable reply"] }
             : judge(repaired.topics, repaired.repaired);
         graded.push(result);
         results.push({
@@ -153,7 +151,7 @@ await Effect.runPromise(
         });
         yield* save("results", results);
       }
-      const combined = parsed.length >= 2 ? judge(combineSamples(parsed, runCount), 0) : undefined;
+      const stored = parsed.length >= 2 ? judge(fewestTopics(parsed), 0) : undefined;
       const meanF = graded.reduce((total, result) => total + result.f, 0) / graded.length;
       const previous = baseline.find((row) => row.id === fixture.id);
       summary.push({
@@ -164,13 +162,14 @@ await Effect.runPromise(
         samplesPassed: `${graded.filter((result) => result.pass).length}/${graded.length}`,
         meanF: Number(meanF.toFixed(3)),
         topics: graded.map((result) => result.topics),
-        ...(combined === undefined
+        // What an idle regroup stores: the sample with the fewest topics.
+        ...(stored === undefined
           ? {}
           : {
-              combined: {
-                pass: combined.pass,
-                f: Number(combined.f.toFixed(3)),
-                topics: combined.topics,
+              stored: {
+                pass: stored.pass,
+                f: Number(stored.f.toFixed(3)),
+                topics: stored.topics,
               },
             }),
         ...(previous === undefined ? {} : { baselineMeanF: previous.meanF }),

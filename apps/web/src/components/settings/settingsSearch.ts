@@ -421,6 +421,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     macOnly: true,
   },
   {
+    id: "menu-bar-item",
+    title: msg("Show in menu bar"),
+    to: "/settings/appearance",
+    searchTerms: [msg("tray status icon popover macos top bar")],
+    desktopOnly: true,
+    macOnly: true,
+  },
+  {
     id: "panel-animations",
     title: msg("Panel animations"),
     to: "/settings/appearance",

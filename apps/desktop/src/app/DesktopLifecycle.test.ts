@@ -109,6 +109,8 @@ function layerDesktopWindow(
     prepareCaptureReveal: Effect.void,
     dispatchMenuAction: () => Effect.void,
     dispatchSnapShotEvent: () => Effect.void,
+    handleMenuBarItemClick: () => Effect.void,
+    closeMenuBarPopover: Effect.void,
     zoomMain: () => Effect.void,
     runMainContentsCommand: () => Effect.void,
     syncAppearance: Effect.void,

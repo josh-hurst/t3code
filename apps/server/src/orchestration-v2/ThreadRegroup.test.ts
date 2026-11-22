@@ -22,8 +22,10 @@ import {
 import {
   applyRegroup,
   buildOutline,
-  combineSamples,
+  fewestTopics,
+  foldSmallTopics,
   parseTopics,
+  readSample,
   type RegroupTopic,
   repairTopics,
 } from "./ThreadRegroup.ts";
@@ -226,59 +228,93 @@ describe("repairTopics", () => {
   });
 });
 
-describe("combineSamples", () => {
-  const sample = (...groups: ReadonlyArray<readonly [string, ReadonlyArray<number>]>) =>
-    groups.map(([title, runs]): RegroupTopic => ({ title, outcome: `${title} now`, runs }));
+describe("readSample", () => {
+  const shape = (raw: string, runCount: number) =>
+    readSample(raw, runCount)?.topics.map((topic) => [topic.title, topic.runs]);
 
-  it("joins runs two samples put together and titles a group from its best match, earliest first", () => {
-    const combined = combineSamples(
-      [
-        sample(["Billing", [1, 2, 3]], ["Search", [4, 5, 6]]),
-        sample(["Everything", [1, 2, 3, 4, 5, 6]]),
-        sample(["Billing bug", [1, 2, 3]], ["Search index", [4, 5]], ["Stray", [6]]),
-      ],
-      6,
+  it("reads a range, so one long topic written as 1-12 is not a lost line", () => {
+    assert.deepEqual(shape("Support bot | Live | done | 1-12", 12), [
+      ["Support bot", Array.from({ length: 12 }, (_, index) => index + 1)],
+    ]);
+    assert.deepEqual(shape("Billing | Fixed | r1–r3, 7\nSearch | Rebuilt | 4-6 8 9", 9), [
+      ["Billing", [1, 2, 3, 7]],
+      ["Search", [4, 5, 6, 8, 9]],
+    ]);
+  });
+
+  it("refuses a reply that lost most of its lines instead of reading it as one topic", () => {
+    // The second line's run field does not parse, so repair would hand its runs to the first.
+    assert.isNull(
+      readSample("Billing | Fixed | 1 2 3\nSearch | Rebuilt | runs four to twelve", 12),
     );
+    assert.deepEqual(shape("Billing | Fixed | 1 2 3 4 5 6\nSearch | Rebuilt | 7 8 9 10 11", 12), [
+      ["Billing", [1, 2, 3, 4, 5, 6]],
+      ["Search", [7, 8, 9, 10, 11, 12]],
+    ]);
+  });
+});
+
+describe("foldSmallTopics", () => {
+  const topics = (...groups: ReadonlyArray<readonly [string, ReadonlyArray<number>]>) =>
+    groups.map(([title, runs]): RegroupTopic => ({ title, outcome: "", runs }));
+  const shape = (folded: ReadonlyArray<RegroupTopic>) =>
+    folded.map((topic) => [topic.title, topic.runs]);
+
+  it("gives a one- or two-run topic to the topic of the run before it", () => {
     assert.deepEqual(
-      combined.map((group) => [group.title, group.runs]),
+      shape(
+        foldSmallTopics(
+          topics(
+            ["Auto-settle", [1, 2, 3, 5, 6]],
+            ["Disk cleanup", [4]],
+            ["Search", [7, 8, 9, 12]],
+            ["Search cost", [10, 11]],
+          ),
+        ),
+      ),
       [
-        ["Billing", [1, 2, 3]],
-        ["Search", [4, 5, 6]],
+        ["Auto-settle", [1, 2, 3, 4, 5, 6]],
+        ["Search", [7, 8, 9, 10, 11, 12]],
       ],
     );
   });
 
-  it("takes connected groups, and one sample as it is", () => {
-    const chained = combineSamples(
-      [
-        sample(["A", [1, 2]], ["C", [3]]),
-        sample(["AB", [1, 2, 3]]),
-        sample(["A", [1]], ["BC", [2, 3]]),
-      ],
-      3,
-    );
+  it("gives a small first topic to the next one, and keeps a thread's only topic", () => {
     assert.deepEqual(
-      chained.map((group) => group.runs),
-      [[1, 2, 3]],
+      shape(foldSmallTopics(topics(["Plan", [1]], ["Build", [2, 3, 4]], ["Deploy", [5, 6]]))),
+      [["Build", [1, 2, 3, 4, 5, 6]]],
     );
-    // A run in two topics in every sample votes only for its first, so it joins nothing.
-    const bridged = combineSamples(
-      [
-        sample(["A", [1, 2, 3]], ["B", [3, 4, 5]]),
-        sample(["A", [1, 2, 3]], ["B", [3, 4, 5]]),
-        sample(["A", [1, 2]], ["B", [3, 4, 5]]),
-      ],
-      5,
+    const only = topics(["Quick fix", [1, 2]]);
+    assert.strictEqual(foldSmallTopics(only), only);
+  });
+});
+
+describe("fewestTopics", () => {
+  const sample = (...groups: ReadonlyArray<readonly [string, ReadonlyArray<number>]>) =>
+    groups.map(([title, runs]): RegroupTopic => ({ title, outcome: `${title} now`, runs }));
+
+  it("keeps the coarsest sample, so one split two samples of three made does not stand", () => {
+    const whole = sample(["Support bot", [1, 2, 3, 4, 5, 6]]);
+    assert.strictEqual(
+      fewestTopics([
+        sample(["Support bot", [1, 2, 3, 4, 6]], ["Promo codes", [5]]),
+        whole,
+        sample(["Support bot", [1, 2, 3, 4, 6]], ["Code questions", [5]]),
+      ]),
+      whole,
     );
-    assert.deepEqual(
-      bridged.map((group) => group.runs),
-      [
-        [1, 2, 3],
-        [4, 5],
-      ],
+  });
+
+  it("keeps a split every sample made, taking the earliest on a tie", () => {
+    const first = sample(["Billing", [1, 2, 3]], ["Search", [4, 5, 6]]);
+    assert.strictEqual(
+      fewestTopics([
+        first,
+        sample(["Billing bug", [1, 2, 3]], ["Search index", [4, 5]], ["Stray", [6]]),
+        sample(["Billing", [1, 2]], ["Search", [3, 4, 5, 6]]),
+      ]),
+      first,
     );
-    const single = sample(["A", [1, 2]], ["B", [2, 3]]);
-    assert.strictEqual(combineSamples([single], 3), single);
   });
 });
 

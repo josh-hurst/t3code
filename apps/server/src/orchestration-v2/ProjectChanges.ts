@@ -173,26 +173,6 @@ export function buildProjectChanges(input: {
   }
   commits.reverse();
 
-  const lastPublishedAtMs = input.publishedAtMs.reduce<number | null>(
-    (last, at) => (last === null || at > last ? at : last),
-    null,
-  );
-  let sincePublish: { publishedAt: string; topics: Array<ProjectChangeTopic> } | null = null;
-  if (lastPublishedAtMs !== null) {
-    // A publish ships the working tree, so what a run changed after it is not out yet,
-    // committed or not. One path counts once, for the last topic to change it.
-    const latest = new Map<string, ChangeTouch>();
-    for (const touch of input.touches) {
-      if (touch.endMs <= lastPublishedAtMs) continue;
-      const known = latest.get(touch.path);
-      if (known === undefined || touch.endMs > known.endMs) latest.set(touch.path, touch);
-    }
-    sincePublish = {
-      publishedAt: iso(lastPublishedAtMs),
-      topics: tally([...latest.values()].map((touch) => touch.entryId)),
-    };
-  }
-
   return {
     uncommitted: {
       files: input.dirtyPaths.length,
@@ -203,7 +183,6 @@ export function buildProjectChanges(input: {
       ),
     },
     unpushedCommits: commits.filter((commit) => !commit.pushed).length,
-    sincePublish,
     commits,
     publishes: input.publishedAtMs.toSorted((left, right) => right - left).map(iso),
   };
@@ -218,7 +197,6 @@ export function projectChangeEntryIds(
     for (const topic of topics) if (topic.entryId !== null) ids.add(topic.entryId);
   };
   add(changes.uncommitted.topics);
-  add(changes.sincePublish?.topics ?? []);
   for (const commit of changes.commits) add(commit.topics);
   return ids;
 }

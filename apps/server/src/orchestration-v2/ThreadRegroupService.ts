@@ -17,14 +17,15 @@ import * as ThreadEntryStore from "./ThreadEntryStore.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import {
   buildOutline,
-  combineSamples,
-  parseTopics,
+  fewestTopics,
   type RegroupTopic,
-  repairTopics,
+  readSample,
   THREAD_REGROUP_MIN_OWNER_RUNS,
 } from "./ThreadRegroup.ts";
 
-const SAMPLES = { mark: 1, idle: 3, manual: 3 } as const;
+// Every regroup takes the coarsest of three: one sample alone splits a thread that the next
+// regroup would put back together.
+const SAMPLES = 3;
 // A stuck provider call must not hold the thread's cards, which wait behind this effect.
 const REGROUP_TIMEOUT = "90 seconds";
 
@@ -44,7 +45,7 @@ export class ThreadRegroupService extends Context.Service<
      */
     readonly execute: (input: RegroupInput) => Effect.Effect<void>;
     /**
-     * Topics for these run lines from up to `samples` calls, combined. An empty list when fewer
+     * Topics for these run lines: the coarsest of up to `samples` calls. An empty list when fewer
      * than two runs show in the outline; null when no call gave a usable answer. Never fails.
      */
     readonly topics: (input: {
@@ -97,11 +98,11 @@ const make = Effect.gen(function* () {
           if (sample === 0) break;
           continue;
         }
-        const topics = parseTopics(generated.success.transcription, runCount);
-        if (topics !== null) samples.push(repairTopics(topics, runCount).topics);
+        const read = readSample(generated.success.transcription, runCount);
+        if (read !== null) samples.push(read.topics);
       }
       if (samples.length === 0) return null;
-      return combineSamples(samples, runCount).map((topic): ThreadContentsTopic => ({
+      return fewestTopics(samples).map((topic): ThreadContentsTopic => ({
         title: topic.title,
         outcome: topic.outcome,
         runIds: topic.runs.map((run) => outline.runIds[run - 1]!),
@@ -129,7 +130,7 @@ const make = Effect.gen(function* () {
     const topics = yield* sampleTopics({
       threadId: input.threadId,
       runLines: yield* entryStore.runLines(input.threadId),
-      samples: SAMPLES[input.kind],
+      samples: SAMPLES,
     });
     if (topics === null) {
       yield* Effect.logWarning("Thread regroup produced no usable sample", {

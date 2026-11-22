@@ -234,10 +234,11 @@ the project when nothing in it is waiting.
 
 ### Changes not out yet
 
-A **Changes** section under **New thread** lists each project you worked in lately whose main
-checkout holds work that is not out, one row a project: its uncommitted files, then **↑** and
-its commits on no remote. The numbers come from Git and can trail a commit or a push by half a
-minute. Click the heading to fold the section away.
+A **Changes** section sits with Later and History and lists each project you worked in lately
+whose main checkout holds work that is not out, one row a project: its uncommitted files, then
+**↑** and its commits on no remote. The numbers come from Git and can trail a commit or a push
+by half a minute. Click the heading to fold the section away, and use the filter button beside
+it to choose which projects it lists; a project you leave out stays in that menu.
 Click a project to open its [Changes](#history-every-topic). Thread rows carry no
 publish, commit or check label: an agent that cannot go on until you do something raises it as
 a question, which puts the thread in Needs you.
@@ -389,7 +390,9 @@ brings back the threads it settled with it.
 ### History: every topic
 
 When [thread summaries](#choose-what-shows-under-a-threads-title) are on, each finished
-reply is filed under a topic of its thread. **All** beside the sidebar's History label, or
+reply is filed under a topic of its thread. A topic is a whole job: a thread that works on
+one thing stays one topic however long it runs, and gets a second only when you turn to
+unrelated work. **All** beside the sidebar's History label, or
 `history.open` (`mod+shift+y`), opens the History page: every topic from every thread,
 newest first by when it was last worked on, under day labels. Search matches topic titles
 and outcomes; the chips limit it to one project. Click a topic to open its thread where the
@@ -410,10 +413,12 @@ whose summary changed since; re-checks it started stay started. An agent you tel
 published" marks it for you. History and Mark published need a server that keeps topics.
 
 **Changes**, with a project chosen, shows what that project's main checkout holds that is not
-out yet: uncommitted files by topic, what changed since the last publish, then a changelog of
-your commits for each publish. A changelog groups commits that belong to one piece of work
+out yet: uncommitted files by topic, then a changelog of your commits since the last publish
+and for each publish before it. A changelog groups commits that belong to one piece of work
 into one item that says what changed; click an item for its commits, each with a few words
-on what it did (hover for its full subject), and **Not pushed** marks work on no remote. A project never marked published gets one changelog per week. Changelogs
+on what it did (hover for its full subject), and **Not pushed** marks work on no remote.
+Every publish is marked in green, and other contributors' commits are counted under the
+publish they landed in. A project never marked published gets one changelog per week. Changelogs
 are written by the summary model, one call per publish, when you open the view; with
 **Summarize latest reply** off, the commits are listed as they are.
 Threads working in their own worktrees are left out. File and commit counts come from Git.

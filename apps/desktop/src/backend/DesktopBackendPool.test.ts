@@ -216,6 +216,8 @@ function layerPool(
           prepareCaptureReveal: Effect.void,
           dispatchMenuAction: () => Effect.die("unexpected menu action"),
           dispatchSnapShotEvent: () => Effect.void,
+          handleMenuBarItemClick: () => Effect.void,
+          closeMenuBarPopover: Effect.void,
           zoomMain: () => Effect.die("unexpected zoom"),
           runMainContentsCommand:
             options.onMainContentsCommand ?? (() => Effect.die("unexpected main contents command")),

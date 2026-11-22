@@ -4358,7 +4358,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           commandId: command.commandId,
           threadId: command.threadId,
           kind: command.kind,
-          key: command.kind === "idle" ? `idle:${state.lastRunOrdinal}` : command.commandId,
+          key:
+            command.kind === "idle"
+              ? `idle:${state.lastRunOrdinal}:${state.revision}`
+              : command.commandId,
         }),
       ]);
       return;

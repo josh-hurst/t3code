@@ -8,9 +8,16 @@ import { resolveShortcutCommand } from "../../keybindings";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { useSidebar } from "../ui/sidebar";
 
-function attachSidebarWindow(view: Window, onClose: () => void) {
+export function attachSidebarWindow(
+  view: Window,
+  onClose: () => void,
+  options?: {
+    readonly title?: string;
+    readonly attachCommands?: boolean;
+  },
+) {
   const target = view.document;
-  target.title = "Threads - T3 Code";
+  target.title = options?.title ?? "Threads - T3 Code";
   const base = target.createElement("base");
   base.href = document.baseURI;
   target.head.append(base);
@@ -60,7 +67,7 @@ function attachSidebarWindow(view: Window, onClose: () => void) {
     attributeFilter: ["href", "rel"],
   });
   const unregister = registerAppWindow(view);
-  const detachCommands = attachCommandWindow(view);
+  const detachCommands = options?.attachCommands === false ? null : attachCommandWindow(view);
   const onParentPageHide = () => view.close();
   view.addEventListener("pagehide", onClose);
   view.addEventListener("beforeunload", onClose);
@@ -72,7 +79,7 @@ function attachSidebarWindow(view: Window, onClose: () => void) {
     window.removeEventListener("pagehide", onParentPageHide);
     themeObserver.disconnect();
     styleObserver.disconnect();
-    detachCommands();
+    detachCommands?.();
     unregister();
     base.remove();
     for (const style of styles) style.remove();

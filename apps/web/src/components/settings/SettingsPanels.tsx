@@ -515,6 +515,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.windowGlassEnabled !== DEFAULT_UNIFIED_SETTINGS.windowGlassEnabled
       ? [gt("Window glass")]
       : []),
+    ...(settings.menuBarItemEnabled !== DEFAULT_UNIFIED_SETTINGS.menuBarItemEnabled
+      ? [gt("Show in menu bar")]
+      : []),
     ...(settings.windowGlassTransparency !== DEFAULT_UNIFIED_SETTINGS.windowGlassTransparency
       ? [gt("Window transparency")]
       : []),
@@ -761,6 +764,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       windowGlassEnabled: DEFAULT_UNIFIED_SETTINGS.windowGlassEnabled,
+      menuBarItemEnabled: DEFAULT_UNIFIED_SETTINGS.menuBarItemEnabled,
       windowGlassTransparency: DEFAULT_UNIFIED_SETTINGS.windowGlassTransparency,
       popoutGlassTransparency: DEFAULT_UNIFIED_SETTINGS.popoutGlassTransparency,
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,

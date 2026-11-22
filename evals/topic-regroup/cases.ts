@@ -75,6 +75,53 @@ export const cases: ReadonlyArray<Case> = [
     pass: { topics: 1 },
   },
   {
+    id: "one-product-many-parts",
+    kind: "over-split control",
+    source:
+      "Owner: threads with one topic throughout were split. Each message asks for a different part of the one thing being built, and the regroup made a topic per part",
+    runs: [
+      [
+        "Build a weekly digest email that sends each user their team's activity",
+        "Weekly digest email built; sends Mondays 9:00",
+        "D",
+      ],
+      [
+        "name the sender Acme Weekly and make it sound less robotic",
+        "Sender renamed Acme Weekly; friendlier copy",
+        "D",
+      ],
+      [
+        "add a section with the three most-commented documents",
+        "Top-commented documents section added",
+        "D",
+      ],
+      [
+        "it shouldn't email people who were active every day that week",
+        "Daily-active users now skipped",
+        "D",
+      ],
+      ["the header image is blurry in Gmail", "Header image served at 2x; sharp in Gmail", "D"],
+      [
+        "is it sending from our server or a mail service?",
+        "Digest sends through our own SMTP server",
+        "D",
+      ],
+      ["move it to Postmark", "Digest now sends through Postmark", "D"],
+      ["let people pick the day in settings", "Digest day selectable in settings", "D"],
+      ["I picked Friday and still got it Monday", "Fixed digest day lookup; Friday honoured", "D"],
+      [null, "Scheduled send check: 212 digests delivered", "D"],
+      ["translate it into German and French", "Digest translated to German and French", "D"],
+      [
+        "the unsubscribe footer is missing in the German one",
+        "Unsubscribe footer restored in German digest",
+        "D",
+      ],
+      ["add open-rate tracking", "Open tracking added; 41% opened last send", "D"],
+      ["commit and deploy", "Deployed weekly digest changes", "D"],
+    ],
+    pass: { topics: 1 },
+  },
+  {
     id: "two-topics-interleaved",
     kind: "guard",
     source: "Report: topics are not contiguous; a thread alternates between two subjects",

@@ -1,7 +1,7 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ActivityIcon, AlarmClockIcon, HistoryIcon } from "lucide-react";
+import { ActivityIcon, AlarmClockIcon, HistoryIcon, type LucideIcon } from "lucide-react";
 import { type ReactNode, useLayoutEffect } from "react";
 import { cn } from "~/lib/utils";
 import {
@@ -117,6 +117,69 @@ const shelves = {
   "settled-header": { id: "settled", Icon: HistoryIcon },
 } as const;
 
+/** A shelf header's place in the list: the first shelf sits at the bottom, under a rule. */
+function shelfHeaderClassName(input: { first: boolean; tide: boolean; tall: boolean }) {
+  const belowRecent = input.first && input.tide;
+  return cn(
+    "relative h-8",
+    // With card rows the header's own padding plus this margin lands its text on the cards' inset.
+    input.tide ? "mx-1" : "mx-0.5",
+    input.first && "mt-auto",
+    belowRecent && input.tall && "h-12 pt-4",
+    belowRecent && "group-data-[variant=frameless]:h-16 group-data-[variant=frameless]:pt-8",
+  );
+}
+
+function ShelfHeaderBody(props: {
+  shelf: string;
+  Icon: LucideIcon;
+  label: string;
+  count: number;
+  first: boolean;
+  tide: boolean;
+  tone?: "muted" | "emphasized" | "accent";
+  toggle: { expanded: boolean; onToggle: () => void };
+  action?: ReactNode;
+}) {
+  const { Icon } = props;
+  const header = (
+    <CollapsibleSectionHeader
+      data-sidebar-row={`shelf:${props.shelf}`}
+      onClick={props.toggle.onToggle}
+      expanded={props.toggle.expanded}
+      tone={props.tone ?? "muted"}
+      data-testid={`sidebar-${props.shelf}-shelf-toggle`}
+      accessory={<span className="font-normal tabular-nums">{props.count}</span>}
+    >
+      {props.tide && (
+        <Icon
+          aria-hidden
+          className="me-1.5 hidden size-3.5 align-[-0.15rem] group-data-[variant=frameless]:inline"
+        />
+      )}
+      {props.label}
+    </CollapsibleSectionHeader>
+  );
+  return (
+    <>
+      {props.first && props.tide && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -inset-x-[calc(var(--sidebar-content-inset)+0.25rem)] top-6 hidden border-t border-sidebar-border/70 group-data-[variant=frameless]:block"
+        />
+      )}
+      {props.action ? (
+        <div className="flex h-8 items-center">
+          <div className="min-w-0 flex-1">{header}</div>
+          {props.action}
+        </div>
+      ) : (
+        header
+      )}
+    </>
+  );
+}
+
 export function SidebarSectionHeader(props: {
   marker: keyof typeof shelves;
   label: string;
@@ -131,52 +194,51 @@ export function SidebarSectionHeader(props: {
   action?: ReactNode;
 }) {
   const { id: shelf, Icon } = shelves[props.marker];
-  const belowRecent = props.first && props.tide;
-  const header = (
-    <CollapsibleSectionHeader
-      data-sidebar-row={`shelf:${shelf}`}
-      onClick={props.toggle.onToggle}
-      expanded={props.toggle.expanded}
-      tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}
-      data-testid={`sidebar-${shelf}-shelf-toggle`}
-      accessory={<span className="font-normal tabular-nums">{props.count}</span>}
-    >
-      {props.tide && (
-        <Icon
-          aria-hidden
-          className="me-1.5 hidden size-3.5 align-[-0.15rem] group-data-[variant=frameless]:inline"
-        />
-      )}
-      {props.label}
-    </CollapsibleSectionHeader>
-  );
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
+      className={shelfHeaderClassName({
+        first: props.first,
+        tide: props.tide,
+        tall: shelf !== "settled",
+      })}
+    >
+      <ShelfHeaderBody
+        shelf={shelf}
+        Icon={Icon}
+        label={props.label}
+        count={props.count}
+        first={props.first}
+        tide={props.tide}
+        tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}
+        toggle={props.toggle}
+        action={props.action}
+      />
+    </SortableSidebarMarker>
+  );
+}
+
+/** A shelf that holds no threads and takes no drops, so it has no part in the list's sorting. */
+export function SidebarStaticShelfHeader(props: {
+  shelf: string;
+  Icon: LucideIcon;
+  label: string;
+  count: number;
+  first: boolean;
+  tide: boolean;
+  toggle: { expanded: boolean; onToggle: () => void };
+  action?: ReactNode;
+}) {
+  return (
+    <li
+      data-thread-selection-safe
       className={cn(
-        "relative h-8",
-        // With card rows the header's own padding plus this margin lands its text on the cards' inset.
-        props.tide ? "mx-1" : "mx-0.5",
-        props.first && "mt-auto",
-        belowRecent && shelf !== "settled" && "h-12 pt-4",
-        belowRecent && "group-data-[variant=frameless]:h-16 group-data-[variant=frameless]:pt-8",
+        "list-none",
+        shelfHeaderClassName({ first: props.first, tide: props.tide, tall: true }),
       )}
     >
-      {belowRecent && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -inset-x-[calc(var(--sidebar-content-inset)+0.25rem)] top-6 hidden border-t border-sidebar-border/70 group-data-[variant=frameless]:block"
-        />
-      )}
-      {props.action ? (
-        <div className="flex h-8 items-center">
-          <div className="min-w-0 flex-1">{header}</div>
-          {props.action}
-        </div>
-      ) : (
-        header
-      )}
-    </SortableSidebarMarker>
+      <ShelfHeaderBody {...props} />
+    </li>
   );
 }

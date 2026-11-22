@@ -120,7 +120,6 @@ const EMPTY: ProjectChangesResult = {
   isRepository: false,
   uncommitted: { files: 0, topics: [] },
   unpushedCommits: 0,
-  sincePublish: null,
   commits: [],
   publishes: [],
   entries: [],

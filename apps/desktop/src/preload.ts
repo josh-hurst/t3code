@@ -1,5 +1,6 @@
 import type {
   DesktopBridge,
+  DesktopMenuBarToggleEvent,
   DesktopPreviewAnnotationVoiceEvent,
   DesktopPreviewFindResultEvent,
   DesktopPreviewOpenLinkEvent,
@@ -285,6 +286,33 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.on(IpcChannels.MENU_ACTION_CHANNEL, wrappedListener);
     return () => {
       ipcRenderer.removeListener(IpcChannels.MENU_ACTION_CHANNEL, wrappedListener);
+    };
+  },
+  onMenuBarItemToggle: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (typeof payload !== "object" || payload === null || !("bounds" in payload)) return;
+      const bounds = (payload as { bounds?: unknown }).bounds;
+      if (typeof bounds !== "object" || bounds === null) return;
+      const { x, y, width, height } = bounds as {
+        x?: unknown;
+        y?: unknown;
+        width?: unknown;
+        height?: unknown;
+      };
+      if (
+        typeof x !== "number" ||
+        typeof y !== "number" ||
+        typeof width !== "number" ||
+        typeof height !== "number"
+      ) {
+        return;
+      }
+      listener({ bounds: { x, y, width, height } } satisfies DesktopMenuBarToggleEvent);
+    };
+
+    ipcRenderer.on(IpcChannels.MENU_BAR_ITEM_TOGGLE_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.MENU_BAR_ITEM_TOGGLE_CHANNEL, wrappedListener);
     };
   },
   onSnapShotEvent: (listener) => {

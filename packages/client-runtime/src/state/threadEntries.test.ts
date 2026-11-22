@@ -21,6 +21,7 @@ import {
   entryPublishItems,
   mergeEntryPages,
   projectChangeCounts,
+  projectChangeSections,
   projectChangeTimeline,
   unpublishedCount,
   resolveThreadEntries,
@@ -323,6 +324,71 @@ describe("History lists", () => {
       "publish",
       { kind: "others", sha: "theirs-b", count: 2, authors: ["Friend", "Other"] },
       "mine-early",
+    ]);
+  });
+
+  it("puts every publish and other authors' commits back between the changelog's periods", () => {
+    const at = (hour: number) => new Date(2026, 5, 20, hour).toISOString();
+    const commit = (sha: string, hour: number, author: string) => ({
+      sha,
+      subject: sha,
+      author,
+      own: author === "Owner",
+      committedAt: at(hour),
+      pushed: true,
+      files: 1,
+      topics: [],
+    });
+    const period = (key: string, publishedHour: number | null, hour: number) => ({
+      key,
+      publishedAt: publishedHour === null ? null : at(publishedHour),
+      startedAt: at(hour),
+      endedAt: at(hour),
+      shas: [key],
+      items: null,
+    });
+    const shape = (sections: ReturnType<typeof projectChangeSections>) =>
+      sections.map((section) => [
+        section.publishedAt === null ? "open" : new Date(section.publishedAt).getHours(),
+        section.period?.key ?? null,
+        section.others,
+      ]);
+    const commits = [
+      commit("open", 11, "Owner"),
+      commit("theirs-late", 9, "Friend"),
+      // At the publish itself: shipped by it, as the server files the owner's commits.
+      commit("theirs-at-publish", 8, "Other"),
+      commit("theirs-mid", 7, "Friend"),
+      commit("shipped", 3, "Owner"),
+      commit("theirs-early", 2, "Friend"),
+    ];
+    expect(
+      shape(
+        projectChangeSections({
+          commits,
+          publishes: [at(8), at(5), at(4)],
+          periods: [period("open", null, 11), period("shipped", 4, 3)],
+        }),
+      ),
+    ).toEqual([
+      ["open", "open", { count: 1, authors: ["Friend"] }],
+      [8, null, { count: 2, authors: ["Other", "Friend"] }],
+      // A publish that shipped nothing new still shows.
+      [5, null, null],
+      [4, "shipped", { count: 1, authors: ["Friend"] }],
+    ]);
+    // Never published: weeks, each taking what landed before the next week's first commit.
+    expect(
+      shape(
+        projectChangeSections({
+          commits,
+          publishes: [],
+          periods: [period("late", null, 9), period("early", null, 3)],
+        }),
+      ),
+    ).toEqual([
+      ["open", "late", { count: 1, authors: ["Friend"] }],
+      ["open", "early", { count: 3, authors: ["Other", "Friend"] }],
     ]);
   });
 

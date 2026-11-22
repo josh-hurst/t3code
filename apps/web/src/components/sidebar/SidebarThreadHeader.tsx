@@ -1,15 +1,5 @@
-import { useNavigate } from "@tanstack/react-router";
-import * as Schema from "effect/Schema";
 import { useGT } from "gt-react";
-import {
-  ArrowUpIcon,
-  BellDotIcon,
-  FolderPlusIcon,
-  GitCommitHorizontalIcon,
-  SearchIcon,
-  SquarePenIcon,
-  XIcon,
-} from "lucide-react";
+import { BellDotIcon, FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -20,21 +10,10 @@ import {
 } from "react";
 
 import { cn } from "~/lib/utils";
-import { useLocalStorage } from "../../hooks/useLocalStorage";
-import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { Button } from "../ui/button";
-import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { SidebarBrand } from "./SidebarBrand";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-
-export interface SidebarChangedProject {
-  readonly projectKey: string;
-  readonly name: string;
-  readonly icon: ProjectFaviconProject | null;
-  readonly uncommittedFiles: number;
-  readonly unpushedCommits: number;
-}
 
 export interface SidebarThreadHeaderProps {
   hasProjects: boolean;
@@ -43,8 +22,6 @@ export interface SidebarThreadHeaderProps {
   needsYouElsewhere: number;
   // The new layout names the projects the list is scoped to on a row of its own; null otherwise.
   focusedProjects: string | null;
-  /** The scope's projects whose checkout holds uncommitted or unpushed work, in sidebar order. */
-  changedProjects: ReadonlyArray<SidebarChangedProject>;
   onShowAllProjects: () => void;
   onNewProject: () => void;
   onNewThread: (event: ReactMouseEvent) => void;
@@ -69,7 +46,6 @@ export function SidebarThreadHeader({
   projectScope,
   needsYouElsewhere,
   focusedProjects,
-  changedProjects,
   onShowAllProjects,
   onNewProject,
   onNewThread,
@@ -214,102 +190,6 @@ export function SidebarThreadHeader({
           needsYouElsewhere={needsYouElsewhere}
           onShowAllProjects={onShowAllProjects}
         />
-      ) : null}
-      {changedProjects.length > 0 ? <SidebarChangesSection projects={changedProjects} /> : null}
-    </div>
-  );
-}
-
-// A folder of untracked output can hold tens of thousands of files; the tooltip has the count.
-const compactCount = (count: number) =>
-  count < 1_000 ? `${count}` : `${Math.floor(count / 100) / 10}k`;
-
-/**
- * Each project's uncommitted files and unpushed commits, read from Git, one row a project in
- * the sidebar's own section shape. They sit here, per project, and not on thread rows; a row
- * opens the project's changes in History.
- */
-function SidebarChangesSection(props: { projects: ReadonlyArray<SidebarChangedProject> }) {
-  const navigate = useNavigate();
-  const [expanded, setExpanded] = useLocalStorage("sidebar_changes_expanded", true, Schema.Boolean);
-  return (
-    <div className="flex flex-col">
-      {/* The header's own padding plus this margin lands its label on the rows' inset. */}
-      <div className="mx-1">
-        <CollapsibleSectionHeader
-          expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
-          accessory={<span className="font-normal tabular-nums">{props.projects.length}</span>}
-        >
-          {/* Shelf headers lead with an icon only in the frameless sidebar. */}
-          <GitCommitHorizontalIcon
-            aria-hidden
-            className="me-1.5 hidden size-3.5 align-[-0.15rem] group-data-[variant=frameless]:inline"
-          />
-          Changes
-        </CollapsibleSectionHeader>
-      </div>
-      {expanded ? (
-        <ul className="flex flex-col">
-          {props.projects.map((project) => {
-            const summary = [
-              project.uncommittedFiles > 0
-                ? `${project.uncommittedFiles} ${project.uncommittedFiles === 1 ? "file" : "files"} uncommitted`
-                : null,
-              project.unpushedCommits > 0
-                ? `${project.unpushedCommits} ${project.unpushedCommits === 1 ? "commit" : "commits"} not pushed`
-                : null,
-            ]
-              .filter((part) => part !== null)
-              .join(", ");
-            return (
-              <li key={project.projectKey}>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <SidebarMenuButton
-                        type="button"
-                        size="sm"
-                        aria-label={`${project.name}: ${summary}. Show its changes`}
-                        onClick={() =>
-                          void navigate({
-                            to: "/history",
-                            search: { project: project.projectKey, view: "changes" },
-                          })
-                        }
-                      />
-                    }
-                  >
-                    {/* The icon sits as close to its name as on a thread row. */}
-                    <span className="flex min-w-0 flex-1 items-center gap-1">
-                      {project.icon ? (
-                        <span className="flex shrink-0">
-                          <ProjectFavicon project={project.icon} className="size-3" />
-                        </span>
-                      ) : null}
-                      <span className="min-w-0 truncate">{project.name}</span>
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2 font-normal tabular-nums">
-                      {project.uncommittedFiles > 0 ? (
-                        <span>
-                          {compactCount(project.uncommittedFiles)}{" "}
-                          {project.uncommittedFiles === 1 ? "file" : "files"}
-                        </span>
-                      ) : null}
-                      {project.unpushedCommits > 0 ? (
-                        <span className="flex items-center">
-                          <ArrowUpIcon aria-hidden className="size-3" />
-                          {compactCount(project.unpushedCommits)}
-                        </span>
-                      ) : null}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipPopup side="right">{summary}</TooltipPopup>
-                </Tooltip>
-              </li>
-            );
-          })}
-        </ul>
       ) : null}
     </div>
   );

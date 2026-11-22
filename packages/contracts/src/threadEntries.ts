@@ -293,10 +293,6 @@ export const ProjectChangesResult = Schema.Struct({
     topics: Schema.Array(ProjectChangeTopic),
   }),
   unpushedCommits: NonNegativeInt,
-  /** Null for a project never marked published. */
-  sincePublish: Schema.NullOr(
-    Schema.Struct({ publishedAt: IsoDateTime, topics: Schema.Array(ProjectChangeTopic) }),
-  ),
   /** Newest first, merges left out. */
   commits: Schema.Array(ProjectChangeCommit),
   /** Newest first. */

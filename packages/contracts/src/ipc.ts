@@ -25,6 +25,19 @@ import type {
 export const THREAD_POPOUT_FRAME_PREFIX = "t3code-popout-";
 /** A pop-out pre-loaded while hidden; it shows once its route moves to a thread. */
 export const THREAD_POPOUT_STANDBY_FRAME_PREFIX = `${THREAD_POPOUT_FRAME_PREFIX}standby-`;
+/** `window.open` names the menu bar popover with this prefix; desktop styles and positions it as a popover. */
+export const MENU_BAR_POPOVER_FRAME_PREFIX = "t3code-menubar-";
+
+export interface DesktopMenuBarBounds {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface DesktopMenuBarToggleEvent {
+  readonly bounds: DesktopMenuBarBounds;
+}
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -1210,6 +1223,7 @@ export interface DesktopBridge {
   probeRemoteEditors: () => Promise<readonly EditorId[]>;
   pasteAsText: () => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
+  onMenuBarItemToggle?: (listener: (event: DesktopMenuBarToggleEvent) => void) => () => void;
   onSnapShotEvent: (listener: (event: DesktopSnapShotEvent) => void) => () => void;
   onQuitShortcut: (listener: (event: QuitShortcutHintEvent) => void) => () => void;
   getWindowFullscreenState: () => boolean;

@@ -167,6 +167,10 @@ sidebar. Each one opens as a project on this computer, the same as `t3 app`.
 Files dropped on a thread still attach to that thread. Browsers do not share
 folder paths, so in the web app use **Add project** instead.
 
+### Menu bar
+
+On macOS, T3 Code shows an icon in the menu bar. Click it to open a compact list of your threads or type a prompt and press Enter to open a new draft in the main window. Turn **Show in menu bar** off in **Settings → Appearance** to hide the icon.
+
 ## Mobile app
 
 Install T3 Code from the

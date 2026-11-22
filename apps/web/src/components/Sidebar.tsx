@@ -295,6 +295,7 @@ import {
 import { SidebarDraftBlock } from "./sidebar/SidebarDraftBlock";
 import { SidebarNeedsYouNext, SidebarTrailHeader, SidebarTrailMore } from "./sidebar/SidebarTrail";
 import { registerTideCommands } from "./sidebar/tideCommands";
+import { SidebarChangesShelf } from "./sidebar/SidebarChangesShelf";
 import { SidebarHistoryAllButton } from "./sidebar/SidebarHistoryAllButton";
 import { useEntriesEnvironmentIds, useOpenItemCounts } from "../state/threadEntries";
 import { useStillOpenActions } from "../hooks/useStillOpenActions";
@@ -4011,7 +4012,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   ? scopedProjectGroups.map((project) => project.displayName).join(", ")
                   : null
               }
-              changedProjects={changedProjects}
               onShowAllProjects={() => setProjectScopeKeys([])}
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
@@ -4597,11 +4597,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             );
                             break;
                           case "settled-header":
+                            // Changes sits with the shelves, above History's long list.
+                            if (changedProjects.length > 0) {
+                              items.push(
+                                <SidebarChangesShelf
+                                  key="changes-shelf"
+                                  projects={changedProjects}
+                                  first={startsShelves}
+                                />,
+                              );
+                            }
                             items.push(
                               <SidebarSectionHeader
                                 key="settled-shelf-header"
                                 marker="settled-header"
-                                first={startsShelves}
+                                first={startsShelves && changedProjects.length === 0}
                                 tide={tide}
                                 label={
                                   tide

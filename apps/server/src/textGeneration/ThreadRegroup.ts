@@ -58,8 +58,8 @@ export function parseRunHeadlines(
   return parsed === 0 ? null : lines;
 }
 
-// The regroup prompt the grouping experiment measured (its examples are invented). The open or
-// done field is still asked for, as measured, and is discarded by the parser.
+// A topic is a whole job, not a part of one: the owner found threads about one thing cut into a
+// topic per request. The examples are invented. The open or done field is discarded by the parser.
 export function buildThreadRegroupPrompt(outline: string): string {
   return `Group the runs of one coding agent thread into topics for a table of contents. A run is one message from the user and the agent's final reply. You get an outline: one line per run with its number, the user's message (shortened), and a headline of the agent's reply.
 
@@ -68,17 +68,18 @@ Return JSON with one key, "transcription", whose value is plain text, one line p
 <title> | <where the topic stands at its last run> | <open or done> | <run numbers separated by spaces>
 
 What counts as one topic:
-- A topic is one thing the user would look for later: one feature being built, one bug, one question investigated, one decision, one test or experiment.
-- Work that moves the same thing forward is one topic: the build, the fixes after the user's feedback, showing it, the commit, the publish and the check that it is live.
-- A different question is a different topic even inside the same broad area. In a thread about a checkout page, the redesign of the page, why mobile payments fail, a new discount-code field, and a tax-rounding bug are four topics. In a thread about a mail server, the weekly health check, a storage forecast, the hosting bill and a bounced newsletter are four topics.
+- A topic is one whole job as the user thinks of it: the thing being built, the problem being fixed, the question being investigated, the release being checked. It is as large as that job, and large enough that the user could have opened a thread just for it.
+- Read the first runs for what the thread set out to do. Everything that serves that job is the same topic, even when each message names a different part of it: every part added, every change asked for after seeing it, every bug found in it, every question about how it works, where it runs or what it costs, the tests, the commit, the build, install or release that ships it, the publish and the check that it is live. In a thread that builds a booking page, the date picker, the confirmation email, a timezone bug, the move to a new host and the translations are one topic, the booking page.
+- A second topic exists only when the user turns to work that does not serve the first job and stands on its own: another product or feature that is not part of it, an unrelated bug, a separate investigation. In that booking-page thread, a slow payroll export and a redesign of the login screen are two more topics.
+- Never make a topic for a step, a part, a follow-up question, a tangent of one or two runs, or a different way of saying the job. Put those runs in the job they came up in.
 - Topics are not contiguous. A thread often returns to an earlier topic after other topics; put those runs in the earlier topic.
-- Most threads of a few runs are a single topic. Do not split a thread that works on one thing. When two groupings both seem reasonable, choose the one with fewer topics.
+- Most threads are a single topic, however long they are. Do not split a thread that works on one thing. When two groupings both seem reasonable, choose the one with fewer topics.
 
 Rules:
 - Every run number appears in at least one topic. A run appears in a second topic only when it gave a real result on both, such as a status check that reads two topics.
 - A short follow-up ("yes", "fix it", "how about now?", "published") and a background-task report belong to the topic of the work they follow.
-- General status checks ("how's it going?") across the thread form one topic of their own when there are several of them; a single one belongs to the topic its reply is mostly about.
-- Title: 2 to 6 words naming the subject the way the user would search for it. Name the thing, not the action or result.
+- General status checks ("how's it going?") across a thread with several topics form one topic of their own when there are several of them; a single one belongs to the topic its reply is mostly about. In a thread with one topic they belong to it.
+- Title: 2 to 6 words naming the whole job the way the user would search for it. Name the thing, not a part of it, an action or a result. Capitalize only the first word and names. No two topics share a title.
 - Outcome: one line under 110 characters, result first.
 - open only when the topic's last run leaves work unfinished: changes not committed, not published or not tested, something the user must check, or a result still being waited for. A question or an offer of a next step does not make a topic open. A topic the user moved on from, or whose work a later run committed or published, is done.
 - List topics in the order they first appear.

@@ -269,7 +269,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       );
       assert.deepStrictEqual(
         kept.forkLedger.map((row) => row.migration_id),
-        [1, 2, 3],
+        [1, 2, 3, 4],
       );
     }),
   );
@@ -363,7 +363,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           return yield* sql<{ migration_id: number }>`SELECT migration_id FROM t3_fork_migrations`;
         }),
       );
-      assert.lengthOf(forkLedger, 3, "a source without the fork ledger gets it on the snapshot");
+      assert.lengthOf(forkLedger, 4, "a source without the fork ledger gets it on the snapshot");
     }),
   );
 

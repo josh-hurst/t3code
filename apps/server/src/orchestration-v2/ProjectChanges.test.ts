@@ -105,22 +105,11 @@ describe("buildProjectChanges", () => {
     expect(changes.commits[0]).toMatchObject({ own: false, files: 1, topics: [] });
   });
 
-  it("lists what changed after the last publish, committed or not, one path once", () => {
-    const changes = build({
-      touches: [
-        touch(store, "Shop.luau", 1, 2),
-        touch(ranked, "Ranked.luau", 6, 7),
-        touch(store, "Ranked.luau", 8, 9),
-      ],
-      commits: [commit("c1", 10, ["Shop.luau", "Ranked.luau"])],
-      publishedAtMs: [3 * HOUR, 5 * HOUR],
-    });
-    expect(changes.sincePublish).toEqual({
-      publishedAt: isoAtHour(5),
-      topics: [{ entryId: store, files: 1 }],
-    });
-    expect(changes.publishes).toEqual([isoAtHour(5), isoAtHour(3)]);
-    expect(build({}).sincePublish).toBeNull();
+  it("lists publishes newest first", () => {
+    expect(build({ publishedAtMs: [3 * HOUR, 5 * HOUR] }).publishes).toEqual([
+      isoAtHour(5),
+      isoAtHour(3),
+    ]);
   });
 });
 

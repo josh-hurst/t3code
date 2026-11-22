@@ -21,6 +21,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { TestClock } from "effect/testing";
 
 import * as ServerConfig from "../config.ts";
+import RegroupAgain from "../persistence/ForkMigrations/004_TideRegroupAgain.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
@@ -384,6 +385,50 @@ describe("ThreadRegroupService", () => {
             manual?.id,
             `effect:thread-contents.regroup:${threadId}:command:regroup:manual`,
           );
+        }).pipe(Effect.provide(harness.layer));
+      }),
+  );
+
+  it.effect(
+    "a thread regrouped at its last run is regrouped again once the rules change, and comes back whole",
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness();
+        yield* Effect.gen(function* () {
+          const active = Effect.map(readContents, (contents) =>
+            contents.entries.flatMap((entry) =>
+              entry.status === "active" ? [[entry.id, entry.runs.length]] : [],
+            ),
+          );
+          const run = (effectId: string) =>
+            ThreadRegroupService.ThreadRegroupService.use((regroups) =>
+              regroups.execute({ threadId, kind: "idle", effectId }),
+            );
+          yield* createThread();
+          yield* fileRuns(12);
+          yield* requestRegroup("old-rules");
+          const [, first] = yield* regroupEffects();
+          yield* run(first!.id);
+          assert.lengthOf(yield* active, 2);
+
+          yield* RegroupAgain;
+          const due = (yield* readContents).state;
+          assert.deepEqual(
+            [due?.regroupRequestedThrough, due?.runsSinceRegroup, due?.regroupedAt],
+            [0, 12, null],
+          );
+
+          // The same run as before: only the contents' revision tells the two requests apart.
+          harness.replies.regroup = () =>
+            Effect.succeed({
+              transcription: "Rate limiter | All done | done | 1 2 3 4 5 6 7 8 9 10 11 12",
+            });
+          yield* requestRegroup("new-rules");
+          const [, , second] = yield* regroupEffects();
+          assert.isDefined(second);
+          assert.notStrictEqual(second!.id, first!.id);
+          yield* run(second!.id);
+          assert.deepEqual(yield* active, [[ThreadEntryId.make(`${threadId}:e1`), 12]]);
         }).pipe(Effect.provide(harness.layer));
       }),
   );
