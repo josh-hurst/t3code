@@ -145,6 +145,7 @@ import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts"
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as ContentsBackfillService from "./orchestration-v2/ContentsBackfillService.ts";
 import * as OpenItemService from "./orchestration-v2/OpenItemService.ts";
+import * as ProjectChangesService from "./orchestration-v2/ProjectChangesService.ts";
 import * as ThreadEntryStore from "./orchestration-v2/ThreadEntryStore.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
@@ -894,6 +895,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ThreadManagement.ThreadManagementService)({}),
   Layer.mock(ThreadSearch.ThreadSearch)({}),
   Layer.mock(OpenItemService.OpenItemService)({}),
+  Layer.mock(ProjectChangesService.ProjectChangesService)({}),
   Layer.mock(ContentsBackfillService.ContentsBackfillService)({}),
   Layer.mock(ThreadEntryStore.ThreadEntryStore)({}),
   Layer.mock(UsageService.UsageService)({}),

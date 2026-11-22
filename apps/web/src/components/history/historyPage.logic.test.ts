@@ -1,12 +1,7 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  historyChipKeys,
-  historyListInputs,
-  publishTargets,
-  validateHistorySearch,
-} from "./historyPage.logic";
+import { historyChipKeys, publishTargets, validateHistorySearch } from "./historyPage.logic";
 
 const local = EnvironmentId.make("environment:local");
 const remote = EnvironmentId.make("environment:remote");
@@ -17,42 +12,16 @@ const members = [
 
 describe("History page", () => {
   it("reads its URL defensively", () => {
-    expect(validateHistorySearch({ project: " key ", open: 1, q: "  " })).toEqual({
+    expect(validateHistorySearch({ project: " key ", open: 1, q: "  ", view: "changes" })).toEqual({
       project: "key",
       open: "1",
+      view: "changes",
     });
+    expect(validateHistorySearch({ view: "other" })).toEqual({});
     expect(validateHistorySearch({ open: "yes", q: "x".repeat(150) }).q).toHaveLength(100);
   });
 
-  it("asks only environments holding the group's projects, and never with an empty list", () => {
-    expect(
-      historyListInputs({
-        environmentIds: [local, remote],
-        members,
-        stillOpen: true,
-        query: " shop button ",
-      }),
-    ).toEqual([
-      {
-        environmentId: local,
-        input: {
-          projectIds: members.map((member) => member.projectId),
-          stillOpen: true,
-          query: "shop button",
-        },
-      },
-    ]);
-    expect(
-      historyListInputs({
-        environmentIds: [local, remote],
-        members: null,
-        stillOpen: false,
-        query: "",
-      }),
-    ).toEqual([
-      { environmentId: local, input: {} },
-      { environmentId: remote, input: {} },
-    ]);
+  it("sends Mark published to no environment that lacks the group's projects", () => {
     expect(publishTargets(members, [remote])).toEqual([]);
   });
 

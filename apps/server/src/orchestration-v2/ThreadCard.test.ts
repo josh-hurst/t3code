@@ -2,7 +2,7 @@ import { CommandId, MessageId, RunId, type ThreadCard } from "@t3tools/contracts
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { cardCallsForRetitle, nextThreadCard } from "./ThreadCard.ts";
+import { cardCallsForRetitle, nextThreadCard, unreadVisitedAt } from "./ThreadCard.ts";
 
 const input = (run: number, overrides: Partial<Parameters<typeof nextThreadCard>[0]> = {}) => ({
   previous: null,
@@ -12,6 +12,7 @@ const input = (run: number, overrides: Partial<Parameters<typeof nextThreadCard>
   topics: [],
   open: [],
   at: "2026-06-20T00:00:00.000Z",
+  repliedAt: `2026-06-20T00:00:0${run}.000Z`,
   answered: false,
   ...overrides,
 });
@@ -44,6 +45,34 @@ describe("nextThreadCard", () => {
     expect(nextThreadCard(input(1, { open })).open).toEqual(open);
     expect(nextThreadCard(input(1, { open, answered: true })).open).toEqual([open[1]]);
   });
+
+  it("times a question from the reply that first raised it", () => {
+    const ask = (text: string) => ({ kind: "ask" as const, text });
+    const first = nextThreadCard(input(1, { open: [ask("Merge PR 412 now?")] }));
+    expect(first.askedAt).toBe("2026-06-20T00:00:01.000Z");
+    // A report that repeats it, reworded only in case and punctuation, is not a new question.
+    const carried = nextThreadCard(input(2, { previous: first, open: [ask("merge PR 412 now")] }));
+    expect(carried.askedAt).toBe(first.askedAt);
+    const added = nextThreadCard(
+      input(3, { previous: carried, open: [ask("Merge PR 412 now?"), ask("Tag the release?")] }),
+    );
+    expect(added.askedAt).toBe("2026-06-20T00:00:03.000Z");
+    expect(nextThreadCard(input(4, { previous: added })).askedAt).toBeUndefined();
+    expect(
+      nextThreadCard(input(4, { previous: added, open: added.open, answered: true })).askedAt,
+    ).toBeUndefined();
+  });
+});
+
+it("marks unread from before a carried question's reply, else from before the latest run's end", () => {
+  const completedAt = DateTime.makeUnsafe("2026-06-20T00:00:09.000Z");
+  const before = (iso: string) => DateTime.makeUnsafe(Date.parse(iso) - 1);
+  const asked = nextThreadCard(input(1, { open: [{ kind: "ask", text: "Merge PR 412 now?" }] }));
+  expect(unreadVisitedAt(null, completedAt)).toEqual(before("2026-06-20T00:00:09.000Z"));
+  expect(unreadVisitedAt(asked, completedAt)).toEqual(before("2026-06-20T00:00:01.000Z"));
+  expect(unreadVisitedAt({ ...asked, open: [] }, completedAt)).toEqual(
+    before("2026-06-20T00:00:09.000Z"),
+  );
 });
 
 describe("cardCallsForRetitle", () => {

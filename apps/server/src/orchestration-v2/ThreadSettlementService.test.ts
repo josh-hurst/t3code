@@ -163,20 +163,26 @@ describe("isAutoSettlementCandidate", () => {
   });
 
   it.each([
-    ["ask", false],
-    ["verify", true],
-  ] as const)("a card with an open %s item leaves the thread a candidate: %s", (kind, expected) => {
-    const card = {
-      line: "Use Clerk or Auth0 for login?",
-      topics: [],
-      open: [{ kind, text: "Use Clerk or Auth0 for login?" }],
-      messageId: MessageId.make("message:card"),
-      at: "2026-06-20T00:00:00.000Z",
-    };
-    expect(ThreadSettlementService.isAutoSettlementCandidate(shell({ card }), NOW_MS)).toBe(
-      expected,
-    );
-  });
+    ["ask", "unread", false],
+    ["ask", "read", true],
+    ["verify", "unread", true],
+  ] as const)(
+    "a card with an open %s item, %s, leaves the thread a candidate: %s",
+    (kind, state, expected) => {
+      const card = {
+        line: "Use Clerk or Auth0 for login?",
+        topics: [],
+        open: [{ kind, text: "Use Clerk or Auth0 for login?" }],
+        messageId: MessageId.make("message:card"),
+        at: DateTime.formatIso(at(-DAY_MS)),
+        askedAt: DateTime.formatIso(at(-DAY_MS)),
+      };
+      const lastVisitedAt = at(state === "read" ? -HOUR_MS : -2 * DAY_MS);
+      expect(
+        ThreadSettlementService.isAutoSettlementCandidate(shell({ card, lastVisitedAt }), NOW_MS),
+      ).toBe(expected);
+    },
+  );
 
   it("never settles a thread with a pending re-check or a standing check", () => {
     const followUp = {
@@ -389,17 +395,33 @@ describe("resolveAutoSettlementAt", () => {
       expect(settles(thread)).toBeNull();
       expect(planned(thread)?.at).toBe(window(19 * HOUR_MS));
     }
-    // Something left to check or commit does not hold a thread; a question for the owner does.
-    const owes = (kind: "verify" | "ask") =>
+    // Something left to check or commit does not hold a thread, nor does a question once its
+    // reply is read; an unread question does.
+    const owes = (
+      kind: "verify" | "ask",
+      overrides: Partial<ProjectionStore.ProjectionSettlementCandidate> = {},
+    ) =>
       quiet(19 * HOUR_MS, {
         card: {
           open: [{ kind, text: "Check the totals" }],
           at: DateTime.formatIso(at(-19 * HOUR_MS)),
         },
+        ...overrides,
       });
     expect(settles(owes("verify"))).toEqual(at(-19 * HOUR_MS));
-    expect(settles(owes("ask"))).toBeNull();
-    expect(planned(owes("ask"))).toBeNull();
+    expect(settles(owes("ask"))).toEqual(at(-19 * HOUR_MS));
+    const unread = owes("ask", { lastVisitedAt: at(-20 * HOUR_MS) });
+    expect(settles(unread)).toBeNull();
+    expect(planned(unread)).toBeNull();
+    // Read an hour ago, three days in: the window has passed, and the open still buys two hours.
+    const readLate = (kind: "verify" | "ask") => ({
+      ...owes(kind),
+      ...quiet(3 * DAY_MS, { opens: { openedAt: NOW_MS - HOUR_MS, score: 1, picks: [] } }),
+      card: owes(kind).card,
+    });
+    expect(settles(readLate("verify"))).toEqual(at(-3 * DAY_MS));
+    expect(settles(readLate("ask"))).toBeNull();
+    expect(planned(readLate("ask"))?.at).toBe(NOW_MS + HOUR_MS);
 
     // Opened an hour ago, or the owner came back an hour ago: two hours must pass first.
     const opened = quiet(19 * HOUR_MS, {
@@ -2572,6 +2594,15 @@ describe("isSnoozed", () => {
     expect(
       ThreadSettlementService.isSnoozed(shell({ ...snoozed, card: card(at(-3 * DAY_MS)) }), NOW_MS),
     ).toBe(true);
+    // Read, the question stops waking the thread, which stays parked and out of the settle sweep.
+    const read = shell({
+      ...snoozed,
+      card: card(at(-DAY_MS)),
+      latestRunCompletedAt: at(-DAY_MS),
+      lastVisitedAt: at(-HOUR_MS),
+    });
+    expect(ThreadSettlementService.isSnoozed(read, NOW_MS)).toBe(true);
+    expect(ThreadSettlementService.isAutoSettlementCandidate(read, NOW_MS)).toBe(false);
   });
   it("keeps a run requested and completed after snoozing parked until the timer", () => {
     const thread = shell({

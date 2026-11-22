@@ -284,11 +284,14 @@ export const make = DesktopLifecycle.of({
     yield* electronApp.on("before-quit", (event: Electron.Event) => {
       handleBeforeQuit(event, runEffect, quit);
     });
-    yield* electronApp.on("activate", () => {
+    yield* electronApp.on("activate", (_event: unknown, hasVisibleWindows?: boolean) => {
       void runEffect(
         Effect.gen(function* () {
           const state = yield* DesktopState.DesktopState;
           if (yield* Ref.get(state.quitting)) return;
+          // macOS already raised a window; forcing main forward would pull the user off a
+          // pop-out's Space.
+          if (hasVisibleWindows === true && Option.isSome(yield* electronWindow.main)) return;
           yield* desktopWindow.activate;
         }).pipe(Effect.withSpan("desktop.lifecycle.activate")),
       );

@@ -11,6 +11,7 @@ import { memo, type ReactNode, useLayoutEffect, useRef } from "react";
 import { cn } from "~/lib/utils";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
+import { ToolbarCapsule } from "../ToolbarCapsule";
 import { PopoverCreateHandle, PopoverTrigger } from "../ui/popover";
 import { useMobileSidebarSheetMounted } from "../ui/sidebar";
 import { Toggle } from "../ui/toggle";
@@ -66,7 +67,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       onPressedChange={threadPanelPresentation === "popover" ? undefined : onToggleThreadPanel}
       aria-label={gt("Toggle thread details panel")}
       variant="ghost"
-      size="sm"
+      size="sm-pill"
     >
       <SquareMenuIcon className="size-4" />
     </Toggle>
@@ -90,59 +91,61 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
 
   return (
     <div
-      className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
+      className="flex h-full shrink-0 items-center [-webkit-app-region:no-drag]"
       data-panel-layout-controls
     >
-      {showThreadPanelControl ? threadPanelControl : null}
-      {showTerminalControl ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex shrink-0" />}>
-            <Toggle
-              className="shrink-0 [-webkit-app-region:no-drag]"
-              pressed={terminalOpen}
-              onPressedChange={onToggleTerminal}
-              aria-label={gt("Toggle terminal drawer")}
-              variant="ghost"
-              size="sm"
-              disabled={!terminalAvailable}
-            >
-              <PanelBottomIcon className="size-4" />
-            </Toggle>
-          </TooltipTrigger>
-          <TooltipPopup side="bottom">
-            {terminalAvailable
-              ? terminalShortcutLabel
-                ? gt("Toggle terminal drawer ({shortcut})", { shortcut: terminalShortcutLabel })
-                : gt("Toggle terminal drawer")
-              : gt("Terminal drawer is unavailable")}
-          </TooltipPopup>
-        </Tooltip>
-      ) : null}
-      {showRightPanelControl ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex shrink-0" />}>
-            <Toggle
-              className="shrink-0 [-webkit-app-region:no-drag]"
-              pressed={rightPanelOpen}
-              onPressedChange={onToggleRightPanel}
-              aria-label={gt("Toggle right panel")}
-              data-right-panel-toggle
-              variant="ghost"
-              size="sm"
-              disabled={!rightPanelAvailable}
-            >
-              <PanelRightIcon className="size-4" />
-            </Toggle>
-          </TooltipTrigger>
-          <TooltipPopup side="bottom">
-            {rightPanelAvailable
-              ? rightPanelShortcutLabel
-                ? gt("Toggle right panel ({shortcut})", { shortcut: rightPanelShortcutLabel })
-                : gt("Toggle right panel")
-              : (rightPanelUnavailableLabel ?? gt("Right panel is unavailable"))}
-          </TooltipPopup>
-        </Tooltip>
-      ) : null}
+      <ToolbarCapsule>
+        {showThreadPanelControl ? threadPanelControl : null}
+        {showTerminalControl ? (
+          <Tooltip>
+            <TooltipTrigger render={<span className="flex shrink-0" />}>
+              <Toggle
+                className="shrink-0 [-webkit-app-region:no-drag]"
+                pressed={terminalOpen}
+                onPressedChange={onToggleTerminal}
+                aria-label={gt("Toggle terminal drawer")}
+                variant="ghost"
+                size="sm-pill"
+                disabled={!terminalAvailable}
+              >
+                <PanelBottomIcon className="size-4" />
+              </Toggle>
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              {terminalAvailable
+                ? terminalShortcutLabel
+                  ? gt("Toggle terminal drawer ({shortcut})", { shortcut: terminalShortcutLabel })
+                  : gt("Toggle terminal drawer")
+                : gt("Terminal drawer is unavailable")}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
+        {showRightPanelControl ? (
+          <Tooltip>
+            <TooltipTrigger render={<span className="flex shrink-0" />}>
+              <Toggle
+                className="shrink-0 [-webkit-app-region:no-drag]"
+                pressed={rightPanelOpen}
+                onPressedChange={onToggleRightPanel}
+                aria-label={gt("Toggle right panel")}
+                data-right-panel-toggle
+                variant="ghost"
+                size="sm-pill"
+                disabled={!rightPanelAvailable}
+              >
+                <PanelRightIcon className="size-4" />
+              </Toggle>
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              {rightPanelAvailable
+                ? rightPanelShortcutLabel
+                  ? gt("Toggle right panel ({shortcut})", { shortcut: rightPanelShortcutLabel })
+                  : gt("Toggle right panel")
+                : (rightPanelUnavailableLabel ?? gt("Right panel is unavailable"))}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
+      </ToolbarCapsule>
     </div>
   );
 });
@@ -157,27 +160,29 @@ export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl
   const gt = useGT();
   const label = maximized ? gt("Restore panel size") : gt("Maximize panel");
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Toggle
-            className="shrink-0 [-webkit-app-region:no-drag]"
-            pressed={maximized}
-            onPressedChange={onToggle}
-            aria-label={label}
-            variant="ghost"
-            size="sm"
-          >
-            {maximized ? (
-              <Minimize2Icon className="size-4" />
-            ) : (
-              <Maximize2Icon className="size-4" />
-            )}
-          </Toggle>
-        }
-      />
-      <TooltipPopup side="bottom">{label}</TooltipPopup>
-    </Tooltip>
+    <ToolbarCapsule>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Toggle
+              className="shrink-0 [-webkit-app-region:no-drag]"
+              pressed={maximized}
+              onPressedChange={onToggle}
+              aria-label={label}
+              variant="ghost"
+              size="sm-pill"
+            >
+              {maximized ? (
+                <Minimize2Icon className="size-4" />
+              ) : (
+                <Maximize2Icon className="size-4" />
+              )}
+            </Toggle>
+          }
+        />
+        <TooltipPopup side="bottom">{label}</TooltipPopup>
+      </Tooltip>
+    </ToolbarCapsule>
   );
 });
 

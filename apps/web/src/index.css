@@ -120,7 +120,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --glass-opacity: 80%;
   --glass-saturation: 1.14;
   --desktop-window-right-resize-inset: 0px;
-  --workspace-topbar-height: 52px;
+  --workspace-topbar-height: 44px;
   --workspace-controls-top: 0px;
   --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
   --workspace-controls-right: calc(env(safe-area-inset-right) + 0.75rem);
@@ -187,6 +187,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --text-4xs--line-height: 1;
   --text-5xs: 0.4375rem;
   --text-5xs--line-height: 1;
+  /* Thread titles in the sidebar rows: a step under text-sm (13px). */
+  --text-row-title: 0.8125rem;
+  --text-row-title--line-height: calc(1.25 / 0.8125);
 }
 
 @theme inline {
@@ -466,6 +469,43 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--popover) !important;
   }
+}
+
+/* Every strip of the window's top bar wears this, so they join into one band. */
+@utility topbar-band {
+  background-color: var(--topbar-band-color);
+  border-bottom: 1px solid var(--chrome-divider);
+}
+
+/* A full-height edge that meets the top bar: inside the bar it shrinks to a short centered tick
+   so the band stays whole, and below the bar it is the usual divider. */
+@utility chrome-edge {
+  border-image: linear-gradient(
+      to bottom,
+      transparent calc(var(--workspace-topbar-height) / 2 - 0.625rem),
+      var(--chrome-tick) calc(var(--workspace-topbar-height) / 2 - 0.625rem)
+        calc(var(--workspace-topbar-height) / 2 + 0.625rem),
+      transparent calc(var(--workspace-topbar-height) / 2 + 0.625rem)
+        calc(var(--workspace-topbar-height) - 1px),
+      var(--chrome-divider) calc(var(--workspace-topbar-height) - 1px)
+    )
+    1;
+  background-image: linear-gradient(var(--topbar-band-color), var(--topbar-band-color));
+  background-origin: border-box;
+  background-position: var(--chrome-edge-side, right) top;
+  background-repeat: no-repeat;
+  background-size: 1px calc(var(--workspace-topbar-height) - 1px);
+}
+
+/* Thread cards pad their content 0.75rem (px-3 on the card), so beside them every sidebar row
+   takes the same inset and text shares one left and right edge. */
+[data-sidebar-rows="card"] {
+  --sidebar-row-content-inset: 0.75rem;
+}
+
+/* The docked app sidebar's edge runs into the top bar. */
+[data-slot="sidebar"][data-variant="sidebar"] > [data-slot="sidebar-container"][data-app-sidebar] {
+  @apply chrome-edge;
 }
 
 @utility topbar-scroll-fade {
@@ -1127,6 +1167,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --toolbar-background: var(--app-chrome-background);
   --toolbar-foreground: var(--foreground);
   --toolbar-border: var(--border);
+  /* The quiet line under the top bar and along the edges that meet it. */
+  --chrome-divider: color-mix(in srgb, var(--contrast-toolbar-border) 35%, transparent);
+  /* The short tick those edges leave inside the top bar; alone on the band, it needs more weight. */
+  --chrome-tick: color-mix(in srgb, var(--contrast-toolbar-border) 65%, transparent);
+  /* A step off the canvas. Themes default the toolbar color to the canvas, so the step is mixed in. */
+  --topbar-band-color: color-mix(in srgb, var(--toolbar-foreground) 3%, var(--toolbar-background));
   --toolbar-control: var(--popover);
   --toolbar-control-foreground: var(--foreground);
   --toolbar-control-hover: var(--accent);
@@ -1177,7 +1223,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --update-foreground: var(--primary);
   /* Keep every sidebar primitive on the same light surface hierarchy, including
      portaled mobile sheets and settings navigation outside the app sidebar. */
-  --sidebar: var(--color-zinc-50);
+  --sidebar: var(--background);
   --sidebar-foreground: var(--foreground);
   --sidebar-muted-foreground: var(--muted-foreground);
   --sidebar-control-surface: var(--color-zinc-100);
@@ -1226,7 +1272,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --warning-foreground: var(--color-amber-400);
     --warning-surface: color-mix(in srgb, var(--warning) 16%, transparent);
     --update-foreground: var(--color-blue-400);
-    --sidebar: var(--card);
+    --sidebar: var(--background);
     --sidebar-control-surface: var(--muted);
     --sidebar-row-hover: var(--accent);
     --sidebar-row-active: var(--accent);
@@ -1250,6 +1296,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --text-2xs: calc(0.6875 * var(--sidebar-font-size, 1rem));
   --text-xs: calc(0.75 * var(--sidebar-font-size, 1rem));
   --text-sm: calc(0.875 * var(--sidebar-font-size, 1rem));
+  --text-row-title: calc(0.8125 * var(--sidebar-font-size, 1rem));
   --text-base: var(--sidebar-font-size, 1rem);
   --text-lg: calc(1.125 * var(--sidebar-font-size, 1rem));
 }
@@ -1268,7 +1315,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --muted-foreground: var(--color-zinc-500);
   --border: var(--color-zinc-200);
   --input: var(--color-zinc-300);
-  --sidebar: var(--color-zinc-50);
+  --sidebar: var(--background);
   --sidebar-foreground: var(--color-zinc-900);
   --sidebar-muted-foreground: var(--color-zinc-500);
   --sidebar-control-surface: var(--color-zinc-100);
@@ -1289,7 +1336,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --muted-foreground: #a3a3a3;
     --border: rgb(255 255 255 / 8%);
     --input: rgb(255 255 255 / 18%);
-    --sidebar: var(--card);
+    --sidebar: var(--background);
     --sidebar-foreground: var(--foreground);
     --sidebar-muted-foreground: var(--muted-foreground);
     --sidebar-control-surface: var(--muted);
@@ -1397,7 +1444,7 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --border: var(--app-theme-border);
   --input: var(--app-theme-input);
   --ring: var(--app-theme-focus);
-  --sidebar: var(--app-theme-sidebar);
+  --sidebar: var(--background);
   --sidebar-foreground: var(--app-theme-sidebar-foreground);
   --sidebar-muted-foreground: var(--app-theme-sidebar-muted-foreground);
   --sidebar-control-surface: var(--app-theme-sidebar-control-surface);
@@ -1491,7 +1538,6 @@ html[data-theme-token-probe] *::after {
    roles explicit prevents the thread toolbar from falling back to the default
    dark-mode whites while preserving the same theme file across clients. */
 html[data-theme-id] [data-chat-header] {
-  background-color: var(--toolbar-background);
   color: var(--contrast-toolbar-foreground);
 }
 
@@ -1504,29 +1550,28 @@ html[data-theme-id] [data-chat-header] [data-toolbar-control] {
   color: var(--contrast-toolbar-control-foreground);
 }
 
-/* The panel layout toggles stay ghost: they render both inside the header and
-   in the titlebar strip, so filling them would make them change appearance as
-   the panel opens. They only take the themed foreground; hover and pressed
+/* Controls inside a toolbar capsule stay ghost and sit on the capsule's
+   toolbar-control fill, so they take that fill's foreground; hover and pressed
    keep the base ghost accent. The tooltip trigger's data-slot wins over the
-   toggle's when the trigger renders the toggle, so match both. */
-html[data-theme-id] [data-panel-layout-controls] [data-slot="toggle"],
-html[data-theme-id] [data-panel-layout-controls] [data-slot="tooltip-trigger"],
-html[data-theme-id] [data-workspace-titlebar-controls] [data-slot="toggle"],
-html[data-theme-id] [data-workspace-titlebar-controls] [data-slot="tooltip-trigger"] {
-  --control-icon-color: var(--contrast-toolbar-foreground);
-  color: var(--contrast-toolbar-foreground);
+   control's when the trigger renders it, so match both. */
+html[data-theme-id] [data-toolbar-capsule] [data-slot="toggle"],
+html[data-theme-id] [data-toolbar-capsule] [data-slot="tooltip-trigger"] {
+  --control-icon-color: var(--contrast-toolbar-control-foreground);
+  color: var(--contrast-toolbar-control-foreground);
 }
 
-html[data-theme-id] [data-panel-layout-controls] [data-slot="toggle"]:disabled,
-html[data-theme-id] [data-panel-layout-controls] [data-slot="tooltip-trigger"]:disabled,
-html[data-theme-id] [data-workspace-titlebar-controls] [data-slot="toggle"]:disabled,
-html[data-theme-id] [data-workspace-titlebar-controls] [data-slot="tooltip-trigger"]:disabled {
+html[data-theme-id] [data-toolbar-capsule] [data-slot="toggle"]:disabled,
+html[data-theme-id] [data-toolbar-capsule] [data-slot="tooltip-trigger"]:disabled {
   --control-icon-color: color-mix(
     in oklab,
-    var(--contrast-toolbar-foreground) 55%,
-    var(--toolbar-background)
+    var(--contrast-toolbar-control-foreground) 55%,
+    var(--toolbar-control)
   );
-  color: color-mix(in oklab, var(--contrast-toolbar-foreground) 55%, var(--toolbar-background));
+  color: color-mix(
+    in oklab,
+    var(--contrast-toolbar-control-foreground) 55%,
+    var(--toolbar-control)
+  );
 }
 
 html[data-theme-id] [data-chat-header] [data-slot="button"]:hover,
@@ -1598,7 +1643,7 @@ html[data-theme-id] [data-app-sidebar] {
   --secondary-label: var(--app-theme-secondary-label);
   --border: var(--app-theme-border);
   --input: var(--app-theme-input);
-  --sidebar: var(--app-theme-sidebar);
+  --sidebar: var(--background);
   --sidebar-foreground: var(--app-theme-sidebar-foreground);
   --sidebar-muted-foreground: var(--app-theme-sidebar-muted-foreground);
   --sidebar-control-surface: var(--app-theme-sidebar-control-surface);
@@ -2750,16 +2795,13 @@ html[data-window-glass] [data-window-glass-shell] [data-app-sidebar] {
   --background: transparent;
   --sidebar: transparent;
   --sidebar-stage-fade: transparent;
+  --topbar-band-color: color-mix(in srgb, var(--toolbar-foreground) 3%, transparent);
 }
 html[data-window-glass]
   [data-window-glass-shell]
   :is(.sticky, .absolute, .fixed):not([data-slot="sidebar-container"]) {
   --background: var(--window-glass-base);
   --sidebar: var(--window-glass-sidebar);
-}
-/* Themes paint the chat header with the toolbar color; on glass it is part of the pane. */
-html[data-window-glass] [data-window-glass-shell] [data-chat-header] {
-  background-color: transparent;
 }
 /* Translucent over glass, the composer reads as the same tone as the window; solid, it stands out. */
 html[data-window-glass] [data-window-glass-shell] [data-slot="composer-shell"] {

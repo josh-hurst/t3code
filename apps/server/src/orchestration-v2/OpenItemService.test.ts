@@ -28,6 +28,7 @@ import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as EventSink from "./EventSink.ts";
 import * as OpenItemService from "./OpenItemService.ts";
+import * as ProjectChangesService from "./ProjectChangesService.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ThreadEntryStore from "./ThreadEntryStore.ts";
@@ -71,6 +72,11 @@ function makeHarness() {
   const ranNow: Array<ScheduledTaskId> = [];
   const tasks: Array<ScheduledTask> = [];
   const cleanCheckouts = new Set<string>();
+  const changeCounts: Array<{
+    projectId: ProjectId;
+    uncommittedFiles: number;
+    unpushedCommits: number;
+  }> = [];
   const layerOpenItems = OpenItemService.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -92,6 +98,9 @@ function makeHarness() {
               ranNow.push(id);
               return { task: tasks.find((task) => task.id === id)!, threadId: null };
             }),
+        }),
+        Layer.mock(ProjectChangesService.ProjectChangesService)({
+          counts: () => Effect.succeed(changeCounts),
         }),
         Layer.mock(ProjectService.ProjectService)({
           getById: () => Effect.succeedSome({ id: projectId, workspaceRoot: ROOT } as Project),
@@ -122,6 +131,7 @@ function makeHarness() {
     ranNow,
     tasks,
     cleanCheckouts,
+    changeCounts,
   };
 }
 
@@ -269,6 +279,21 @@ describe("OpenItemService", () => {
             lastPublishedAt: now,
           },
         ]);
+        // A project owing nothing still shows once its checkout holds changes; a clean one doesn't.
+        const dirty = ProjectId.make("project:dirty");
+        harness.changeCounts.push(
+          { projectId: dirty, uncommittedFiles: 4, unpushedCommits: 1 },
+          { projectId: ProjectId.make("project:clean"), uncommittedFiles: 0, unpushedCommits: 0 },
+        );
+        assert.deepEqual((yield* service.counts()).projects.slice(1), [
+          {
+            projectId: dirty,
+            counts: { ask: 0, verify: 0, commit: 0, ship: 0, followup: 0 },
+            lastPublishedAt: null,
+            changes: { uncommittedFiles: 4, unpushedCommits: 1 },
+          },
+        ]);
+        harness.changeCounts.length = 0;
 
         // A second publish has nothing left to clear.
         const again = yield* service.markPublished({ projectIds: [projectId] });

@@ -24,7 +24,7 @@ export function SidebarTrailHeader(props: {
     >
       <div
         className={cn(
-          "flex h-8 items-center gap-1 px-2 text-xs font-medium",
+          "flex h-8 items-center gap-1 px-2.5 text-xs font-medium",
           props.isDropTarget
             ? "text-primary"
             : props.dragging

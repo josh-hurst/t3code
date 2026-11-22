@@ -19,7 +19,7 @@ export interface ContentsThread {
 }
 
 const openLabel = (entries: ReadonlyArray<ThreadEntry>) => {
-  const open = entries.reduce((sum, entry) => sum + entry.open.length, 0);
+  const open = entries.filter((entry) => entryOwedLabel(entry.open) !== null).length;
   return `${entries.length} topics${open > 0 ? ` · ${open} open` : ""}`;
 };
 

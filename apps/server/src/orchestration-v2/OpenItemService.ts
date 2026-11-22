@@ -22,6 +22,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
+import * as ProjectChangesService from "./ProjectChangesService.ts";
 import * as RunFinalization from "./RunFinalizationService.ts";
 import * as ThreadEntryStore from "./ThreadEntryStore.ts";
 import * as ThreadFollowUp from "./ThreadFollowUpService.ts";
@@ -109,6 +110,7 @@ const make = Effect.gen(function* () {
   const scheduledTasks = yield* ScheduledTaskService.ScheduledTaskService;
   const projects = yield* ProjectService.ProjectService;
   const vcsStatus = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+  const projectChanges = yield* ProjectChangesService.ProjectChangesService;
   const random = yield* SecureRandom.SecureRandom;
   const failed = (operation: string) => (cause: unknown) =>
     new OpenItemServiceError({ operation, cause });
@@ -163,16 +165,48 @@ const make = Effect.gen(function* () {
 
   const counts: OpenItemService["Service"]["counts"] = Effect.fn("OpenItemService.counts")(
     function* () {
-      const [byProject, latest] = yield* Effect.all([store.counts(), latestPublishes(undefined)]);
+      const [byProject, latest, changed] = yield* Effect.all([
+        store.counts(),
+        latestPublishes(undefined),
+        // Git being unreadable must not take the open items with it.
+        projectChanges
+          .counts()
+          .pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("Reading project change counts failed", { cause }).pipe(
+                Effect.as([]),
+              ),
+            ),
+          ),
+      ]);
       const published = new Map(latest.map((row) => [row.projectId, row.publishedAt]));
-      const projectIds = new Set([...byProject.map((row) => row.projectId), ...published.keys()]);
+      const changesOf = new Map(
+        changed.map(({ projectId, ...changes }) => [projectId, changes] as const),
+      );
+      const projectIds = new Set([
+        ...byProject.map((row) => row.projectId),
+        ...published.keys(),
+        ...changed
+          .filter((row) => row.uncommittedFiles > 0 || row.unpushedCommits > 0)
+          .map((row) => row.projectId),
+      ]);
       const countsOf = new Map(byProject.map((row) => [row.projectId, row.counts]));
       return {
-        projects: [...projectIds].map((projectId) => ({
-          projectId,
-          counts: countsOf.get(projectId) ?? { ask: 0, verify: 0, commit: 0, ship: 0, followup: 0 },
-          lastPublishedAt: published.get(projectId) ?? null,
-        })),
+        projects: [...projectIds].map((projectId) => {
+          const changes = changesOf.get(projectId);
+          return {
+            projectId,
+            counts: countsOf.get(projectId) ?? {
+              ask: 0,
+              verify: 0,
+              commit: 0,
+              ship: 0,
+              followup: 0,
+            },
+            lastPublishedAt: published.get(projectId) ?? null,
+            ...(changes === undefined ? {} : { changes }),
+          };
+        }),
       };
     },
     Effect.mapError(failed("counts")),

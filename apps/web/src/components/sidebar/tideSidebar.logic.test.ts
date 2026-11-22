@@ -326,11 +326,11 @@ describe("resolveTideRowLead", () => {
       "Run: npm publish",
     ],
     [
-      "the same approval in Later, which owes a check",
+      "the same approval in Later, whose open check leads nothing",
       approving,
       false,
       false,
-      { kind: "owed", word: "Check" },
+      null,
       "Outcome",
     ],
     [
@@ -338,24 +338,27 @@ describe("resolveTideRowLead", () => {
       thread("t", 2, { card: card("ask", "commit") }),
       false,
       false,
-      { kind: "owed", word: "Commit" },
+      { kind: "owed", word: "Question" },
       "Outcome",
     ],
     [
-      "an unseen finish in History",
+      "an unseen finish in History, whose publish is counted on the project",
       finished({ card: card("ship") }),
       false,
       false,
-      { kind: "owed", word: "Publish" },
+      null,
       "Outcome",
     ],
     [
-      "an unseen finish in the Trail, which owes a publish",
-      finished({ card: card("ship") }),
+      "an unseen finish in the Trail, whose question was read before the run ended",
+      finished({
+        card: { ...card("ask", "ship"), askedAt: hoursAgo(3) },
+        lastVisitedAt: at(hoursAgo(2)),
+      }),
       true,
       false,
       { kind: "status", tone: "completed", word: "Done" },
-      "Publish · Outcome",
+      "Question · Outcome",
     ],
     [
       "a usage limit",
@@ -400,12 +403,7 @@ describe("resolveTideRowLead", () => {
       { kind: "owed", word: "Set aside" },
       "Outcome",
     ],
-    [
-      "a plain snooze, by what it owes",
-      held({ snoozedUntil: at(hoursAgo(-2)) }),
-      { kind: "owed", word: "Check" },
-      "Outcome",
-    ],
+    ["a plain snooze, by its outcome", held({ snoozedUntil: at(hoursAgo(-2)) }), null, "Outcome"],
   ] as const)("leads a Later row: %s", (_name, shell, lead, text) => {
     expect(
       resolveTideRowLead(shell, {

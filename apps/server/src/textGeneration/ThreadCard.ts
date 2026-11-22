@@ -127,20 +127,21 @@ export function buildThreadCardPrompt(input: {
   /** ISO time with the user's offset, so "tomorrow morning" resolves in their day. */
   readonly now: string;
 }): string {
-  return `Write a status card for a coding agent thread. Tell the user what the latest reply achieved and what still needs their attention.
+  return `Write a status card for a coding agent thread describing what the latest reply achieved.
 
-Return JSON with one key, "transcription", whose value is the card as plain text: one item per line, each line starting with one of these labels.
+Return JSON with one key, "transcription", whose value is the card as plain text, one labelled item per line. Always write line, topics and at least one entry. For most replies these are the whole card.
 
 line: <the reply as a headline>
 topics: <comma-separated subjects of the whole thread>
-ask: <blocking or offer> | <the question>
-verify: <a specific manual check needed from the user>
-commit: <changes left uncommitted or unpushed>
-ship: <a specific release action left to do>
-followup <time>: <user or agent> | <the action that person will take>
 entry: <id of an entry in the contents, or new> | <title, only when new> | <where that topic stands now> | <open or done>
 
-Always write line, topics and at least one entry. Include at most ${THREAD_CARD_OPEN_MAX} open items, one per line.
+Optional open-item lines, at most ${THREAD_CARD_OPEN_MAX} in total. Omit unused labels.
+
+ask: <blocking or offer> | <the question or request>
+verify: <a specific manual check needed from the user>
+commit: <pending or intentional> | <this task's uncommitted or unpushed changes>
+ship: <a specific release action left to do>
+followup <time>: <user, agent or none> | <the later action>
 
 Rules for line:
 ${THREAD_CARD_LINE_RULES}
@@ -149,15 +150,13 @@ Rules for topics:
 - Up to ${THREAD_CARD_TOPICS_MAX} short labels of one to three words, each naming something the whole thread is about, such as a feature, a file, or a bug.
 - Start from the previous card's topics. Keep, in the same words, each one that still applies. Add a topic only when the reply takes up a subject none of them covers.
 
-Rules for ask, verify, commit, ship and followup:
-- First identify what the user asked to receive. Once the reply delivers it, default to zero new open items. "Report committed on the requested branch. Confirming two findings requires live tests" is a finished report with zero open items. Findings, usage tips and instructions for undoing completed work belong in the outcome.
-- ask: use blocking for input needed to finish requested work ("Which account should I use to submit it?"). Use offer for optional extra work ("If you'd like more analysis, which regions should I compare?"). Only blocking questions need an answer.
-- verify: only when the reply asks the user to perform a specific check ("Please confirm the preview on your phone"), or the user specifically requested a check and the reply says it remains undone.
-- commit: the reply says this task's own changes are still uncommitted or a push is outstanding. A completed push closes its item. Leave out unrelated edits belonging to another task or checkout.
+Default to zero new open items. Add one only when the exchange clearly leaves a specific action or decision for the user on the requested work. If you are unsure the user owes it, omit it. Findings, caveats, usage tips and optional next steps belong in the outcome.
+- ask: use blocking for input needed to finish requested work ("Which account should I use to submit it?"). Also use blocking when the agent stopped because it needs the user to do or allow something before it can run its own check or continue, and write the request ("Stop the preview session so I can take the screenshots"). Use offer for optional extra work ("If you'd like more analysis, which regions should I compare?"). Only blocking questions need an answer.
+- verify: only when the reply asks the user to perform a specific check ("Please confirm the preview on your phone"), or the user specifically requested a check and the reply says it remains undone. A check the agent will run once the user unblocks it is that ask, with no verify line.
+- commit: when the reply says this task's own changes are still uncommitted or a push is outstanding, use pending and name the changes. Use intentional when the user asked to leave the edit uncommitted or local. Ignore unrelated edits.
 - ship: only for an explicitly pending publish, release, deploy or merge. "Committed on an unmerged branch" or "PR is open" describes where the work stands and gets no ship line. "Please merge PR 42" or "The fix still needs a publish" gets a ship line.
-- followup: "I'll recheck and report back" takes agent, even when the user asked for monitoring. A result the user can only check later takes user. Include an ISO 8601 time with the current offset whenever the reply gives one, including relative times. "The totals will be readable tomorrow morning" gets a dated line like "followup 2030-03-04T09:00+01:00: user | Read the totals". Omit the time only when none is given.
-- Carry forward outstanding items unchanged. Drop those answered, completed, cancelled or taken over by an agent.
-- Each item is one line under ${THREAD_CARD_OPEN_TEXT_MAX} characters, with no quotes or markdown.
+- followup: identify who will act. An answer to "When does the report update?" takes none, even when it gives an exact time. "I'll recheck and report back" takes agent. A result the user is waiting to check takes user. "Nothing else needed from you until tomorrow's figures are ready" gets a dated line like "followup 2030-03-04T09:00+01:00: user | Check the figures". Include an ISO 8601 time with the user's offset whenever the reply gives one, including relative times. Omit the time when none is given.
+- Give each outstanding action its own line. "Once you push the changes, publish the release" leaves both a commit item for the push and a ship item for the publish. Keep each item under ${THREAD_CARD_OPEN_TEXT_MAX} characters, with no quotes or markdown.
 
 Rules for entry:
 - The contents list the topics this thread has covered so far, one entry per topic, with where each stood. File this run under the entry it belongs to. Always write at least one entry line.
@@ -192,7 +191,7 @@ ${limitReply(input.reply)}
 ${formatPreviousCard(input.previous)}
 </previous_card>${
     input.previous?.open.length
-      ? "\n\nAccount for each previous open item now. Copy its line into the new card unless this exchange settles that particular action. An answer about a different matter keeps it open."
+      ? "\n\nAccount for each previous open item now. Copy its line into the new card unless this exchange answers it, completes it, cancels it or hands it to the agent. An answer about a different matter keeps it open."
       : ""
   }`;
 }
@@ -233,11 +232,15 @@ export function sanitizeReplySummary(raw: string): string | null {
 const LABELLED = /^(line|topics|ask|verify|commit|ship|followup|entry)\b(.*)$/i;
 const ENTRY_REF = /^e\d+$/;
 const ENTRY_STATE = /^(open|done)$/i;
-const FOLLOWUP_REST = /^\s*(\S*?)\s*:\s+(.*)$/;
-const OPEN_ITEM_PREFIX = {
+// Some models also put a colon before the ISO timestamp.
+const FOLLOWUP_REST = /^\s*(?::\s*(?=\d{4}-))?(\S*?)\s*:\s+(.*)$/;
+const OPEN_ITEM_PREFIX: Partial<Record<ThreadCardOpenKind, RegExp>> = {
   ask: /^(blocking|offer)\s*\|\s*(.*)$/i,
-  followup: /^(user|agent)\s*\|\s*(.*)$/i,
+  commit: /^(pending|intentional)\s*\|\s*(.*)$/i,
+  followup: /^(user|agent|none)\s*\|\s*(.*)$/i,
 };
+const ACTIONABLE_PREFIXES = new Set(["blocking", "pending", "user"]);
+const EMPTY_OPEN_ITEM = /^(?:none|n\/a|not applicable)\.?$/i;
 const PLAIN_REST = /^\s*:\s*(.*)$/;
 
 function parseTopics(value: string): Array<string> {
@@ -310,15 +313,15 @@ export function parseThreadCard(raw: string, nowMs: number): ParsedThreadCard | 
         entries.push(entry);
       }
     } else if (open.length < THREAD_CARD_OPEN_MAX) {
-      const prefix =
-        label === "ask" || label === "followup" ? OPEN_ITEM_PREFIX[label].exec(value.trim()) : null;
-      const role = prefix?.[1]?.toLowerCase();
-      if (role === "offer" || role === "agent") continue;
+      const kind = label as ThreadCardOpenKind;
+      const prefix = OPEN_ITEM_PREFIX[kind]?.exec(value.trim());
+      const qualifier = prefix?.[1]?.toLowerCase();
+      if (qualifier !== undefined && !ACTIONABLE_PREFIXES.has(qualifier)) continue;
       const text = capAtWord(stripNoise(prefix?.[2] ?? value), THREAD_CARD_OPEN_TEXT_MAX);
-      if (text === "") continue;
+      if (text === "" || EMPTY_OPEN_ITEM.test(text)) continue;
       const dueMs = followup?.[1] ? Date.parse(followup[1]) : Number.NaN;
       open.push({
-        kind: label as ThreadCardOpenKind,
+        kind,
         text,
         ...(dueMs > nowMs ? { dueAt: DateTime.formatIso(DateTime.makeUnsafe(dueMs)) } : {}),
       });

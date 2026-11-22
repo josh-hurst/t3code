@@ -39,12 +39,12 @@ import {
 } from "@t3tools/contracts";
 import { toServerClock } from "@t3tools/client-runtime/clock";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
-import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
+import { canSnooze, threadAskUnread } from "@t3tools/client-runtime/state/thread-settled";
 import { nonMainlineBranchName } from "@t3tools/shared/git";
 import {
   AUTO_SETTLE_SOON_MS,
   threadAutoSettleAt,
-  threadCardOwedLabel,
+  threadCardQuestionLabel,
   threadWorkingLine,
 } from "@t3tools/client-runtime/state/thread-zones";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
@@ -124,7 +124,6 @@ const STATUS_TINT = {
   warning: "#f59e0b",
   indigo: "#6366f1",
   fuchsia: "#d946ef",
-  sky: "#0ea5e9",
   danger: "#ef4444",
   emerald: "#10b981",
 } as const;
@@ -155,7 +154,7 @@ const STATUS_LABEL_BY_STATUS: Partial<Record<ThreadListV2Status, StatusLabel>> =
     icon: "circle.dashed",
     className: "text-adaptive-sky-600-400",
     iconTintClassName: "accent-adaptive-sky-600-400",
-    tint: STATUS_TINT.sky,
+    tint: null,
   },
   waiting: {
     label: null,
@@ -1179,13 +1178,16 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           label: msg("Goal", { $context: "thread status, working toward a goal" }),
         }
       : workingLabel) ??
-    (status === "ready" && threadCardHasOpenAsk(thread.card)
+    // An unread question first, then Done; a question already read stays labelled below both.
+    (status === "ready" && threadAskUnread(thread)
       ? QUESTION_STATUS_LABEL
       : isUnread
         ? DONE_STATUS_LABEL
-        : settlingSoon
-          ? SETTLING_STATUS_LABEL
-          : undefined);
+        : status === "ready" && threadCardHasOpenAsk(thread.card)
+          ? QUESTION_STATUS_LABEL
+          : settlingSoon
+            ? SETTLING_STATUS_LABEL
+            : undefined);
   const statusLabel = statusEntry && {
     ...statusEntry,
     label: statusEntry.label === null ? null : m(statusEntry.label),
@@ -1823,8 +1825,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         leadingSpace={statusLabel?.label != null}
       />
     ) : null;
-  // A finished card row that still owes leads with what it owes, after Done's check.
-  const owedLead = statusEntry === DONE_STATUS_LABEL ? threadCardOwedLabel(thread.card) : null;
+  // A finished card row whose question was read and left leads with it, after Done's check.
+  const owedLead = statusEntry === DONE_STATUS_LABEL ? threadCardQuestionLabel(thread.card) : null;
   const cardStatusLead = showsWoke
     ? {
         icon: "bell.badge" as const,
@@ -1840,7 +1842,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       }
     : owedLead !== null
       ? {
-          // The run is done, so it keeps Done's green check; the word says what is still owed.
+          // The run is done, so it keeps Done's green check; the word says a question is left.
           icon: DONE_STATUS_LABEL.icon,
           iconTintClassName: selected
             ? selectedThreadRowColors.iconTintClassName

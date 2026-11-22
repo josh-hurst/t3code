@@ -7,10 +7,12 @@ const runs = (...ids: string[]) =>
   ids.map((id) => ({ runId: RunId.make(id), source: "online" as const }));
 
 describe("thread contents", () => {
-  it("counts topics, and the ones that still owe something", () => {
-    const owing = { open: ["publish", "check"] };
-    expect(contentsCount([{ open: [] }, owing, { open: [] }])).toBe("3 topics · 1 open");
-    expect(contentsCount([{ open: [] }, { open: [] }])).toBe("2 topics");
+  it("counts topics, and the ones left with a question or a publish", () => {
+    const item = (kind: "ship" | "verify") => ({ kind, text: kind, runId: RunId.make("run:1") });
+    expect(contentsCount([{ open: [] }, { open: [item("ship")] }, { open: [] }])).toBe(
+      "3 topics · 1 open",
+    );
+    expect(contentsCount([{ open: [item("verify")] }, { open: [] }])).toBe("2 topics");
   });
 
   it("says why a split would do nothing", () => {

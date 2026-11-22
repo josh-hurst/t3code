@@ -274,6 +274,9 @@ export function McpAppFrame(props: {
       const { environmentId, threadId, itemId } = readLive().props;
       return { environmentId, input: { threadId, itemId } };
     };
+    // Apps may call a write tool on every change (e.g. saving view state), so one approval
+    // covers that tool for this frame, and calls made while asking share the same prompt.
+    const approvals = new Map<string, Promise<boolean>>();
     const host = makeMcpAppHost({
       app,
       hostVersion: APP_VERSION,
@@ -287,10 +290,19 @@ export function McpAppFrame(props: {
         if (!info.value.callable)
           throw new McpAppHostRefusal({ message: "This app cannot call that tool." });
         if (!info.value.readOnly) {
-          const approved = await ask(
-            `${m(msg("Allow {server} to run {tool}?", { server: app.server, tool: info.value.title ?? name }))}\n${JSON.stringify(args, null, 2)}`,
-          );
-          if (approved !== true) throw new McpAppHostRefusal({ message: "Declined by the user." });
+          let approval = approvals.get(name);
+          if (approval === undefined) {
+            approval = ask(
+              `${m(msg("Allow {server} to run {tool}?", { server: app.server, tool: info.value.title ?? name }))}\n${JSON.stringify(args, null, 2)}`,
+            );
+            approvals.set(name, approval);
+            approval.then(
+              (approved) => approved || approvals.delete(name),
+              () => approvals.delete(name),
+            );
+          }
+          if ((await approval) !== true)
+            throw new McpAppHostRefusal({ message: "Declined by the user." });
         }
         const result = await readLive().callTool({
           environmentId,

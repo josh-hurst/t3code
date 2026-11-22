@@ -2068,6 +2068,15 @@ const WsOrchestrationV2GetOpenItemCountsRpc = Rpc.make(
   },
 );
 
+const WsOrchestrationV2GetProjectChangesRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.getProjectChanges,
+  {
+    payload: OrchestrationV2RpcSchemas.getProjectChanges.input,
+    success: OrchestrationV2RpcSchemas.getProjectChanges.output,
+    error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+  },
+);
+
 const WsOrchestrationV2MarkPublishedRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.markPublished, {
   payload: OrchestrationV2RpcSchemas.markPublished.input,
   success: OrchestrationV2RpcSchemas.markPublished.output,
@@ -2582,6 +2591,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2ListThreadEntriesRpc,
   WsOrchestrationV2ListEntriesRpc,
   WsOrchestrationV2GetOpenItemCountsRpc,
+  WsOrchestrationV2GetProjectChangesRpc,
   WsOrchestrationV2MarkPublishedRpc,
   WsOrchestrationV2UndoPublishedRpc,
   WsOrchestrationV2RefreshOpenItemsRpc,

@@ -359,6 +359,8 @@ describe("ThreadCardService", () => {
           ],
           messageId: MessageId.make("run:card:record:assistant"),
           at: "1970-01-01T01:00:00.000Z",
+          // The reply's own time, an hour before the card was written.
+          askedAt: "1970-01-01T00:00:00.000Z",
           runId,
         });
         assert.deepEqual(after.updatedAt, before.updatedAt);

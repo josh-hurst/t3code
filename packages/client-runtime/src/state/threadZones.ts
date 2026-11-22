@@ -15,6 +15,7 @@ import {
   effectiveSnoozed,
   laterWhenLabel,
   snoozeWakeLabel,
+  threadAskUnread,
   threadLaterAt,
   type ThreadLaterShell,
   type ThreadSnoozeShell,
@@ -118,12 +119,12 @@ export function threadStatusKind(thread: ThreadStatusInput): ThreadStatusKind | 
   ) {
     return "plan";
   }
-  // A finished reply's open question outranks the background work it left running, and "Done":
-  // it is what the thread needs, read or not.
-  if (threadCardHasOpenAsk(thread.card)) return "question";
+  // A finished reply's unread question outranks the background work it left running, and "Done".
+  if (threadAskUnread(thread)) return "question";
   if (backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])) return "waiting";
   if (hasUnseenCompletion(thread)) return "completed";
-  return null;
+  // Read and still open: the row keeps saying so, below anything new.
+  return threadCardHasOpenAsk(thread.card) ? "question" : null;
 }
 
 const STATUS_WORDS: Record<ThreadStatusKind, string> = {
@@ -157,7 +158,8 @@ const NEEDS_YOU_KINDS: ReadonlySet<ThreadStatusKind> = new Set([
 
 /**
  * Whether the thread asks you to act, or with `includeCompleted`, to look at a finished run.
- * The self-filing list passes false: a finished run waits in the Trail under Done.
+ * The self-filing list passes false: a finished run waits in the Trail under Done. A question in
+ * a reply counts until you have read that reply; after that the row keeps its Question label only.
  */
 export function threadNeedsYou(
   thread: ThreadStatusInput,
@@ -166,7 +168,7 @@ export function threadNeedsYou(
   const kind = threadStatusKind(thread);
   if (kind !== null && NEEDS_YOU_KINDS.has(kind)) return true;
   if (kind === "completed" && options.includeCompleted) return true;
-  return threadCardHasOpenAsk(thread.card);
+  return threadAskUnread(thread);
 }
 
 /**
@@ -260,27 +262,25 @@ export function threadAwaitingAsk(
   return thread.card.open.find((item) => item.kind === "ask")?.text ?? null;
 }
 
-const OWED_LABELS: Record<Exclude<ThreadCardOpenKind, "ask">, string> = {
+const OPEN_ITEM_LABELS: Record<ThreadCardOpenKind, string> = {
+  ask: "Question",
   verify: "Check",
   commit: "Commit",
   ship: "Publish",
   followup: "Follow up",
 };
-const OWED_LABELS_MAX = 2;
 
 export function threadCardOpenItemLabel(kind: ThreadCardOpenKind): string {
-  return kind === "ask" ? "Question" : OWED_LABELS[kind];
+  return OPEN_ITEM_LABELS[kind];
 }
 
-/** What the thread still owes besides an answer, as at most two short labels, e.g. "Publish, Check". */
-export function threadCardOwedLabel(card: ThreadCardSummary | null | undefined): string | null {
-  const labels: string[] = [];
-  for (const item of card?.open ?? []) {
-    if (item.kind === "ask") continue;
-    const label = OWED_LABELS[item.kind];
-    if (!labels.includes(label)) labels.push(label);
-  }
-  return labels.length === 0 ? null : labels.slice(0, OWED_LABELS_MAX).join(", ");
+/**
+ * "Question" for a card whose question was read and left: outside Needs you this label is all
+ * that marks it. A row names nothing else the card leaves open. In the owner's history a check
+ * or a commit was handed back to an agent, and a publish was decided per project, not per thread.
+ */
+export function threadCardQuestionLabel(card: ThreadCardSummary | null | undefined): string | null {
+  return threadCardHasOpenAsk(card) ? OPEN_ITEM_LABELS.ask : null;
 }
 
 /**
@@ -297,7 +297,7 @@ export function threadRowProjectName(
 }
 
 /**
- * A slim row's last line as plain text, what is owed first so truncation cuts the outcome.
+ * A slim row's last line as plain text, its lead word first so truncation cuts the outcome.
  */
 export function threadRowLineText(parts: {
   readonly owed: string | null;

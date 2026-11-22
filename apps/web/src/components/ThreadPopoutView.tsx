@@ -42,7 +42,7 @@ export function ThreadPopoutView({
           data-window-glass-pane=""
         >
           {/* The chat header is the window's drag handle; without it the window still needs one. */}
-          <div className="drag-region h-[var(--workspace-topbar-height)] shrink-0" />
+          <div className="drag-region topbar-band h-[var(--workspace-topbar-height)] shrink-0" />
           <PopoutThreadList className="min-h-0 flex-1" />
         </main>
       )}

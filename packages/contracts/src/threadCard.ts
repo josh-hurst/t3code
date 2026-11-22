@@ -27,6 +27,8 @@ export const ThreadCardSummary = Schema.Struct({
   open: Schema.Array(ThreadCardOpenItem).check(Schema.isMaxLength(THREAD_CARD_OPEN_MAX)),
   messageId: MessageId,
   at: IsoDateTime,
+  /** When the reply that first raised the open asks landed; later cards that carry them keep it. */
+  askedAt: Schema.optional(IsoDateTime),
 });
 export type ThreadCardSummary = typeof ThreadCardSummary.Type;
 
@@ -42,6 +44,7 @@ export const threadCardSummary = (card: ThreadCard): ThreadCardSummary => ({
   open: card.open,
   messageId: card.messageId,
   at: card.at,
+  ...(card.askedAt === undefined ? {} : { askedAt: card.askedAt }),
 });
 
 /** Kind plus the text lower-cased with punctuation and repeated spaces removed. */
@@ -55,3 +58,19 @@ export const threadCardOpenItemKey = (item: Pick<ThreadCardOpenItem, "kind" | "t
 export const threadCardHasOpenAsk = (
   card: { readonly open: ReadonlyArray<{ readonly kind: string }> } | null | undefined,
 ): boolean => card?.open.some((item) => item.kind === "ask") === true;
+
+/**
+ * Whether the card's question still waits to be read. A question holds its thread for the owner
+ * only until they have read the reply that raised it: in their history a question was answered
+ * while that reply was open or, most often, not at all. `completedAtMs` is the latest run's
+ * completion, for cards written before `askedAt`. An unknown time counts as unread.
+ */
+export const threadCardAskUnread = (
+  card: Pick<ThreadCardSummary, "open" | "askedAt"> | null | undefined,
+  read: { readonly visitedAtMs: number | null; readonly completedAtMs: number | null },
+): boolean => {
+  if (!threadCardHasOpenAsk(card)) return false;
+  const askedAtMs = card?.askedAt === undefined ? read.completedAtMs : Date.parse(card.askedAt);
+  if (read.visitedAtMs === null || askedAtMs === null || Number.isNaN(askedAtMs)) return true;
+  return read.visitedAtMs < askedAtMs;
+};

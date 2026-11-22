@@ -62,6 +62,7 @@ export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.listThreadEntries]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.listEntries]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getOpenItemCounts]: AuthOrchestrationReadScope,
+  [ORCHESTRATION_V2_WS_METHODS.getProjectChanges]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.estimateContentsBackfill]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getContentsBackfill]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getThreadProjection]: AuthOrchestrationReadScope,

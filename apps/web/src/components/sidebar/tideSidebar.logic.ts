@@ -7,7 +7,7 @@ import {
   sortNeedsYouThreads,
   sortTrailThreads,
   splitTrail,
-  threadCardOwedLabel,
+  threadCardQuestionLabel,
   threadCardRowLine,
   threadLastSentAt,
   threadLaterLead,
@@ -266,7 +266,8 @@ const WOKE_OUTRANKS: ReadonlySet<ThreadStatusKind> = new Set(["plan", "completed
 /**
  * What leads a row's last line in the new layout, and the text after it. Rows that show status
  * (Needs you, Working, pinned) lead with it and, unless running, say what the thread asks;
- * every other row leads with what is still owed and its outcome. A woken snooze shows anywhere.
+ * every other row is its outcome, led by Question when one was read and left. A woken snooze
+ * shows anywhere.
  */
 export function resolveTideRowLead(
   thread: Thread,
@@ -292,11 +293,11 @@ export function resolveTideRowLead(
     return { lead: { kind: "owed", word: later.word }, text: later.text ?? line(false), running };
   }
   const workingLine = threadWorkingLine(thread, kind);
-  // A finished run leads with Done; what it still owes starts the text.
+  // A finished run leads with Done; a question read and left starts the text.
   if (kind === "completed" && options.showsStatus) {
     return {
       lead: { kind: "status", tone: "completed", word: threadStatusWord("completed") },
-      text: threadRowLineText({ owed: threadCardOwedLabel(thread.card), line: line(false) }),
+      text: threadRowLineText({ owed: threadCardQuestionLabel(thread.card), line: line(false) }),
       running,
     };
   }
@@ -316,6 +317,10 @@ export function resolveTideRowLead(
     };
   }
   if (workingLine !== null) return { lead: null, text: workingLine, running };
-  const owed = threadCardOwedLabel(thread.card);
-  return { lead: owed === null ? null : { kind: "owed", word: owed }, text: line(false), running };
+  const question = threadCardQuestionLabel(thread.card);
+  return {
+    lead: question === null ? null : { kind: "owed", word: question },
+    text: line(false),
+    running,
+  };
 }

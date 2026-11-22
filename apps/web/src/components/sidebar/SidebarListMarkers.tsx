@@ -155,7 +155,9 @@ export function SidebarSectionHeader(props: {
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
       className={cn(
-        "relative mx-0.5 h-8",
+        "relative h-8",
+        // With card rows the header's own padding plus this margin lands its text on the cards' inset.
+        props.tide ? "mx-1" : "mx-0.5",
         props.first && "mt-auto",
         belowRecent && shelf !== "settled" && "h-12 pt-4",
         belowRecent && "group-data-[variant=frameless]:h-16 group-data-[variant=frameless]:pt-8",
@@ -164,7 +166,7 @@ export function SidebarSectionHeader(props: {
       {belowRecent && (
         <span
           aria-hidden
-          className="pointer-events-none absolute -inset-x-[calc(var(--sidebar-content-inset)+0.125rem)] top-6 hidden border-t border-sidebar-border/70 group-data-[variant=frameless]:block"
+          className="pointer-events-none absolute -inset-x-[calc(var(--sidebar-content-inset)+0.25rem)] top-6 hidden border-t border-sidebar-border/70 group-data-[variant=frameless]:block"
         />
       )}
       {props.action ? (

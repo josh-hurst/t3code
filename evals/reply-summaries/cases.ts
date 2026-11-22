@@ -57,6 +57,17 @@ If you add the secret to \`.env\`, I'll rerun the tests.`,
       "Line says it is blocked on the missing Stripe webhook secret, not 'Added webhook handler'. An ask or verify item names the missing secret.",
   },
   {
+    id: "agent-blocked-on-user-step",
+    source:
+      "Owner history, 2026-11: replies that stopped until the user reconnected a tool were filed as a check and never reached Needs you",
+    userMessage: "Make the settings panel fit a small phone screen.",
+    reply: `The settings panel now stacks its two columns below 400 px, and the mode switch moved into the title row so the panel fits a 667×375 phone. The lint is clean. Nothing is committed.
+
+**To check it:** stop the preview session in the editor, or tell me I can use it, and I'll take desktop and phone screenshots of both tabs. Your current session is still running the old layout until you restart it.`,
+    rubric:
+      "Exactly one ask item, asking the user to stop the preview session or allow its use. No verify item: the screenshots are the agent's to take once it is unblocked. A commit item is fine.",
+  },
+  {
     id: "investigation-finding",
     source: "Common end-of-turn shape: research with no code change",
     reply: `Short answer: the sidebar jank comes from \`useThreadShell\` re-rendering every row on each token. The selector returns a new object per call, so memo never hits. With 120 threads that is about 120 renders per token, which matches the 40 ms frames in the profile.
@@ -129,6 +140,23 @@ I reproduced a duplicate refund on retry and would fix it first. I couldn't veri
     userMessage: "Enable offline mode for this tablet.",
     reply: `Offline mode is on and all 12 maps are downloaded. While using it, check the storage gauge if you add routes. It reads 81% full. To undo this after your trip, run maps offline off. It stays enabled until you change it.`,
     rubric: "Line says offline mode is on. No open items for using or undoing the setting.",
+  },
+  {
+    id: "report-availability-answer",
+    source: "A timing answer mistaken for a follow-up in Still open",
+    userMessage: "When will today's download counts show up in the weekly report?",
+    reply:
+      "The report refreshes tomorrow at 09:00 UTC. Today's download counts will be readable then.",
+    rubric: "Answers when the counts appear. Zero open items. The user only asked for the time.",
+  },
+  {
+    id: "uncommitted-draft-requested",
+    source: "A requested working-tree edit mistaken for a pending commit in Still open",
+    userMessage: "Change the invoice footer to 'Payment received'. Leave it uncommitted.",
+    reply:
+      "The invoice footer now says 'Payment received'. I left the edit uncommitted as requested.",
+    rubric:
+      "Reports the footer change. Zero open items. Leaving the edit uncommitted fulfills the request.",
   },
   {
     id: "release-handoff-survives-status",

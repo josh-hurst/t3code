@@ -42,7 +42,7 @@ import {
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import ThreadSidebar from "./Sidebar";
-import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { SidebarChromeHeader, SidebarChromeWidthProbe } from "./sidebar/SidebarChrome";
 import { ThreadSidebarWindow, useThreadSidebarPosition } from "./sidebar/ThreadSidebarWindow";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
@@ -443,8 +443,8 @@ export function AppSidebarLayout({
   const sidebarOverlaysChat = floatingSidebarEnabled && sidebarPosition !== null;
   // A clamped drag may not change width, so viewport changes need a separate subscription.
   const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);
-  const [brandWidth, setBrandWidth] = useState(0);
-  const sidebarMinimumWidth = resolveThreadSidebarMinimumWidth(brandWidth);
+  const [chromeWidth, setChromeWidth] = useState(0);
+  const sidebarMinimumWidth = resolveThreadSidebarMinimumWidth(chromeWidth);
   const sidebarMaximumWidth = sidebarOverlaysChat
     ? viewportWidth
     : resolveThreadSidebarMaximumWidth(viewportWidth, sidebarMinimumWidth);
@@ -490,7 +490,7 @@ export function AppSidebarLayout({
       >
         {showSidebar ? (
           <>
-            <SidebarBrandWidthProbe isElectron={isElectron} onWidthChange={setBrandWidth} />
+            <SidebarChromeWidthProbe isElectron={isElectron} onWidthChange={setChromeWidth} />
             <Sidebar
               side="left"
               variant={floatingSidebarEnabled ? "frameless" : "sidebar"}

@@ -168,7 +168,12 @@ import {
 import * as EffectOutbox from "./EffectOutbox.ts";
 import { withCommandMetrics } from "../observability/Metrics.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
-import { cardCallsForRetitle, nextThreadCard, threadCardWithoutAsks } from "./ThreadCard.ts";
+import {
+  cardCallsForRetitle,
+  nextThreadCard,
+  threadCardWithoutAsks,
+  unreadVisitedAt,
+} from "./ThreadCard.ts";
 import {
   assignEntries,
   cardRunLine,
@@ -4533,6 +4538,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       topics: command.topics,
       open: command.open,
       at: DateTime.formatIso(occurredAt),
+      repliedAt: command.repliedAt,
       // A wake starts a newer run without answering anything, so runs are not compared.
       answered: lastWroteAt !== null && DateTime.toEpochMillis(lastWroteAt) > repliedAtMs,
     });
@@ -5511,7 +5517,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           cause: `Thread ${command.threadId} has no completed run to mark unread.`,
         });
       }
-      markUnreadVisitedAt = DateTime.subtract(latestRunCompletedAt, { milliseconds: 1 });
+      markUnreadVisitedAt = unreadVisitedAt(thread.card, latestRunCompletedAt);
     }
     const updatedThread: OrchestrationV2AppThread = (() => {
       switch (command.type) {

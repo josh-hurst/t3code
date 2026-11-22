@@ -2070,8 +2070,8 @@ describe("self-filing list", () => {
     ]);
     expect(layout.folders).toEqual([]);
     expect(items.find((item) => item.key === "v2-thread:environment-1:trail-newer")).toMatchObject({
-      // What is still to do leads, so truncation keeps it.
-      item: { variant: "slim", cardLine: "Publish · Fixed the login test" },
+      // A publish is counted on the project, so the row is its outcome alone.
+      item: { variant: "slim", cardLine: "Fixed the login test" },
       // Recent shows the time of the last user message.
       timeLabel: relativeTime(localIso(11)),
     });
@@ -2083,8 +2083,7 @@ describe("self-filing list", () => {
     expect(layout.items.map((item) => [item.thread.id, item.cardLine])).toEqual(
       expect.arrayContaining([
         ["waited-less", "Which branch?"],
-        // In Recent, what is still owed leads the outcome.
-        ["finished-owing", "Commit · Fixed it"],
+        ["finished-owing", "Fixed it"],
       ]),
     );
 
@@ -2138,7 +2137,7 @@ describe("self-filing list", () => {
       }).layout.items.find((item) => item.thread.id === "trail-newer");
     expect(rowOf(false)).toMatchObject({
       projectLine: "block-warfare",
-      cardLine: "Publish · Fixed the login test",
+      cardLine: "Fixed the login test",
     });
     expect(rowOf(true)).toMatchObject({ projectLine: null });
     // Card rows (pinned, Working) name their project the same way.

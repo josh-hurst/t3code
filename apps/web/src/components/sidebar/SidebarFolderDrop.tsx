@@ -27,7 +27,11 @@ function isFileDrag(event: DragEvent) {
  * this zone then stays hidden and only picks up folders from the drop.
  * Browsers expose no absolute paths, so only the desktop app can add them.
  */
-export function SidebarFolderDrop(props: { children: ReactNode }) {
+export function SidebarFolderDrop(props: {
+  children: ReactNode;
+  /** The row layout inside, which sets the inset everything beside the rows lines up on. */
+  rows?: "card" | undefined;
+}) {
   const gt = useGT();
   const [isActive, setIsActive] = useState(false);
   const openLocalWorkspace = useOpenLocalWorkspace();
@@ -96,6 +100,7 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
   return (
     <div
       className="relative flex min-h-0 flex-1 flex-col"
+      data-sidebar-rows={props.rows}
       onDragEnter={onDragOver}
       onDragOver={onDragOver}
       onDragLeave={(event) => {

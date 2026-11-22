@@ -65,7 +65,7 @@ vi.mock("../commandPaletteBus", () => ({
   isCommandPaletteOpen: () => false,
 }));
 vi.mock("./sidebar/SidebarChrome", () => ({
-  SidebarBrandWidthProbe: () => null,
+  SidebarChromeWidthProbe: () => null,
   SidebarChromeHeader: () => null,
   SidebarChromeFooter: () => null,
 }));
@@ -166,6 +166,37 @@ describe("sidebar header new thread", () => {
       expect(openCommandPalette).not.toHaveBeenCalled();
       expect(startThread).toHaveBeenCalledExactlyOnceWith(currentProjectRef);
     }
+  });
+
+  it("opens search in place of the wordmark from its collapsed icon", async () => {
+    const projects = [project("active")];
+    const currentProjectRef = {
+      environmentId: projects[0]!.environmentId,
+      projectId: projects[0]!.id,
+    };
+    vi.mocked(useProjects).mockReturnValue(projects);
+    vi.mocked(useHandleNewThread).mockReturnValue({
+      activeDraftThread: null,
+      activeThread: null,
+      defaultProjectRef: currentProjectRef,
+      defaultProjectFallbackReady: true,
+      handleNewThread: vi.fn().mockResolvedValue(null),
+      routeDraftId: null,
+      routeThreadRef: null,
+    });
+    await using screen = await render(
+      <SidebarProvider>
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+      </SidebarProvider>,
+    );
+    const search = screen.getByRole("combobox", { name: "Search threads" });
+    const home = screen.getByRole("link", { name: "T3 Code home" });
+    await expect.element(home).toBeVisible();
+
+    const field = search.element().closest("label")!;
+    await userEvent.click(field);
+    await expect.element(search).toHaveFocus();
+    await expect.element(home).not.toBeInTheDocument();
   });
 });
 

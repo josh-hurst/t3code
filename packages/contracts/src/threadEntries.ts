@@ -164,6 +164,8 @@ export type ThreadEntryCursor = typeof ThreadEntryCursor.Type;
 export const ListEntriesInput = Schema.Struct({
   projectIds: Schema.optionalKey(Schema.Array(ProjectId)),
   stillOpen: Schema.optionalKey(Schema.Boolean),
+  /** Only entries holding an open item of this kind. Servers that predate it ignore it. */
+  openKind: Schema.optionalKey(ThreadCardOpenKind),
   query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
   before: Schema.optionalKey(ThreadEntryCursor),
   /** 50 when absent. */
@@ -178,17 +180,87 @@ export const ListEntriesResult = Schema.Struct({
 });
 export type ListEntriesResult = typeof ListEntriesResult.Type;
 
-/** Only projects with a non-zero count or a publish marker. */
+/** What a project's root checkout holds that is not out: files uncommitted, commits on no remote. */
+export const ProjectChangeCounts = Schema.Struct({
+  uncommittedFiles: NonNegativeInt,
+  unpushedCommits: NonNegativeInt,
+});
+export type ProjectChangeCounts = typeof ProjectChangeCounts.Type;
+
+/** Only projects with a non-zero count, a publish marker or changes in their checkout. */
 export const OpenItemCountsResult = Schema.Struct({
   projects: Schema.Array(
     Schema.Struct({
       projectId: ProjectId,
       counts: Schema.Record(ThreadCardOpenKind, NonNegativeInt),
       lastPublishedAt: Schema.NullOr(IsoDateTime),
+      /** Absent from a server that predates it, and for a folder that is not a Git checkout. */
+      changes: Schema.optional(ProjectChangeCounts),
     }),
   ),
 });
 export type OpenItemCountsResult = typeof OpenItemCountsResult.Type;
+
+export const GetProjectChangesInput = Schema.Struct({ projectId: ProjectId });
+export type GetProjectChangesInput = typeof GetProjectChangesInput.Type;
+
+/** Files a topic is credited with; a null entry is files no thread is known to have changed. */
+export const ProjectChangeTopic = Schema.Struct({
+  entryId: Schema.NullOr(ThreadEntryId),
+  files: NonNegativeInt,
+});
+export type ProjectChangeTopic = typeof ProjectChangeTopic.Type;
+
+export const ProjectChangeCommit = Schema.Struct({
+  sha: TrimmedNonEmptyString,
+  subject: Schema.String,
+  author: Schema.String,
+  /** Made by the checkout's own git user. Only these carry topics. */
+  own: Schema.Boolean,
+  committedAt: IsoDateTime,
+  /** On some remote branch. */
+  pushed: Schema.Boolean,
+  files: NonNegativeInt,
+  topics: Schema.Array(ProjectChangeTopic),
+});
+export type ProjectChangeCommit = typeof ProjectChangeCommit.Type;
+
+/** A topic a change list names, with where to open it. */
+export const ProjectChangeEntry = Schema.Struct({
+  id: ThreadEntryId,
+  threadId: ThreadId,
+  title: ThreadEntryTitle,
+  outcome: ThreadEntryOutcome,
+  threadTitle: Schema.String,
+  startMessageId: MessageId,
+});
+export type ProjectChangeEntry = typeof ProjectChangeEntry.Type;
+
+/**
+ * What a project's root checkout holds that is not committed, pushed or published, and its
+ * recent commits. File and commit totals come from Git and are exact; the topic a file is
+ * credited to is the last thread known to have changed it, which is a best guess.
+ */
+export const ProjectChangesResult = Schema.Struct({
+  /** Null when the project's folder is not a Git checkout. */
+  branch: Schema.NullOr(Schema.String),
+  isRepository: Schema.Boolean,
+  uncommitted: Schema.Struct({
+    files: NonNegativeInt,
+    topics: Schema.Array(ProjectChangeTopic),
+  }),
+  unpushedCommits: NonNegativeInt,
+  /** Null for a project never marked published. */
+  sincePublish: Schema.NullOr(
+    Schema.Struct({ publishedAt: IsoDateTime, topics: Schema.Array(ProjectChangeTopic) }),
+  ),
+  /** Newest first, merges left out. */
+  commits: Schema.Array(ProjectChangeCommit),
+  /** Newest first. */
+  publishes: Schema.Array(IsoDateTime),
+  entries: Schema.Array(ProjectChangeEntry),
+});
+export type ProjectChangesResult = typeof ProjectChangesResult.Type;
 
 export const PublishMarkerId = TrimmedNonEmptyString.pipe(Schema.brand("PublishMarkerId"));
 export type PublishMarkerId = typeof PublishMarkerId.Type;

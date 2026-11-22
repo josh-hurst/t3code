@@ -48,6 +48,7 @@ import {
   threadRowProjectName,
   trailMoreLabel,
 } from "@t3tools/client-runtime/state/thread-zones";
+import { projectChangeCounts } from "@t3tools/client-runtime/state/thread-entries";
 import {
   nextShownOrder,
   threadSearchMatchKey,
@@ -295,7 +296,7 @@ import { SidebarDraftBlock } from "./sidebar/SidebarDraftBlock";
 import { SidebarNeedsYouNext, SidebarTrailHeader, SidebarTrailMore } from "./sidebar/SidebarTrail";
 import { registerTideCommands } from "./sidebar/tideCommands";
 import { SidebarHistoryAllButton } from "./sidebar/SidebarHistoryAllButton";
-import { useEntriesEnvironmentIds, useOpenItemTotals } from "../state/threadEntries";
+import { useEntriesEnvironmentIds, useOpenItemCounts } from "../state/threadEntries";
 import { useStillOpenActions } from "../hooks/useStillOpenActions";
 import { publishTargets } from "./history/historyPage.logic";
 import {
@@ -1507,12 +1508,16 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     }
   }, [revealedHiddenProjectKey, setPersistedProjectHidden]);
   const scopedProjectGroups = revealWidensScope ? [] : chosenProjectGroups;
-  // The open count names one project, so it shows only when Focus is on a single one.
-  const focusedGroup = tide && scopedProjectGroups.length === 1 ? scopedProjectGroups[0]! : null;
-  const focusedOpen = useOpenItemTotals(
-    focusedGroup?.memberProjectRefs ?? null,
-    focusedGroup !== null,
-  );
+  const openItemCounts = useOpenItemCounts(tide);
+  const changedProjects = (
+    scopedProjectGroups.length > 0 ? scopedProjectGroups : scopeGroups
+  ).flatMap((group) => {
+    if (hiddenProjectKeys.has(group.projectKey)) return [];
+    const changes = projectChangeCounts(openItemCounts, group.memberProjectRefs);
+    return changes.uncommittedFiles === 0 && changes.unpushedCommits === 0
+      ? []
+      : [{ projectKey: group.projectKey, name: group.displayName, ...changes }];
+  });
   const scopedProjectRefs = scopedProjectGroups.flatMap((project) => project.memberProjectRefs);
   const scopedProjectKeys = revealWidensScope
     ? resolveSidebarVisibleProjectKeys({
@@ -3724,7 +3729,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   return (
-    <SidebarFolderDrop>
+    <SidebarFolderDrop rows={tide ? "card" : undefined}>
       <SidebarContent
         ref={sidebarContentRef}
         className="min-h-full"
@@ -4006,15 +4011,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   ? scopedProjectGroups.map((project) => project.displayName).join(", ")
                   : null
               }
-              focusedOpen={
-                focusedOpen.available && focusedGroup !== null
-                  ? {
-                      total: focusedOpen.total,
-                      summary: focusedOpen.summary,
-                      projectKey: focusedGroup.projectKey,
-                    }
-                  : null
-              }
+              changedProjects={changedProjects}
               onShowAllProjects={() => setProjectScopeKeys([])}
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}

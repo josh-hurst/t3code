@@ -1,14 +1,11 @@
-import type {
-  EnvironmentId,
-  ListEntriesInput,
-  ProjectId,
-  ScopedProjectRef,
-} from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ScopedProjectRef } from "@t3tools/contracts";
 
 export interface HistorySearch {
   /** A sidebar project group's key. */
   readonly project?: string;
   readonly open?: "1";
+  /** The chosen project's uncommitted, unpushed and unpublished work in place of the topics. */
+  readonly view?: "changes";
   readonly q?: string;
 }
 
@@ -22,41 +19,9 @@ export function validateHistorySearch(raw: Record<string, unknown>): HistorySear
     ...(project === "" ? {} : { project }),
     // The router reads `open=1` from a URL as a number.
     ...(raw.open === "1" || raw.open === 1 ? { open: "1" as const } : {}),
+    ...(raw.view === "changes" ? { view: "changes" as const } : {}),
     ...(q.trim() === "" ? {} : { q }),
   };
-}
-
-/**
- * What each environment is asked for: every project, or the group's member projects there. An
- * environment holding none of the group's projects is asked nothing, since an absent list means
- * every project.
- */
-export function historyListInputs(input: {
-  readonly environmentIds: ReadonlyArray<EnvironmentId>;
-  readonly members: ReadonlyArray<ScopedProjectRef> | null;
-  readonly stillOpen: boolean;
-  readonly query: string;
-}): ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly input: ListEntriesInput }> {
-  const query = input.query.trim().slice(0, HISTORY_QUERY_MAX);
-  return input.environmentIds.flatMap((environmentId) => {
-    const projectIds =
-      input.members === null
-        ? null
-        : input.members
-            .filter((member) => member.environmentId === environmentId)
-            .map((member) => member.projectId);
-    if (projectIds !== null && projectIds.length === 0) return [];
-    return [
-      {
-        environmentId,
-        input: {
-          ...(projectIds === null ? {} : { projectIds }),
-          ...(input.stillOpen ? { stillOpen: true } : {}),
-          ...(query === "" ? {} : { query }),
-        },
-      },
-    ];
-  });
 }
 
 /** Mark published's calls: one per environment that holds the group's projects. */

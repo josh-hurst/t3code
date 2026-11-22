@@ -262,7 +262,7 @@ describe("Needs you", () => {
     ).toBe(true);
     expect(sidebarThreadNeedsYou({ ...idle, hasPendingApprovals: true }, options)).toBe(true);
 
-    // A seen thread whose card still asks you something stays, and says why.
+    // A read thread whose card still asks you something leaves Needs you, and keeps saying why.
     const asking = {
       ...idle,
       latestRun: run("completed", "2026-03-09T09:00:00.000Z"),
@@ -274,7 +274,7 @@ describe("Needs you", () => {
         at: "2026-03-09T09:00:00.000Z",
       },
     };
-    expect(sidebarThreadNeedsYou(asking, options)).toBe(true);
+    expect(sidebarThreadNeedsYou(asking, options)).toBe(false);
     expect(resolveThreadStatusPill({ thread: asking })?.label).toBe("Question");
   });
 });

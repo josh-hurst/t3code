@@ -2,7 +2,7 @@
 import * as DateTime from "effect/DateTime";
 import {
   isThreadSetAside,
-  threadCardHasOpenAsk,
+  threadCardAskUnread,
   type ThreadCardSummary,
   type ThreadFollowUpSummary,
 } from "@t3tools/contracts";
@@ -84,7 +84,23 @@ export interface ThreadSnoozeShell extends QueuedThreadShell {
   readonly pendingUserInputAt?: string | null;
   readonly pendingSubagentRequest?: PendingSubagentRequest | null;
   readonly pendingGuestMessageCount?: number;
-  readonly card?: Pick<ThreadCardSummary, "open" | "at"> | null;
+  readonly card?: Pick<ThreadCardSummary, "open" | "at" | "askedAt"> | null;
+  readonly lastVisitedAt?: string | null | undefined;
+}
+
+const parsedMs = (value: string | null | undefined): number | null => {
+  const ms = value == null ? Number.NaN : Date.parse(value);
+  return Number.isNaN(ms) ? null : ms;
+};
+
+/** A question in the last reply's card that you have not read yet. */
+export function threadAskUnread(
+  thread: Pick<ThreadSnoozeShell, "card" | "lastVisitedAt" | "latestRun" | "latestTurn">,
+): boolean {
+  return threadCardAskUnread(thread.card, {
+    visitedAtMs: parsedMs(thread.lastVisitedAt),
+    completedAtMs: parsedMs((thread.latestRun ?? thread.latestTurn)?.completedAt),
+  });
 }
 
 function pendingQuestionAt(shell: ThreadSnoozeShell): string | null {
@@ -116,9 +132,10 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
   }
   if (shell.pendingSubagentRequest != null) return true;
   if ((shell.pendingGuestMessageCount ?? 0) > 0) return true;
-  // Same rule for a question the agent wrote in its reply, such as at the end of a quiet re-check.
+  // Same rule for a question the agent wrote in its reply, such as at the end of a quiet re-check,
+  // until you have read it.
   if (
-    threadCardHasOpenAsk(shell.card) &&
+    threadAskUnread(shell) &&
     (shell.snoozedAt == null || Date.parse(shell.card?.at ?? "") > Date.parse(shell.snoozedAt))
   ) {
     return true;

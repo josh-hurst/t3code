@@ -400,7 +400,17 @@ const make = Effect.gen(function* () {
           ...(input.projectIds === undefined
             ? []
             : [sql`t.project_id IN ${sql.in(input.projectIds)}`]),
-          ...(input.stillOpen === true ? [sql`e.open_count > 0`] : []),
+          ...(input.stillOpen === true || input.openKind !== undefined
+            ? [sql`e.open_count > 0`]
+            : []),
+          ...(input.openKind === undefined
+            ? []
+            : [
+                sql`EXISTS (
+                  SELECT 1 FROM json_each(e.open_json) item
+                  WHERE json_extract(item.value, '$.kind') = ${input.openKind}
+                )`,
+              ]),
           ...(input.before === undefined
             ? []
             : [

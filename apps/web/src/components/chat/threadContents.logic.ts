@@ -1,12 +1,11 @@
+import { entryOwedLabel } from "@t3tools/client-runtime/state/thread-entries";
 import type { ThreadEntry } from "@t3tools/contracts";
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-/** The Contents heading's count: "4 topics · 1 open", where open counts topics still owing. */
-export function contentsCount(
-  entries: ReadonlyArray<{ readonly open: ReadonlyArray<unknown> }>,
-): string {
-  const open = entries.filter((entry) => entry.open.length > 0).length;
+/** The Contents heading's count: "4 topics · 1 open", where open counts topics with a label. */
+export function contentsCount(entries: ReadonlyArray<Pick<ThreadEntry, "open">>): string {
+  const open = entries.filter((entry) => entryOwedLabel(entry.open) !== null).length;
   return open === 0
     ? plural(entries.length, "topic")
     : `${plural(entries.length, "topic")} · ${open} open`;

@@ -1,15 +1,18 @@
 import {
   ORCHESTRATION_V2_WS_METHODS,
   type EnvironmentId,
+  type GetProjectChangesInput,
   type ListEntriesInput,
   type ListEntriesResult,
   type ListThreadEntriesResult,
   type OpenItemCountsResult,
   type OrchestrationV2ThreadShell,
+  type ProjectChangeCommit,
+  type ProjectChangeCounts,
+  type ProjectChangesResult,
   type ProjectId,
   type RunId,
   type ScopedProjectRef,
-  type ThreadCardOpenKind,
   type ThreadEntriesUpdate,
   type ThreadEntry,
   type ThreadEntryCursor,
@@ -240,14 +243,22 @@ export function entriesUndo(
     : { kind: "ready", entries, expectRevision: update.state.revision };
 }
 
-/** What an entry still owes, as at most two labels: "Publish, Check". */
+/**
+ * What a topic leaves with the owner: "Question", "Publish" or both. Checks, commits and
+ * follow-ups stay on the entry for agents and are not labelled: the owner hands those back.
+ */
 export function entryOwedLabel(open: ReadonlyArray<Pick<ThreadEntryOpenItem, "kind">>) {
-  const labels: string[] = [];
-  for (const item of open) {
-    const label = threadCardOpenItemLabel(item.kind);
-    if (!labels.includes(label)) labels.push(label);
-  }
-  return labels.length === 0 ? null : labels.slice(0, 2).join(", ");
+  const labels = (["ask", "ship"] as const)
+    .filter((kind) => open.some((item) => item.kind === kind))
+    .map(threadCardOpenItemLabel);
+  return labels.length === 0 ? null : labels.join(", ");
+}
+
+/** The items an Unpublished list shows under a topic. */
+export function entryPublishItems<Item extends Pick<ThreadEntryOpenItem, "kind">>(
+  open: ReadonlyArray<Item>,
+): ReadonlyArray<Item> {
+  return open.filter((item) => item.kind === "ship");
 }
 
 export interface EntryRow extends ThreadEntryListItem {
@@ -311,6 +322,9 @@ const ENTRY_QUERY_MAX = 100;
 /** Rows per `listEntries` page: one "Show more" step. */
 const ENTRY_PAGE_SIZE = 50;
 
+// `stillOpen` narrows the list on servers that predate `openKind`.
+const UNPUBLISHED_FILTER = { stillOpen: true, openKind: "ship" } as const;
+
 /**
  * What each environment is asked for: every project, or a group's member projects there. An
  * environment holding none of the group's projects is asked nothing, since an absent list means
@@ -319,7 +333,8 @@ const ENTRY_PAGE_SIZE = 50;
 export function entryListInputs(input: {
   readonly environmentIds: ReadonlyArray<EnvironmentId>;
   readonly members: ReadonlyArray<ScopedProjectRef> | null;
-  readonly stillOpen: boolean;
+  /** Only topics waiting on a publish. */
+  readonly unpublished: boolean;
   readonly query: string;
 }): ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly input: ListEntriesInput }> {
   const query = input.query.trim().slice(0, ENTRY_QUERY_MAX);
@@ -336,7 +351,7 @@ export function entryListInputs(input: {
         environmentId,
         input: {
           ...(projectIds === null ? {} : { projectIds }),
-          ...(input.stillOpen ? { stillOpen: true } : {}),
+          ...(input.unpublished ? UNPUBLISHED_FILTER : {}),
           ...(query === "" ? {} : { query }),
         },
       },
@@ -382,16 +397,8 @@ export function entryDayGroups(
   return groups;
 }
 
-const OPEN_KIND_PHRASES: ReadonlyArray<readonly [ThreadCardOpenKind, string]> = [
-  ["ship", "waiting on a publish"],
-  ["commit", "to commit"],
-  ["verify", "to check"],
-  ["followup", "to follow up"],
-  ["ask", "unanswered"],
-];
-
-/** Open items per kind across these environments' projects; all projects when `scope` is null. */
-export function openItemTotals(
+/** Items waiting on a publish across these environments' projects; all projects when `scope` is null. */
+export function unpublishedCount(
   counts: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly result: OpenItemCountsResult;
@@ -400,14 +407,8 @@ export function openItemTotals(
     readonly environmentId: EnvironmentId;
     readonly projectId: ProjectId;
   }> | null,
-): { readonly total: number; readonly ship: number; readonly summary: string } {
-  const byKind: Record<ThreadCardOpenKind, number> = {
-    ask: 0,
-    verify: 0,
-    commit: 0,
-    ship: 0,
-    followup: 0,
-  };
+): number {
+  let total = 0;
   for (const { environmentId, result } of counts) {
     for (const project of result.projects) {
       const inScope =
@@ -415,15 +416,87 @@ export function openItemTotals(
         scope.some(
           (ref) => ref.environmentId === environmentId && ref.projectId === project.projectId,
         );
-      if (!inScope) continue;
-      for (const [kind] of OPEN_KIND_PHRASES) byKind[kind] += project.counts[kind] ?? 0;
+      if (inScope) total += project.counts.ship ?? 0;
     }
   }
-  const total = Object.values(byKind).reduce((sum, count) => sum + count, 0);
-  const summary = OPEN_KIND_PHRASES.flatMap(([kind, phrase]) =>
-    byKind[kind] > 0 ? [`${byKind[kind]} ${phrase}`] : [],
-  ).join(", ");
-  return { total, ship: byKind.ship, summary };
+  return total;
+}
+
+/** Uncommitted files and unpushed commits across these projects' checkouts. */
+export function projectChangeCounts(
+  counts: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly result: OpenItemCountsResult;
+  }>,
+  scope: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly projectId: ProjectId }>,
+): ProjectChangeCounts {
+  let uncommittedFiles = 0;
+  let unpushedCommits = 0;
+  for (const { environmentId, result } of counts) {
+    for (const project of result.projects) {
+      if (project.changes === undefined) continue;
+      const inScope = scope.some(
+        (ref) => ref.environmentId === environmentId && ref.projectId === project.projectId,
+      );
+      if (!inScope) continue;
+      uncommittedFiles += project.changes.uncommittedFiles;
+      unpushedCommits += project.changes.unpushedCommits;
+    }
+  }
+  return { uncommittedFiles, unpushedCommits };
+}
+
+export type ProjectChangeTimelineRow =
+  | { readonly kind: "commit"; readonly commit: ProjectChangeCommit }
+  | { readonly kind: "publish"; readonly at: string }
+  /** A run of commits by other authors, which carry no topics. `sha` is its newest commit. */
+  | {
+      readonly kind: "others";
+      readonly sha: string;
+      readonly count: number;
+      readonly authors: ReadonlyArray<string>;
+    };
+
+/**
+ * A project's commits and publishes by local day, newest first. Another author's commits fold
+ * into one row per unbroken run, so a pulled-in week of them does not bury the owner's own.
+ */
+export function projectChangeTimeline(
+  changes: Pick<ProjectChangesResult, "commits" | "publishes">,
+  now: number,
+): Array<{ readonly label: string; readonly rows: Array<ProjectChangeTimelineRow> }> {
+  const events = [
+    ...changes.commits.map((commit) => ({ atMs: Date.parse(commit.committedAt), commit })),
+    ...changes.publishes.map((at) => ({ atMs: Date.parse(at), publishedAt: at })),
+  ].sort((left, right) => right.atMs - left.atMs);
+  const days: Array<{ label: string; rows: Array<ProjectChangeTimelineRow> }> = [];
+  for (const event of events) {
+    const label = trailDayLabel(event.atMs, now);
+    let day = days.at(-1);
+    if (day?.label !== label) {
+      day = { label, rows: [] };
+      days.push(day);
+    }
+    if ("publishedAt" in event) {
+      day.rows.push({ kind: "publish", at: event.publishedAt });
+    } else if (event.commit.own) {
+      day.rows.push({ kind: "commit", commit: event.commit });
+    } else {
+      const last = day.rows.at(-1);
+      const authors = last?.kind === "others" ? last.authors : [];
+      const row = {
+        kind: "others" as const,
+        sha: last?.kind === "others" ? last.sha : event.commit.sha,
+        count: (last?.kind === "others" ? last.count : 0) + 1,
+        authors: authors.includes(event.commit.author)
+          ? authors
+          : [...authors, event.commit.author],
+      };
+      if (last?.kind === "others") day.rows[day.rows.length - 1] = row;
+      else day.rows.push(row);
+    }
+  }
+  return days;
 }
 
 /**
@@ -471,6 +544,15 @@ export function createThreadEntryAtoms<R, ER>(
     // `key` only names the shell state the counts were read for.
     execute: (_input: { readonly key: string }) =>
       request(ORCHESTRATION_V2_WS_METHODS.getOpenItemCounts, {}),
+  });
+
+  const projectChanges = createEnvironmentQueryAtomFamily(runtime, {
+    label: "environment-data:orchestration:project-changes",
+    staleTimeMs: Number.POSITIVE_INFINITY,
+    idleTtlMs: 0,
+    refreshTrigger: ({ environmentId }) => versionAtom(environmentId),
+    execute: (input: GetProjectChangesInput) =>
+      request(ORCHESTRATION_V2_WS_METHODS.getProjectChanges, input),
   });
 
   // Each page starts where the one before it stopped, so pages are read one after another.
@@ -535,6 +617,7 @@ export function createThreadEntryAtoms<R, ER>(
     entriesPage,
     entryListAtom,
     openItemCounts,
+    projectChanges,
     markPublished: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:commands:orchestration:mark-published",
       tag: ORCHESTRATION_V2_WS_METHODS.markPublished,
@@ -543,11 +626,6 @@ export function createThreadEntryAtoms<R, ER>(
     undoPublished: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:commands:orchestration:undo-published",
       tag: ORCHESTRATION_V2_WS_METHODS.undoPublished,
-      ...commandOptions,
-    }),
-    refreshOpenItems: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:commands:orchestration:refresh-open-items",
-      tag: ORCHESTRATION_V2_WS_METHODS.refreshOpenItems,
       ...commandOptions,
     }),
     resolveOpenItem: createEnvironmentRpcCommand(runtime, {

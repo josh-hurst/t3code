@@ -1,18 +1,34 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useGT } from "gt-react";
-import { BellDotIcon, FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  BellDotIcon,
+  FolderPlusIcon,
+  SearchIcon,
+  SquarePenIcon,
+  XIcon,
+} from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
+  useState,
 } from "react";
 
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
+import { SidebarBrand } from "./SidebarBrand";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+
+export interface SidebarChangedProject {
+  readonly projectKey: string;
+  readonly name: string;
+  readonly uncommittedFiles: number;
+  readonly unpushedCommits: number;
+}
 
 export interface SidebarThreadHeaderProps {
   hasProjects: boolean;
@@ -21,12 +37,8 @@ export interface SidebarThreadHeaderProps {
   needsYouElsewhere: number;
   // The new layout names the projects the list is scoped to on a row of its own; null otherwise.
   focusedProjects: string | null;
-  /** What the focused project still owes; null hides the count. */
-  focusedOpen: {
-    readonly total: number;
-    readonly summary: string;
-    readonly projectKey: string;
-  } | null;
+  /** The scope's projects whose checkout holds uncommitted or unpushed work, in sidebar order. */
+  changedProjects: ReadonlyArray<SidebarChangedProject>;
   onShowAllProjects: () => void;
   onNewProject: () => void;
   onNewThread: (event: ReactMouseEvent) => void;
@@ -51,7 +63,7 @@ export function SidebarThreadHeader({
   projectScope,
   needsYouElsewhere,
   focusedProjects,
-  focusedOpen,
+  changedProjects,
   onShowAllProjects,
   onNewProject,
   onNewThread,
@@ -70,6 +82,9 @@ export function SidebarThreadHeader({
   onClearSearch,
 }: SidebarThreadHeaderProps) {
   const gt = useGT();
+  const [searchFocused, setSearchFocused] = useState(false);
+  // Search rests as an icon beside the wordmark and takes the row once it is in use.
+  const searchOpen = isSearching || searchFocused;
   const resultsVisible = isSearching && searchResultCount > 0;
   // Shrinking results can remove the active option; never leave aria-activedescendant pointing at it.
   const activeResultExists = resultsVisible && activeSearchResultIndex < searchResultCount;
@@ -77,10 +92,43 @@ export function SidebarThreadHeader({
     ? gt("New thread ({shortcut})", { shortcut: newThreadShortcutLabel })
     : gt("New thread");
 
+  const newThreadTooltip = showNewThreadInProjectHint ? (
+    <span className="flex flex-col gap-0.5">
+      <span>{newThreadLabel}</span>
+      <span className="text-muted-foreground">
+        {newThreadInProjectShortcutLabel
+          ? gt("New thread in current project: Shift+click ({shortcut})", {
+              shortcut: newThreadInProjectShortcutLabel,
+            })
+          : gt("New thread in current project: Shift+click")}
+      </span>
+    </span>
+  ) : (
+    newThreadLabel
+  );
+
   return (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex items-center gap-1">
-        <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-within:bg-sidebar-row-hover focus-within:text-sidebar-foreground focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/70">
+    // New thread stands apart: the gap above it matches the group's own padding below it.
+    <div className="flex flex-col gap-(--sidebar-content-inset)">
+      <div className="flex h-8 items-center gap-1 pe-1.5">
+        {searchOpen ? null : <SidebarBrand className="flex-1" />}
+        {/* A label, so a click on the collapsed icon focuses the field and opens it. */}
+        <label
+          className={cn(
+            "flex h-7 min-w-0 items-center rounded-md text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-within:bg-sidebar-row-hover focus-within:text-sidebar-foreground focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/70",
+            searchOpen ? "flex-1 gap-2 px-2" : "w-7 shrink-0 cursor-pointer justify-center",
+          )}
+          // Pressing the icon or padding would blur the field first, closing the row mid-click.
+          onMouseDown={(event) => {
+            if (event.target === searchInputRef.current) return;
+            event.preventDefault();
+            searchInputRef.current?.focus();
+          }}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setSearchFocused(false);
+          }}
+        >
           <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color)" />
           <SidebarInput
             ref={searchInputRef}
@@ -100,7 +148,7 @@ export function SidebarThreadHeader({
                 ? `sidebar-thread-search-result-${activeSearchResultIndex}`
                 : undefined
             }
-            className="min-w-0 flex-1"
+            className={cn("min-w-0", searchOpen ? "flex-1" : "w-0 flex-none overflow-hidden")}
           />
           {isSearching ? (
             <Button
@@ -117,72 +165,123 @@ export function SidebarThreadHeader({
               <XIcon className="size-3" />
             </Button>
           ) : null}
-        </div>
-        <div className={cn("flex shrink-0 items-center", queryTakesRow && "hidden")}>
-          {hasProjects ? (
-            <>
-              {needsYouElsewhere > 0 && focusedProjects === null ? (
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="ghost-muted"
-                  title="Show all projects"
-                  onClick={onShowAllProjects}
-                >
-                  {needsYouElsewhere} elsewhere
-                </Button>
-              ) : null}
-              {projectScope}
-              <SidebarHeaderIconButton label={gt("Add project")} onClick={onNewProject}>
-                <FolderPlusIcon />
-              </SidebarHeaderIconButton>
-            </>
-          ) : null}
-          <SidebarHeaderIconButton
-            label={gt("New thread")}
-            tooltip={
-              showNewThreadInProjectHint ? (
-                <span className="flex flex-col gap-0.5">
-                  <span>{newThreadLabel}</span>
-                  <span className="text-muted-foreground">
-                    {newThreadInProjectShortcutLabel
-                      ? gt("New thread in current project: Shift+click ({shortcut})", {
-                          shortcut: newThreadInProjectShortcutLabel,
-                        })
-                      : gt("New thread in current project: Shift+click")}
-                  </span>
-                </span>
-              ) : (
-                newThreadLabel
-              )
-            }
-            disabled={newThreadDisabled}
-            onClick={onNewThread}
-          >
-            <SquarePenIcon />
-          </SidebarHeaderIconButton>
-        </div>
+        </label>
+        {hasProjects ? (
+          <div className={cn("flex shrink-0 items-center gap-1", queryTakesRow && "hidden")}>
+            {needsYouElsewhere > 0 && focusedProjects === null ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost-muted"
+                title="Show all projects"
+                onClick={onShowAllProjects}
+              >
+                {needsYouElsewhere} elsewhere
+              </Button>
+            ) : null}
+            {projectScope}
+            <SidebarHeaderIconButton label={gt("Add project")} onClick={onNewProject}>
+              <FolderPlusIcon />
+            </SidebarHeaderIconButton>
+          </div>
+        ) : null}
       </div>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <SidebarMenuButton
+              type="button"
+              aria-label={gt("New thread")}
+              disabled={newThreadDisabled}
+              onClick={onNewThread}
+            />
+          }
+        >
+          <SquarePenIcon />
+          <span className="truncate">{gt("New thread")}</span>
+        </TooltipTrigger>
+        <TooltipPopup side="right">{newThreadTooltip}</TooltipPopup>
+      </Tooltip>
       {focusedProjects !== null ? (
         <SidebarFocusStrip
           projects={focusedProjects}
-          open={focusedOpen}
           needsYouElsewhere={needsYouElsewhere}
           onShowAllProjects={onShowAllProjects}
         />
       ) : null}
+      {changedProjects.length > 0 ? <SidebarChangesStrip projects={changedProjects} /> : null}
+    </div>
+  );
+}
+
+/**
+ * Each project's uncommitted files and unpushed commits, read from Git. They sit here, per
+ * project, and not on thread rows; each opens the project's changes in History.
+ */
+function SidebarChangesStrip(props: { projects: ReadonlyArray<SidebarChangedProject> }) {
+  const navigate = useNavigate();
+  return (
+    // The row's inset is the thread rows'; each button is pulled back by its own padding so a
+    // name on a wrapped line starts at that inset too.
+    <div className="flex min-h-7 min-w-0 flex-wrap items-center gap-x-2.5 ps-3 pe-1 text-xs text-sidebar-muted-foreground">
+      <span className="shrink-0">Changes</span>
+      {props.projects.map((project) => {
+        const summary = [
+          project.uncommittedFiles > 0
+            ? `${project.uncommittedFiles} ${project.uncommittedFiles === 1 ? "file" : "files"} uncommitted`
+            : null,
+          project.unpushedCommits > 0
+            ? `${project.unpushedCommits} ${project.unpushedCommits === 1 ? "commit" : "commits"} not pushed`
+            : null,
+        ]
+          .filter((part) => part !== null)
+          .join(", ");
+        return (
+          <span key={project.projectKey} className="-ms-1.5 flex min-w-0">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="micro"
+                    variant="ghost-muted"
+                    aria-label={`${project.name}: ${summary}. Show its changes`}
+                    onClick={() =>
+                      void navigate({
+                        to: "/history",
+                        search: { project: project.projectKey, view: "changes" },
+                      })
+                    }
+                  />
+                }
+              >
+                <span className="max-w-28 truncate">{project.name}</span>
+                {project.uncommittedFiles > 0 ? (
+                  <span className="font-medium text-sidebar-foreground tabular-nums">
+                    {project.uncommittedFiles}
+                  </span>
+                ) : null}
+                {project.unpushedCommits > 0 ? (
+                  <span className="flex items-center font-medium text-sidebar-foreground tabular-nums">
+                    <ArrowUpIcon aria-hidden className="size-3" />
+                    {project.unpushedCommits}
+                  </span>
+                ) : null}
+              </TooltipTrigger>
+              <TooltipPopup side="top">{summary}</TooltipPopup>
+            </Tooltip>
+          </span>
+        );
+      })}
     </div>
   );
 }
 
 function SidebarFocusStrip(props: {
   projects: string;
-  open: SidebarThreadHeaderProps["focusedOpen"];
   needsYouElsewhere: number;
   onShowAllProjects: () => void;
 }) {
-  const navigate = useNavigate();
-  const open = props.open;
   const elsewhereLabel = `${props.needsYouElsewhere} ${props.needsYouElsewhere === 1 ? "thread needs" : "threads need"} you in other projects. Show all projects`;
   return (
     <div className="flex h-7 min-w-0 items-center gap-0.5 ps-2 pe-1 text-xs text-sidebar-muted-foreground">
@@ -206,30 +305,6 @@ function SidebarFocusStrip(props: {
         </TooltipTrigger>
         <TooltipPopup side="top">Show all projects</TooltipPopup>
       </Tooltip>
-      {open !== null && open.total > 0 ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                size="micro"
-                variant="ghost-muted"
-                className="shrink-0"
-                aria-label={`${open.total} still open: ${open.summary}. Show them in History`}
-                onClick={() =>
-                  void navigate({
-                    to: "/history",
-                    search: { project: open.projectKey, open: "1" },
-                  })
-                }
-              />
-            }
-          >
-            {open.total} open
-          </TooltipTrigger>
-          <TooltipPopup side="top">{open.summary}</TooltipPopup>
-        </Tooltip>
-      ) : null}
       <span className="flex-1" />
       {props.needsYouElsewhere > 0 ? (
         <Tooltip>

@@ -132,7 +132,7 @@ import {
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
-import { TideOwedLabel, TideProject, TideRowBody, TideStatusLabel } from "./SidebarTideRow";
+import { TideOwedLabel, TideRowBody, TideStatusLabel, tideRowMeta } from "./SidebarTideRow";
 import { SearchMatchHintLine, ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import type { SearchMatchHint } from "@t3tools/shared/paletteSearch";
 import {
@@ -959,7 +959,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 : gt("Working", { $context: "thread status" }),
           icon: "working" as const,
           className: "text-info-foreground",
-          tintClassName: "bg-info/5 hover:bg-info/9",
+          tintClassName: null,
         }
       : status === "waiting"
         ? {
@@ -1251,9 +1251,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     variantAction === "unsettle" &&
       !props.isActive &&
       // History recedes, but in the new layout a project's icon keeps its colour there as in the Trail.
+      // Titles keep their own receded tier so they stay findable above the line under them.
       (props.tide
-        ? "[&:not(:hover):not(:focus-within)_*:not([data-project-icon],[data-project-icon]_*,.live-activity-focus_*)]:text-secondary-label"
-        : "[&:not(:hover):not(:focus-within)_*:not(.live-activity-focus_*)]:text-secondary-label"),
+        ? "[&:not(:hover):not(:focus-within)_*:not([data-project-icon],[data-project-icon]_*,[data-thread-title],.live-activity-focus_*)]:text-secondary-label"
+        : "[&:not(:hover):not(:focus-within)_*:not([data-thread-title],.live-activity-focus_*)]:text-secondary-label"),
     props.isActive
       ? "bg-sidebar-row-active text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
       : isSelected || props.sweepAction !== null
@@ -1327,10 +1328,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     <span
       ref={isRegeneratingTitle ? observeVisibleAnimation : undefined}
       className={cn(
-        "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none",
+        "min-w-0 flex-1 text-start transition-opacity motion-reduce:transition-none",
+        props.tide ? "text-row-title" : "text-sm",
         brightTitle
           ? "truncate font-medium text-foreground"
-          : shouldRecede || (props.tide && !props.isActive && !isWoke)
+          : shouldRecede && !props.tide
             ? "font-normal"
             : "font-medium",
         isRegeneratingTitle
@@ -1348,16 +1350,20 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 )
               : cn(
                   "truncate group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
+                  // Every tier stays above the secondary-label lines under the title.
                   shouldRecede
-                    ? "text-secondary-label"
-                    : props.isActive || isWoke || status === "input" || status === "request"
+                    ? "text-foreground/80"
+                    : props.isActive ||
+                        isWoke ||
+                        isUnread ||
+                        status === "input" ||
+                        status === "request"
                       ? "text-foreground"
-                      : isUnread
-                        ? "text-muted-foreground"
-                        : "text-secondary-label/70",
+                      : "text-foreground/90",
                 ),
         tideDone && "font-semibold",
       )}
+      data-thread-title
       dir={textDirection(thread.title)}
     >
       {thread.title}
@@ -1843,6 +1849,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       </>
     );
     const projectName = props.projectNameOnRow ?? null;
+    const metaBranch = nonMainlineBranchName(checkoutThread.branch);
     const tideAccessibility = resolveSidebarRowAccessibility({
       title: thread.title,
       statusLabel: lead?.kind === "status" ? lead.word : null,
@@ -1899,7 +1906,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(
                   rowSurfaceClassName,
-                  "flex min-h-9 flex-col justify-center px-2.5 py-1.5",
+                  "flex min-h-9 flex-col justify-center px-3 py-2",
                 )}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
@@ -1909,21 +1916,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             }
           >
             <TideRowBody
-              project={
-                projectName === null ? null : (
-                  <TideProject
-                    project={props.project}
-                    name={projectName}
-                    branch={projectLineBranch}
-                  />
-                )
-              }
+              project={null}
               time={timeSlot}
               title={title}
               titleTrailing={
                 <>
                   {draftIndicator}
-                  {prBadge}
                   {terminalStatusIcon}
                   {remoteMachineIcon}
                   {pinIndicator}
@@ -1935,10 +1933,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 // Pinned rows without an outcome follow Thread row details.
                 tideText ??
                 (isCardRow && !props.needsYou
-                  ? (messagePreview ?? (showsBranch ? (checkoutThread.branch ?? null) : null))
+                  ? (messagePreview ??
+                    (showsBranch && metaBranch === null ? (checkoutThread.branch ?? null) : null))
                   : null)
               }
               maxLines={props.needsYou ? 3 : 2}
+              meta={tideRowMeta({
+                project: props.project,
+                name: projectName,
+                pullRequest: prBadge,
+                branch: metaBranch,
+              })}
             />
             {isRegeneratingTitle ? (
               <span role="status" className="sr-only">
@@ -2566,7 +2571,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               className={cn(
                 "group/sidebar-row group/v2-row flex min-h-9 w-full cursor-pointer rounded-md px-2.5 text-left text-sm outline-none",
                 // The new layout stacks the shared row anatomy; the classic row is one line.
-                props.tide ? "flex-col justify-center py-1.5" : "items-center gap-2.5 py-1",
+                props.tide ? "flex-col justify-center py-2" : "items-center gap-2.5 py-1",
                 props.isHighlighted || props.isRouteActive
                   ? "bg-sidebar-row-active text-sidebar-foreground"
                   : "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
@@ -2578,11 +2583,12 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
         >
           {props.tide ? (
             <TideRowBody
-              project={
-                props.projectNameOnRow === null ? null : (
-                  <TideProject project={props.project} name={props.projectNameOnRow} />
-                )
-              }
+              project={null}
+              meta={tideRowMeta({
+                project: props.project,
+                name: props.projectNameOnRow,
+                branch: nonMainlineBranchName(thread.branch),
+              })}
               time={
                 <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums">
                   {laterLabel !== null ? (
@@ -2599,12 +2605,12 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
                 <span
                   ref={isRegeneratingTitle ? observeVisibleAnimation : undefined}
                   className={cn(
-                    "min-w-0 flex-1 truncate",
-                    props.isSettled ? "font-normal" : "font-medium",
+                    "min-w-0 flex-1 truncate font-medium",
+                    "text-row-title",
                     isRegeneratingTitle
                       ? "relative text-muted-foreground"
                       : props.isSettled && !props.isHighlighted && !props.isRouteActive
-                        ? "text-secondary-label/70 group-hover/sidebar-row:text-foreground"
+                        ? "text-foreground/80 group-hover/sidebar-row:text-foreground"
                         : "text-foreground",
                     tideDone && "font-semibold",
                   )}

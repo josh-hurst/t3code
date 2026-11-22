@@ -315,6 +315,9 @@ export function ThreadMcpApp(props: {
           : { toolInfo: { tool: current.toolDefinition } }),
       };
     };
+    // Apps may call a write tool on every change (e.g. saving view state), so one approval
+    // covers that tool for this document, and calls made while asking share the same prompt.
+    const approvals = new Map<string, Promise<boolean>>();
     const documentHost: McpAppHost = makeMcpAppHost({
       app,
       hostVersion: Constants.expoConfig?.version ?? "0.0.0",
@@ -329,20 +332,26 @@ export function ThreadMcpApp(props: {
         if (info._tag !== "Success") throw commandFailure(info);
         if (!info.value.callable)
           throw new McpAppHostRefusal({ message: "This app cannot call that tool." });
-        if (
-          !info.value.readOnly &&
-          !(await confirm(
-            m(
-              msg("Allow {server} to run {tool}?", {
-                server: app.server,
-                tool: info.value.title ?? name,
-              }),
-            ),
-            JSON.stringify(args, null, 2),
-            m(msg("Allow", { $context: "verb, confirm button" })),
-          ))
-        ) {
-          throw new McpAppHostRefusal({ message: "Declined by the user." });
+        if (!info.value.readOnly) {
+          let approval = approvals.get(name);
+          if (approval === undefined) {
+            approval = confirm(
+              m(
+                msg("Allow {server} to run {tool}?", {
+                  server: app.server,
+                  tool: info.value.title ?? name,
+                }),
+              ),
+              JSON.stringify(args, null, 2),
+              m(msg("Allow", { $context: "verb, confirm button" })),
+            );
+            approvals.set(name, approval);
+            approval.then(
+              (approved) => approved || approvals.delete(name),
+              () => approvals.delete(name),
+            );
+          }
+          if (!(await approval)) throw new McpAppHostRefusal({ message: "Declined by the user." });
         }
         const result = await latest.current.callTool({
           environmentId,

@@ -5,14 +5,13 @@ import {
   type EntryRow,
   mergeEntryPages,
   openItemsRefreshKey,
-  openItemTotals,
 } from "@t3tools/client-runtime/state/thread-entries";
 import type {
   EnvironmentId,
   ListEntriesInput,
   ListThreadEntriesResult,
   OpenItemCountsResult,
-  ProjectId,
+  ScopedProjectRef,
   ThreadId,
 } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -68,16 +67,10 @@ const NO_COUNTS = Atom.make<
 >(NO_COUNTS_VALUE).pipe(Atom.withLabel("web:open-item-counts:none"));
 
 /**
- * Open items in scope (a project group's member projects, or everything when null), read again
- * when a card is written or an item cleared in a listed thread, and after every action here.
+ * Each environment's open item counts per project, read again when a card is written or an item
+ * cleared in a listed thread, and after every action here. Empty while `enabled` is false.
  */
-export function useOpenItemTotals(
-  scope: ReadonlyArray<{
-    readonly environmentId: EnvironmentId;
-    readonly projectId: ProjectId;
-  }> | null,
-  enabled = true,
-) {
+export function useOpenItemCounts(enabled = true) {
   const environmentIds = useEntriesEnvironmentIds();
   const refreshKey = useDebouncedValue(
     openItemsRefreshKey(useQuietThreadShells()),
@@ -87,11 +80,10 @@ export function useOpenItemTotals(
   const read = useAtomValue(
     active ? countsAtom(JSON.stringify([environmentIds, refreshKey])) : NO_COUNTS,
   );
-  // A new key reads afresh; the last answer shows meanwhile, so the count never blinks to 0.
+  // A new key reads afresh; the last answer shows meanwhile, so a count never blinks to 0.
   const [held, setHeld] = useState(read);
   if (read.length > 0 && read !== held) setHeld(read);
-  const counts = !active ? NO_COUNTS_VALUE : read.length > 0 ? read : held;
-  return { available: active, ...openItemTotals(counts, scope) };
+  return !active ? NO_COUNTS_VALUE : read.length > 0 ? read : held;
 }
 
 /** Pages of topics from each target environment, merged newest first. */
@@ -117,6 +109,30 @@ export function useEntryList(
       environment.pages.at(-1)?.next ? [environment.environmentId] : [],
     ),
   };
+}
+
+const changesAtom = Atom.family((key: string) => {
+  const refs = JSON.parse(key) as ReadonlyArray<ScopedProjectRef>;
+  return Atom.make((get) =>
+    refs.map((ref) => {
+      const result = get(
+        threadEntryAtoms.projectChanges({
+          environmentId: ref.environmentId,
+          input: { projectId: ref.projectId },
+        }),
+      );
+      return {
+        ...ref,
+        changes: AsyncResult.getOrElse(result, () => null),
+        failed: result._tag === "Failure",
+      };
+    }),
+  ).pipe(Atom.withLabel(`web:project-changes:${key}`));
+});
+
+/** Each project's uncommitted, unpushed and unpublished work, read again by `refreshEntries`. */
+export function useProjectChanges(refs: ReadonlyArray<ScopedProjectRef>) {
+  return useAtomValue(changesAtom(JSON.stringify(refs)));
 }
 
 /** Reads again every list and count of these environments, as after an action. */

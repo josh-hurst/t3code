@@ -9,8 +9,9 @@ import {
   entryDayGroups,
   entryListInputs,
   entryOwedLabel,
+  entryPublishItems,
   entryPublishTargets,
-  openItemTotals,
+  unpublishedCount,
   type EntryRow,
 } from "@t3tools/client-runtime/state/thread-entries";
 import { threadCardOpenItemLabel } from "@t3tools/client-runtime/state/thread-zones";
@@ -100,10 +101,10 @@ export function HistoryScreen() {
   const [chosenKey, setChosenKey] = useState<string | null>(null);
   const chosen = groups.find((group) => group.key === chosenKey) ?? null;
   const members = chosen?.projectRefs ?? null;
-  const [stillOpen, setStillOpen] = useState(false);
+  const [unpublished, setUnpublished] = useState(false);
   const [search, setSearch] = useState("");
   const query = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
-  const targets = entryListInputs({ environmentIds, members, stillOpen, query });
+  const targets = entryListInputs({ environmentIds, members, unpublished, query });
 
   const targetsKey = JSON.stringify(targets);
   const [paging, setPaging] = useState<{
@@ -115,7 +116,7 @@ export function HistoryScreen() {
   const pages = paging.key === targetsKey ? paging.pages : {};
   const list = useEntryList(targets, (environmentId) => pages[environmentId] ?? 1);
 
-  const open = openItemTotals(useOpenItemCounts(environmentIds), members);
+  const waiting = unpublishedCount(useOpenItemCounts(environmentIds), members);
   const canOperate = useCanOperateEntries(environmentIds);
 
   // Clears on settled threads reach no stream, so the lists read again whenever the screen shows.
@@ -153,24 +154,9 @@ export function HistoryScreen() {
   const resolveCommand = useAtomCommand(threadEntryAtoms.resolveOpenItem, {
     reportFailure: false,
   });
-  const refreshOpenItemsCommand = useAtomCommand(threadEntryAtoms.refreshOpenItems, {
-    reportFailure: false,
-  });
   const restoreCommand = useAtomCommand(threadEnvironment.restoreOpenItems, {
     reportFailure: false,
   });
-
-  const showStillOpen = (pressed: boolean) => {
-    setStillOpen(pressed);
-    if (!pressed) return;
-    // Commit items on checkouts that are clean now clear before the list is read.
-    const refs =
-      members ??
-      projects.map((project) => ({ environmentId: project.environmentId, projectId: project.id }));
-    for (const { environmentId, projectIds } of entryPublishTargets(refs, environmentIds)) {
-      void refreshOpenItemsCommand({ environmentId, input: { projectIds } });
-    }
-  };
 
   const publishTargets =
     chosen === null
@@ -216,7 +202,7 @@ export function HistoryScreen() {
     if (chosen === null) return;
     Dialog.confirm({
       title: `Mark ${chosen.title} published?`,
-      message: `Clears ${plural(open.ship, "item")} waiting on a publish and starts the re-checks that wait for one.`,
+      message: `Clears ${plural(waiting, "item")} waiting on a publish and starts the re-checks that wait for one.`,
       confirmText: "Mark published",
       onConfirm: () => void markPublished(),
     });
@@ -290,9 +276,9 @@ export function HistoryScreen() {
         onPress={() => openTopic(row)}
         accessibilityHint="Opens the thread where this topic started."
         footer={
-          stillOpen && row.open.length > 0 ? (
+          unpublished ? (
             <View className="mt-1 gap-1">
-              {row.open.map((openItem) => (
+              {entryPublishItems(row.open).map((openItem) => (
                 <View
                   key={`${openItem.kind}:${openItem.text}`}
                   className="flex-row items-baseline gap-2"
@@ -323,7 +309,7 @@ export function HistoryScreen() {
     );
   };
 
-  const filtered = query.trim() !== "" || stillOpen || chosen !== null;
+  const filtered = query.trim() !== "" || unpublished || chosen !== null;
   const showMore = () =>
     setPaging({
       key: paging.key,
@@ -363,7 +349,7 @@ export function HistoryScreen() {
           contentInsetAdjustmentBehavior="automatic"
           data={items}
           // Rows read the filters and grants from render; recycled cells need to hear of them.
-          extraData={`${stillOpen}|${chosenKey ?? ""}|${[...canOperate].join(",")}|${projectName.size}`}
+          extraData={`${unpublished}|${chosenKey ?? ""}|${[...canOperate].join(",")}|${projectName.size}`}
           estimatedItemSize={72}
           getItemType={(item) => item.kind}
           keyExtractor={(item) => item.key}
@@ -390,25 +376,21 @@ export function HistoryScreen() {
                 onSelect={(id) => setChosenKey(id === "all" ? null : (JSON.parse(id) as string))}
               />
               <Chip
-                label={`Still open · ${open.total}`}
-                accessibilityLabel={
-                  open.summary === ""
-                    ? "Still open, nothing is owed"
-                    : `Still open: ${open.summary}`
-                }
-                selected={stillOpen}
+                label={`Unpublished · ${waiting}`}
+                accessibilityLabel={`Unpublished: ${waiting} waiting on a publish`}
+                selected={unpublished}
                 glass
                 colorScheme={themeAppearance}
-                onPress={() => showStillOpen(!stillOpen)}
+                onPress={() => setUnpublished(!unpublished)}
               />
-              {stillOpen && publishTargets.length > 0 ? (
+              {unpublished && publishTargets.length > 0 ? (
                 <Button
                   label="Mark published"
                   size="compact"
                   tone="secondary"
-                  disabled={open.ship === 0}
+                  disabled={waiting === 0}
                   accessibilityHint={
-                    open.ship === 0
+                    waiting === 0
                       ? "Nothing here is waiting on a publish."
                       : "Clears what waits on a publish and starts the re-checks that wait for one."
                   }

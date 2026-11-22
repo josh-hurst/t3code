@@ -1,4 +1,8 @@
-import { entryOwedLabel, type EntryRow } from "@t3tools/client-runtime/state/thread-entries";
+import {
+  entryOwedLabel,
+  entryPublishItems,
+  type EntryRow,
+} from "@t3tools/client-runtime/state/thread-entries";
 import { threadCardOpenItemLabel } from "@t3tools/client-runtime/state/thread-zones";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ThreadEntryOpenItem } from "@t3tools/contracts";
@@ -19,12 +23,14 @@ export function HistoryEntryRow(props: {
   project: { readonly icon: ProjectFaviconProject | null; readonly name: string } | null;
   time: string;
   timeTitle: string;
-  showOpenItems: boolean;
+  /** Lists what the topic waits on a publish for, each with Done. */
+  showPublishItems: boolean;
   onDone: ((item: ThreadEntryOpenItem) => void) | null;
 }) {
   const { row } = props;
   const params = buildThreadRouteParams(scopeThreadRef(row.environmentId, row.threadId));
   const owed = entryOwedLabel(row.open);
+  const publishItems = props.showPublishItems ? entryPublishItems(row.open) : [];
   return (
     <li className="group relative rounded-md px-2 py-2 hover:bg-accent/50 has-[a:focus-visible]:bg-accent/50">
       <TideRowBody
@@ -76,17 +82,15 @@ export function HistoryEntryRow(props: {
         }
         // With the items listed underneath, each already carries its own label.
         label={
-          owed === null || (props.showOpenItems && row.open.length > 0) ? null : (
-            <TideOwedLabel>{owed}</TideOwedLabel>
-          )
+          owed === null || publishItems.length > 0 ? null : <TideOwedLabel>{owed}</TideOwedLabel>
         }
         text={row.outcome === "" ? null : row.outcome}
         maxLines={2}
         footer={
           <>
-            {props.showOpenItems && row.open.length > 0 ? (
+            {publishItems.length > 0 ? (
               <ul className="relative mt-1 flex flex-col gap-0.5 border-l border-border pl-2 text-xs">
-                {row.open.map((item) => (
+                {publishItems.map((item) => (
                   <li
                     key={`${item.kind}:${item.text}`}
                     className="flex min-w-0 items-baseline gap-2"

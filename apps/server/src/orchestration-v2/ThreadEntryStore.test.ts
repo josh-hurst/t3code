@@ -130,7 +130,7 @@ describe("ThreadEntryStore", () => {
       yield* seedThread({ threadId: b, projectId: projectB });
       const open = [
         { kind: "commit" as const, text: "Uncommitted", runId: RunId.make("run:a") },
-        { kind: "verify" as const, text: "Check it", runId: RunId.make("run:a") },
+        { kind: "ship" as const, text: "Publish it", runId: RunId.make("run:a") },
       ];
       yield* seedEntries(a, [
         { seq: 1, title: "Billing webhook retries", outcome: "Backoff added", open },
@@ -152,6 +152,7 @@ describe("ThreadEntryStore", () => {
         "Billing webhook retries",
         "Dark mode",
       ]);
+      assert.deepEqual(yield* titles({ openKind: "ship" }), ["Billing webhook retries"]);
       assert.deepEqual(yield* titles({ query: "WEBHOOK backoff" }), ["Billing webhook retries"]);
       assert.deepEqual(yield* titles({ query: "webhook dark" }), []);
       const [row] = (yield* store.use((entries) => entries.list({ query: "billing" }))).entries;
@@ -161,7 +162,7 @@ describe("ThreadEntryStore", () => {
       );
 
       assert.deepEqual(yield* store.use((entries) => entries.counts()), [
-        { projectId: projectA, counts: { ask: 0, verify: 1, commit: 1, ship: 0, followup: 0 } },
+        { projectId: projectA, counts: { ask: 0, verify: 0, commit: 1, ship: 1, followup: 0 } },
         { projectId: projectB, counts: { ask: 0, verify: 0, commit: 1, ship: 0, followup: 0 } },
       ]);
     }).pipe(Effect.provide(layer)),

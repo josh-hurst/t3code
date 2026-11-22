@@ -3,6 +3,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -68,10 +69,15 @@ const layerElectronTheme = Layer.succeed(ElectronTheme.ElectronTheme, {
   onUpdated: () => Effect.void,
 });
 
-function layerElectronWindow(destroyAll: Effect.Effect<void> = Effect.void) {
+function layerElectronWindow(
+  destroyAll: Effect.Effect<void> = Effect.void,
+  main: ElectronWindow.ElectronWindow["Service"]["main"] = Effect.die(
+    "unexpected main window read",
+  ),
+) {
   return Layer.succeed(ElectronWindow.ElectronWindow, {
     create: () => Effect.die("unexpected window creation"),
-    main: Effect.die("unexpected main window read"),
+    main,
     currentMainOrFirst: Effect.die("unexpected current window read"),
     focusedMainOrFirst: Effect.die("unexpected focused window read"),
     setMain: () => Effect.void,
@@ -361,5 +367,54 @@ describe("DesktopLifecycle", () => {
         }),
       ).pipe(Effect.provide(layer));
     }),
+  );
+
+  it.effect(
+    "leaves window choice to macOS when the Dock activates an app with visible windows",
+    () =>
+      Effect.gen(function* () {
+        const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
+        const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+        const activated = yield* Queue.unbounded<void>();
+        let activationCount = 0;
+        const activate = Effect.suspend(() => {
+          activationCount += 1;
+          return Queue.offer(activated, undefined);
+        });
+        const layerEnvironment = Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
+          platform: "darwin",
+          isDevelopment: false,
+        } as DesktopEnvironment.DesktopEnvironment["Service"]);
+        const layer = DesktopLifecycle.layer.pipe(
+          Layer.provideMerge(layerElectronApp(appListeners)),
+          Layer.provideMerge(layerElectronTheme),
+          Layer.provideMerge(layerElectronWindow(Effect.void, Ref.get(mainWindow))),
+          Layer.provideMerge(layerDesktopWindow({ activate })),
+          Layer.provideMerge(layerEnvironment),
+          Layer.provideMerge(DesktopShutdown.layer),
+          Layer.provideMerge(DesktopState.layer),
+        );
+
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+            yield* lifecycle.register;
+            const dockClick = (hasVisibleWindows: boolean) =>
+              appListeners.get("activate")?.({}, hasVisibleWindows);
+
+            dockClick(true);
+            yield* Queue.take(activated);
+
+            yield* Ref.set(mainWindow, Option.some({} as Electron.BrowserWindow));
+            dockClick(false);
+            yield* Queue.take(activated);
+
+            dockClick(true);
+            dockClick(false);
+            yield* Queue.take(activated);
+            assert.equal(activationCount, 3);
+          }),
+        ).pipe(Effect.provide(layer));
+      }),
   );
 });

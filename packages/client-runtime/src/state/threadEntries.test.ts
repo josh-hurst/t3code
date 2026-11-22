@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off -- A test lays commits out on local calendar days.
 import {
   EnvironmentId,
   MessageId,
@@ -17,8 +18,11 @@ import {
   entryByRunId,
   entryListInputs,
   entryOwedLabel,
+  entryPublishItems,
   mergeEntryPages,
-  openItemTotals,
+  projectChangeCounts,
+  projectChangeTimeline,
+  unpublishedCount,
   resolveThreadEntries,
   stepThreadEntriesRead,
   type ThreadEntriesRead,
@@ -239,7 +243,7 @@ describe("History lists", () => {
     expect(held.rows.map((entry) => entry.id)).toEqual(["a"]);
   });
 
-  it("counts open items in scope the way the History chip and the Focus row both show them", () => {
+  it("counts only what waits on a publish, in scope, for the History chip and the sidebar", () => {
     const counts = (ship: number, commit: number) => ({
       projects: [
         {
@@ -259,9 +263,67 @@ describe("History lists", () => {
       { environmentId: remote, result: counts(1, 0) },
     ];
     expect(
-      openItemTotals(all, [{ environmentId: local, projectId: ProjectId.make("project:a") }]),
-    ).toEqual({ total: 6, ship: 4, summary: "4 waiting on a publish, 1 to commit, 1 to check" });
-    expect(openItemTotals(all, null).total).toBe(12);
+      unpublishedCount(all, [{ environmentId: local, projectId: ProjectId.make("project:a") }]),
+    ).toBe(4);
+    expect(unpublishedCount(all, null)).toBe(5);
+    const withChanges = [
+      {
+        environmentId: local,
+        result: {
+          projects: [
+            {
+              ...counts(0, 0).projects[0]!,
+              changes: { uncommittedFiles: 7, unpushedCommits: 2 },
+            },
+            counts(0, 0).projects[1]!,
+          ],
+        },
+      },
+    ];
+    // A project whose server sends no change counts adds nothing.
+    expect(
+      projectChangeCounts(withChanges, [
+        { environmentId: local, projectId: ProjectId.make("project:a") },
+        { environmentId: local, projectId: ProjectId.make("project:b") },
+      ]),
+    ).toEqual({ uncommittedFiles: 7, unpushedCommits: 2 });
+  });
+
+  it("lays commits and publishes out by day, folding other authors' commits into one row", () => {
+    const at = (hour: number) => new Date(2026, 5, 20, hour).toISOString();
+    const commit = (sha: string, hour: number, author: string) => ({
+      sha,
+      subject: sha,
+      author,
+      own: author === "Owner",
+      committedAt: at(hour),
+      pushed: true,
+      files: 1,
+      topics: [],
+    });
+    const days = projectChangeTimeline(
+      {
+        commits: [
+          commit("mine-late", 11, "Owner"),
+          commit("theirs-b", 9, "Friend"),
+          commit("theirs-a", 8, "Other"),
+          commit("mine-early", 6, "Owner"),
+        ],
+        publishes: [at(10)],
+      },
+      new Date(2026, 5, 20, 12).getTime(),
+    );
+    expect(days.map((day) => day.label)).toEqual(["Today"]);
+    expect(
+      days[0]!.rows.map((row) =>
+        row.kind === "commit" ? row.commit.sha : row.kind === "publish" ? "publish" : row,
+      ),
+    ).toEqual([
+      "mine-late",
+      "publish",
+      { kind: "others", sha: "theirs-b", count: 2, authors: ["Friend", "Other"] },
+      "mine-early",
+    ]);
   });
 
   it("asks each environment for the group's projects there, and skips one holding none", () => {
@@ -270,21 +332,27 @@ describe("History lists", () => {
       entryListInputs({
         environmentIds: [local, remote],
         members: [{ environmentId: local, projectId: projectA }],
-        stillOpen: true,
+        unpublished: true,
         query: "  login ",
       }),
     ).toEqual([
-      { environmentId: local, input: { projectIds: [projectA], stillOpen: true, query: "login" } },
+      {
+        environmentId: local,
+        input: { projectIds: [projectA], stillOpen: true, openKind: "ship", query: "login" },
+      },
     ]);
     expect(
-      entryListInputs({ environmentIds: [local], members: null, stillOpen: false, query: " " }),
+      entryListInputs({ environmentIds: [local], members: null, unpublished: false, query: " " }),
     ).toEqual([{ environmentId: local, input: {} }]);
   });
 
-  it("labels what an entry owes, questions included, at most two", () => {
+  it("labels a topic's question and publish, and nothing an agent is handed back", () => {
     expect(
       entryOwedLabel([{ kind: "ship" }, { kind: "ask" }, { kind: "ship" }, { kind: "commit" }]),
-    ).toBe("Publish, Question");
-    expect(entryOwedLabel([])).toBeNull();
+    ).toBe("Question, Publish");
+    expect(
+      entryOwedLabel([{ kind: "verify" }, { kind: "commit" }, { kind: "followup" }]),
+    ).toBeNull();
+    expect(entryPublishItems([{ kind: "verify" }, { kind: "ship" }])).toEqual([{ kind: "ship" }]);
   });
 });

@@ -177,6 +177,7 @@ import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as ContentsBackfillService from "./orchestration-v2/ContentsBackfillService.ts";
 import * as OpenItemService from "./orchestration-v2/OpenItemService.ts";
+import * as ProjectChangesService from "./orchestration-v2/ProjectChangesService.ts";
 import * as ThreadEntryStore from "./orchestration-v2/ThreadEntryStore.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
@@ -1462,6 +1463,7 @@ export const layerWsRpc = (
       const eventLoopMonitor = yield* EventLoopMonitor.EventLoopMonitor;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
       const openItems = yield* OpenItemService.OpenItemService;
+      const projectChanges = yield* ProjectChangesService.ProjectChangesService;
       const contentsBackfill = yield* ContentsBackfillService.ContentsBackfillService;
       const openItemsFailure = (message: string) => (cause: OpenItemService.OpenItemServiceError) =>
         new ThreadContentsError({ message, cause });
@@ -2183,6 +2185,16 @@ export const layerWsRpc = (
           threadEntries.list(input).pipe(Effect.mapError(entriesFailure("Failed to load topics"))),
         [ORCHESTRATION_V2_WS_METHODS.getOpenItemCounts]: () =>
           openItems.counts().pipe(Effect.mapError(openItemsFailure("Failed to count open items"))),
+        [ORCHESTRATION_V2_WS_METHODS.getProjectChanges]: (input) =>
+          projectChanges.read(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ThreadContentsError({
+                  message: "Failed to read the project's changes",
+                  cause,
+                }),
+            ),
+          ),
         [ORCHESTRATION_V2_WS_METHODS.markPublished]: (input) =>
           openItems
             .markPublished(input)

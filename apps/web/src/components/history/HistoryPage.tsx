@@ -1,22 +1,25 @@
-import { entryDayGroups } from "@t3tools/client-runtime/state/thread-entries";
+import {
+  entryDayGroups,
+  entryListInputs,
+  unpublishedCount,
+} from "@t3tools/client-runtime/state/thread-entries";
 import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { isElectron } from "../../env";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useSidebarProjectGroups } from "../../hooks/useSidebarProjectGroups";
 import { useStillOpenActions } from "../../hooks/useStillOpenActions";
-import { useProjects } from "../../state/entities";
 import { useDebouncedValue } from "../../state/queries";
 import {
   refreshEntries,
   useCanOperateEntries,
   useEntriesEnvironmentIds,
   useEntryList,
-  useOpenItemTotals,
+  useOpenItemCounts,
 } from "../../state/threadEntries";
 import { formatFullTimestamp, formatShortTimestamp } from "../../timestampFormat";
 import { Button, InlineButton } from "../ui/button";
@@ -26,13 +29,10 @@ import { SidebarInset } from "../ui/sidebar";
 import { Toggle } from "../ui/toggle";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { HistoryBackfillFooter } from "./HistoryBackfillFooter";
+import { cn } from "~/lib/utils";
 import { HistoryEntryRow } from "./HistoryEntryRow";
-import {
-  historyChipKeys,
-  historyListInputs,
-  publishTargets,
-  type HistorySearch,
-} from "./historyPage.logic";
+import { ProjectChangesView } from "./ProjectChangesView";
+import { historyChipKeys, publishTargets, type HistorySearch } from "./historyPage.logic";
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -55,9 +55,11 @@ export function HistoryPage() {
   const groups = pickableProjectGroups(useSidebarProjectGroups());
   const chosen = groups.find((group) => group.projectKey === search.project) ?? null;
   const members: ReadonlyArray<ScopedProjectRef> | null = chosen?.memberProjectRefs ?? null;
-  const stillOpen = search.open === "1";
+  const unpublished = search.open === "1";
+  // Changes are one project's checkout, so the view needs a project chosen.
+  const showChanges = search.view === "changes" && chosen !== null;
   const query = useDebouncedValue(search.q ?? "", SEARCH_DEBOUNCE_MS);
-  const targets = historyListInputs({ environmentIds, members, stillOpen, query });
+  const targets = entryListInputs({ environmentIds, members, unpublished, query });
 
   const [paging, setPaging] = useState<{
     key: string;
@@ -90,28 +92,9 @@ export function HistoryPage() {
     chosenKey: chosen?.projectKey ?? null,
   });
 
-  const open = useOpenItemTotals(members, environmentIds.length > 0);
+  const waiting = unpublishedCount(useOpenItemCounts(), members);
   const canOperate = useCanOperateEntries(environmentIds);
   const actions = useStillOpenActions();
-  const projects = useProjects();
-  const refreshTargets = (
-    members === null
-      ? projects.map((project) => ({
-          environmentId: project.environmentId,
-          projectId: project.id,
-        }))
-      : members
-  ).filter((ref) => environmentIds.includes(ref.environmentId));
-
-  const refreshKey = stillOpen ? JSON.stringify(refreshTargets) : null;
-  const refreshCheckouts = useEffectEvent((refs: ReadonlyArray<ScopedProjectRef>) =>
-    actions.refreshOpenItems(publishTargets(refs, environmentIds)),
-  );
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the servers to re-read the checkouts once when Still open is shown, so Commit items on clean checkouts clear
-  useEffect(() => {
-    if (refreshKey !== null) refreshCheckouts(JSON.parse(refreshKey) as ScopedProjectRef[]);
-  }, [refreshKey]);
-
   const environmentsKey = environmentIds.join("\n");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the lists again when the window regains focus, since clears on settled threads reach no stream
   useEffect(() => {
@@ -186,13 +169,29 @@ export function HistoryPage() {
                 <Toggle
                   variant="outline"
                   size="xs"
-                  pressed={stillOpen}
+                  pressed={unpublished}
                   onPressedChange={(pressed) => setSearch({ open: pressed ? "1" : undefined })}
-                  title={open.summary === "" ? "Nothing is owed" : open.summary}
+                  title="Work that is waiting on a publish"
                 >
-                  Still open · {open.total}
+                  Unpublished · {waiting}
                 </Toggle>
-                {stillOpen &&
+                <Toggle
+                  variant="outline"
+                  size="xs"
+                  pressed={showChanges}
+                  disabled={chosen === null}
+                  onPressedChange={(pressed) =>
+                    setSearch({ view: pressed ? "changes" : undefined })
+                  }
+                  title={
+                    chosen === null
+                      ? "Choose a project to see its changes"
+                      : "What is not committed, pushed or published, and the commits behind it"
+                  }
+                >
+                  Changes
+                </Toggle>
+                {(unpublished || showChanges) &&
                 chosen !== null &&
                 publishTargets(chosen.memberProjectRefs, environmentIds).some((target) =>
                   canOperate.has(target.environmentId),
@@ -200,9 +199,9 @@ export function HistoryPage() {
                   <Button
                     size="xs"
                     variant="outline"
-                    disabled={open.ship === 0}
+                    disabled={waiting === 0}
                     title={
-                      open.ship === 0
+                      waiting === 0
                         ? "Nothing here is waiting on a publish"
                         : "Clears what waits on a publish and starts the re-checks that wait for one"
                     }
@@ -220,12 +219,20 @@ export function HistoryPage() {
                 ) : null}
               </div>
 
-              {list.rows.length === 0 ? (
+              {showChanges ? (
+                <ProjectChangesView
+                  refs={chosen.memberProjectRefs.filter((ref) =>
+                    environmentIds.includes(ref.environmentId),
+                  )}
+                  timestampFormat={timestampFormat}
+                  now={now}
+                />
+              ) : list.rows.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   {list.pending
                     ? "Loading topics…"
                     : (list.error ??
-                      (query.trim() !== "" || stillOpen || chosen !== null
+                      (query.trim() !== "" || unpublished || chosen !== null
                         ? "Nothing matches."
                         : "No topics yet. Each finished reply adds to one."))}
                 </p>
@@ -252,7 +259,7 @@ export function HistoryPage() {
                               }
                               time={formatShortTimestamp(row.endedAt, timestampFormat)}
                               timeTitle={`Last worked on ${formatFullTimestamp(row.endedAt, timestampFormat)}`}
-                              showOpenItems={stillOpen}
+                              showPublishItems={unpublished}
                               onDone={
                                 canOperate.has(row.environmentId)
                                   ? (item) =>
@@ -268,7 +275,12 @@ export function HistoryPage() {
                 </div>
               )}
 
-              <div className="flex flex-col items-center gap-2 pb-6 text-xs text-muted-foreground">
+              <div
+                className={cn(
+                  "flex flex-col items-center gap-2 pb-6 text-xs text-muted-foreground",
+                  showChanges && "hidden",
+                )}
+              >
                 {list.hasMore ? (
                   <InlineButton
                     tone="muted"

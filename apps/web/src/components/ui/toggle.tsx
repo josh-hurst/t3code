@@ -19,6 +19,8 @@ const toggleVariants = cva(
         segmented:
           "h-6 min-w-0 rounded-md px-2.5 text-xs before:rounded-[calc(var(--radius-md)-1px)]",
         sm: "h-8 min-w-8 px-[calc(--spacing(1.5)-1px)] sm:h-7 sm:min-w-7",
+        "sm-pill":
+          "h-8 min-w-8 rounded-full px-[calc(--spacing(1.5)-1px)] before:rounded-full sm:h-7 sm:min-w-7",
         xs: "h-7 min-w-7 px-[calc(--spacing(1)-1px)] sm:h-6 sm:min-w-6 rounded-md",
       },
       variant: {

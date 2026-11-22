@@ -17,7 +17,7 @@ export function SidebarHistoryAllButton(props: { shortcutLabel: string | null })
             type="button"
             size="micro"
             variant="ghost-muted"
-            className="me-1 shrink-0"
+            className="me-0.5 shrink-0"
             data-testid="sidebar-history-all"
             aria-label="Open History: every topic from every thread"
             onClick={() => void navigate({ to: "/history" })}

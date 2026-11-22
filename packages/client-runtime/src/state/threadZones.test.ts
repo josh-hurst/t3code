@@ -23,7 +23,7 @@ import {
   threadAutoSettleAt,
   threadAutoSettleLabel,
   threadNeedsYou,
-  threadCardOwedLabel,
+  threadCardQuestionLabel,
   threadCardRowLine,
   threadAwaitingAsk,
   threadLaterLabel,
@@ -117,9 +117,9 @@ describe("threadNeedsYou", () => {
       false,
     ],
     [
-      "finished on a question while a subagent works",
+      "finished on an unread question while a subagent works",
       {
-        latestRun: run("completed", T0),
+        latestRun: run("completed", T2),
         pendingBackgroundTasks: [subagentTask],
         card: card("ask"),
       },
@@ -144,16 +144,50 @@ describe("threadNeedsYou", () => {
       true,
     ],
     ["unseen completion", { latestRun: run("completed", T2) }, "completed", false, true],
+    // A question holds the thread until its reply is read; the row keeps the Question status.
     [
-      "seen with an open ask",
+      "read reply with an open ask",
       { latestRun: run("completed", T0), card: card("ask") },
+      "question",
+      false,
+      false,
+    ],
+    [
+      "unread reply with an open ask",
+      { latestRun: run("completed", T2), card: card("ask") },
       "question",
       true,
       true,
     ],
     [
-      "unseen completion with an open ask",
-      { latestRun: run("completed", T2), card: card("ask") },
+      "never visited with an open ask",
+      { latestRun: run("completed", T0), card: card("ask"), lastVisitedAt: null },
+      "question",
+      true,
+      true,
+    ],
+    // The report is news, so the row reads Done; the question it repeats is not.
+    [
+      "a later report carrying an ask already read",
+      { latestRun: run("completed", T2), card: { ...card("ask"), askedAt: T0 } },
+      "completed",
+      false,
+      true,
+    ],
+    [
+      "a read ask while a subagent works",
+      {
+        latestRun: run("completed", T0),
+        pendingBackgroundTasks: [subagentTask],
+        card: card("ask"),
+      },
+      "waiting",
+      false,
+      false,
+    ],
+    [
+      "a later report raising a new ask",
+      { latestRun: run("completed", T2), card: { ...card("ask"), askedAt: T2 } },
       "question",
       true,
       true,
@@ -270,22 +304,23 @@ describe("threadStatusWord", () => {
   });
 });
 
-describe("threadCardOwedLabel", () => {
+describe("threadCardQuestionLabel", () => {
   it.each<[ThreadCardOpenKind[], string | null]>([
     [[], null],
-    [["ask"], null],
-    [["verify"], "Check"],
-    [["ask", "ship"], "Publish"],
-    [["ship", "ship", "verify"], "Publish, Check"],
-    [["commit", "followup", "ship"], "Commit, Follow up"],
-  ])("%j owes %j", (kinds, expected) => {
-    expect(threadCardOwedLabel(card(...kinds))).toBe(expected);
+    [["ask"], "Question"],
+    [["ship", "ask"], "Question"],
+    // A check, commit, publish or follow-up never labels a thread's row.
+    [["verify", "commit", "ship", "followup"], null],
+  ])("%j reads %j", (kinds, expected) => {
+    expect(threadCardQuestionLabel(card(...kinds))).toBe(expected);
   });
 });
 
 describe("threadRowLineText", () => {
-  it("puts what is owed before the outcome, so truncation cuts the outcome", () => {
-    expect(threadRowLineText({ owed: "Check", line: "Fixed feed" })).toBe("Check · Fixed feed");
+  it("puts the lead word before the outcome, so truncation cuts the outcome", () => {
+    expect(threadRowLineText({ owed: "Question", line: "Fixed feed" })).toBe(
+      "Question · Fixed feed",
+    );
     expect(threadRowLineText({ owed: null, line: "Fixed feed" })).toBe("Fixed feed");
     expect(threadRowLineText({ owed: null, line: null })).toBeNull();
   });

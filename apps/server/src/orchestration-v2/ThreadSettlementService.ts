@@ -9,6 +9,7 @@ import {
   CommandId,
   isCompactionCommandMessage,
   isOrchestrationV2WorkActive,
+  threadCardAskUnread,
   threadCardHasOpenAsk,
   threadFollowUpIsArmed,
   type ThreadId,
@@ -81,6 +82,19 @@ const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 
 function toMillis(value: DateTime.Utc | null | undefined): number | null {
   return value == null ? null : DateTime.toEpochMillis(value);
+}
+
+/** A question the owner has not read yet; once read it no longer holds the thread. */
+function askUnread(
+  thread: Pick<
+    ProjectionStore.ProjectionSettlementCandidate,
+    "card" | "lastVisitedAt" | "latestRunCompletedAt"
+  >,
+): boolean {
+  return threadCardAskUnread(thread.card, {
+    visitedAtMs: toMillis(thread.lastVisitedAt),
+    completedAtMs: toMillis(thread.latestRunCompletedAt),
+  });
 }
 
 function latestMillis(values: ReadonlyArray<number | null>): number | null {
@@ -203,8 +217,8 @@ export function isAutoSettlementCandidate(
   // Settling ends a watch, which would silently drop a reviewer's later comments.
   if (pendingTasks.some(isPullRequestWatchTask)) return false;
   if (threadHasQueuedTurnStart(thread, nowMs)) return false;
-  // An unanswered question keeps the thread in Needs you; settling would bury it.
-  if (threadCardHasOpenAsk(thread.card)) return false;
+  // An unread question keeps the thread in Needs you; settling would bury it.
+  if (askUnread(thread)) return false;
   // A pending re-check or a standing check is still waiting on its clock.
   if (threadFollowUpIsArmed(thread.followUp) || thread.standingCheck === true) return false;
   // Interrupted runs must keep the same snooze protection the sidebar shows.
@@ -222,6 +236,7 @@ export function isSnoozed(
     | "pendingRuntimeRequest"
     | "pendingGuestMessageCount"
     | "card"
+    | "lastVisitedAt"
   >,
   nowMs: number,
 ): boolean {
@@ -238,9 +253,10 @@ export function isSnoozed(
   ) {
     return false;
   }
-  // A question the agent wrote after the snooze began, such as at the end of a quiet re-check.
+  // A question the agent wrote after the snooze began, such as at the end of a quiet re-check,
+  // until the owner has read it.
   if (
-    threadCardHasOpenAsk(thread.card) &&
+    askUnread(thread) &&
     (snoozedAtMs === null || Date.parse(thread.card?.at ?? "") > snoozedAtMs)
   ) {
     return false;
@@ -308,14 +324,19 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
     snoozedUntilMs !== null && snoozedUntilMs <= input.nowMs ? snoozedUntilMs : null;
   const inactivityAtMs =
     latestMillis([activityAtMs, toMillis(thread.lastSnoozeWakeAt), timerWakeAtMs]) ?? activityAtMs;
-  const windowAtMs = inactivityAtMs + input.autoSettleAfterDays * DAY_MS;
+  // A question read only after the window passed stays two hours past the open that showed it.
+  const windowAtMs = Math.max(
+    inactivityAtMs + input.autoSettleAfterDays * DAY_MS,
+    threadCardHasOpenAsk(thread.card) ? (thread.opens?.openedAt ?? 0) + BACK_FOR_MS : 0,
+  );
   const completedAtMs = toMillis(thread.latestRunCompletedAt);
   const visitedAtMs = toMillis(thread.lastVisitedAt);
   const presence = input.presence ?? null;
   let atMs = windowAtMs;
   // Seen as the clients mark it, so a reply that lands overnight does not settle early unread.
   // A summary's checks, commits and releases do not hold it: most replies that change code list
-  // one, and the history the timing was fitted to settled them all the same. A question does.
+  // one, and the history the timing was fitted to settled them all the same. A question holds it
+  // only until it is read, which `isAutoSettlementCandidate` checks.
   if (
     !hasPullRequest &&
     completedAtMs !== null &&

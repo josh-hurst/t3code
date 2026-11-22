@@ -272,6 +272,15 @@ describe("threadRaisedHandWhileSnoozed", () => {
     expect(
       threadRaisedHandWhileSnoozed({ ...snoozed, card: card("2026-04-10T08:00:00.000Z") }),
     ).toBe(false);
+    // Read, the newer question no longer wakes the thread.
+    const asked = { ...card("2026-04-10T11:00:00.000Z"), askedAt: "2026-04-10T11:00:00.000Z" };
+    expect(
+      threadRaisedHandWhileSnoozed({
+        ...snoozed,
+        card: asked,
+        lastVisitedAt: "2026-04-10T11:30:00.000Z",
+      }),
+    ).toBe(false);
   });
 });
 

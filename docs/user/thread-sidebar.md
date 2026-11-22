@@ -178,13 +178,17 @@ own choice.
 ### Threads that need you
 
 **Needs you** gathers threads waiting on an approval, an answer, or a
-guest, with a plan ready, with a question you have not answered, or whose latest run failed.
+guest, with a plan ready, with a question you have not read, or whose latest run failed.
 Opening a failed thread keeps **Failed** visible. Starting another run shows its new status.
 A finished run stays in Recent, marked **Done** until you leave the thread
-or send it a message, with anything it still owes, such as a commit or a publish, at the start of its line. The thread that
-has waited longest comes first. Pinned threads stay pinned and working threads stay in Working.
+or send it a message. A row's line is the outcome; it leads with **Question** only when a
+question you read is still unanswered. The thread that has waited longest comes first. Pinned threads stay pinned and working threads stay in Working.
 
-Answering a request or settling the thread takes it out of Needs you. The
+Answering a request or settling the thread takes it out of Needs you. A question an agent
+writes at the end of a reply holds the thread there until you have read that reply: once you
+leave the thread without answering, it moves to Recent and keeps its **Question** label. A later
+background report that only repeats the question does not bring it back, and a new question
+does. To put it back yourself, mark the thread unread. The
 thread you have open stays where it was until you leave it, and moves once you send it a
 message. A reply that arrives while the thread is on screen counts as read only when you leave.
 
@@ -227,9 +231,15 @@ all projects. While the sidebar is limited this way, a row under the search fiel
 project, with an **×** to show all projects again and, when threads in other projects need
 you, a count such as **3 elsewhere**. Going to the next thread that needs you leaves
 the project when nothing in it is waiting.
-When the project still owes something, such as a publish, a commit or a check, the row also
-shows a count such as **6 open**; its tooltip says what is owed, and clicking it opens
-[History](#history-every-topic) on that project's open items.
+
+### Changes not out yet
+
+A **Changes** row under **New thread** names each project you worked in lately whose main
+checkout holds work that is not out: the number of uncommitted files, then **↑** and the number
+of commits on no remote. The numbers come from Git and can trail a commit or a push by half a
+minute. Click a project to open its [Changes](#history-every-topic). Thread rows carry no
+publish, commit or check label: an agent that cannot go on until you do something raises it as
+a question, which puts the thread in Needs you.
 
 ### Hide projects
 
@@ -269,10 +279,10 @@ one-line summary of what its latest finished run did, such as "Fixed flaky login
 removed". It shows under the thread's title on web, desktop, and mobile. Each row names its
 project above the title (left out when the sidebar shows one project or the rows are grouped by
 project). On Recent, Later, and History rows the summary follows what is still to do, such as
-**Check**, **Commit**, **Publish**, or **Follow up**; hover a row for the full summary and each
+**Question**, **Check**, **Commit**, **Publish**, or **Follow up**; hover a row for the full summary and each
 item. In Needs you, the summary follows why the thread is there, such as **Approval** or
 **Question**: an approval shows the command or change it asks to make, and a thread with an open
-question shows that question instead, keeping a **Question** label after you have seen it. The environment writes the
+question shows that question instead. The environment writes the
 summary once per finished run with the **Reply summary model** chosen there, so each run costs one
 short generation on that provider. A thread with no summary yet looks as before, and the
 mobile **Classic thread list** does not show summaries.
@@ -335,7 +345,8 @@ thread settles 12 hours after its last activity, plus 12 hours for each hour it 
 going, and never later than the setting. A thread ten minutes old leaves after about 14
 hours, and one that ran for three hours waits the full time. A thread with a pull request
 keeps the full wait. Something its summary lists for you to check, commit, or publish does not
-hold it, but a question for you keeps it from settling on its own.
+hold it, but a question you have not read keeps it from settling on its own, and a thread
+stays at least two hours after you open it to read one.
 
 Nothing settles early while you are away. After two hours without a message from you in
 any thread, early settling pauses, and it resumes two hours after you next write. A thread
@@ -388,19 +399,24 @@ it will make, and runs only when you press **Start**, one call at a time, on the
 model. It leaves those threads' summaries, open items and order alone, and you can cancel
 it; starting it again picks up where it stopped. Long threads only is the cheaper choice.
 
-**Still open** lists questions, checks, commits, publishes and follow-ups that a reply leaves
-for you, including those on settled threads. The [Focus](#focus-on-one-project) row shows
-the same count. An item clears when a later reply says it is done,
-when you answer a question, when you press **Done** on it, or, for a commit, when the
-thread's checkout has no uncommitted changes after a turn or when you open Still open.
+**Unpublished** lists the topics whose work waits on a publish, including those on settled
+threads.
+An item clears when a later reply says it is done or when you press **Done** on it.
 After you publish, choose a project and press **Mark published**, or run
 **Mark this project published** from the command palette, to clear what waits on a publish
 and start the re-checks that wait for one. **Undo** puts the items back, except on threads
 whose summary changed since; re-checks it started stay started. An agent you tell "I've
 published" marks it for you. History and Mark published need a server that keeps topics.
 
+**Changes**, with a project chosen, shows what that project's main checkout holds that is not
+out yet: uncommitted files by topic, what changed since the last publish, then its commits by
+day with **Not pushed** on those on no remote and a **Published** line at each publish.
+Threads working in their own worktrees are left out. File and commit counts come from Git.
+The topic a file sits under is the last thread known to have changed it, which can be wrong
+when several threads work in one checkout at once. The sidebar's [Changes](#changes-not-out-yet) row opens here.
+
 On mobile, **All** beside the thread list's History label opens the same History screen, with
-a project filter, Still open, search, **Mark published** (it asks first) and **Done**. Tap a
+a project filter, Unpublished, search, **Mark published** (it asks first) and **Done**. Tap a
 topic to open its thread where the topic started. In a thread with two or more topics, tap
 the thread's title on iPhone and iPad to list them, or use **Contents** in the thread settings
 sheet; tap one to scroll to where it started.
@@ -433,7 +449,8 @@ the matching message; on an iPad with a keyboard, `Cmd+K` opens the same
 palette.
 
 A thread with two or more [topics](#history-every-topic) lists them under **Contents** in its
-thread details, in the order they started, each with what it still owes and its outcome. Click
+thread details, in the order they started, each with its outcome, led by **Question** or
+**Publish** when the topic leaves one. Click
 a topic to jump to where it started, or **Latest result** to jump to its last reply. The jump
 rail beside the conversation draws a longer tick where each topic begins, and its preview
 names the topic. To fix the grouping by hand, use a topic's **⋯** menu to **Rename** it or
@@ -575,7 +592,7 @@ several selected threads together. Choose **Wake thread** to bring a thread back
 
 A snoozed thread keeps working and stays hidden until its wake time, even while
 its agent wakes itself for background work. It comes back early for an approval,
-a new question, a failed run, or a message or answer you send. You can snooze an existing
+a new question until you have read it, a failed run, or a message or answer you send. You can snooze an existing
 question and answer when the thread wakes; the question stays unanswered.
 
 ### Set aside

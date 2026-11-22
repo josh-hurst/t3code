@@ -453,7 +453,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
         onClick?.(event);
         toggleSidebar();
       }}
-      size="icon"
+      size="icon-sm-pill"
       variant="ghost"
       {...props}
     >

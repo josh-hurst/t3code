@@ -44,9 +44,6 @@ export function useStillOpenActions() {
   const resolveCommand = useAtomCommand(threadEntryAtoms.resolveOpenItem, {
     reportFailure: false,
   });
-  const refreshCommand = useAtomCommand(threadEntryAtoms.refreshOpenItems, {
-    reportFailure: false,
-  });
   const restoreCommand = useOrchestrationCommand(threadEnvironment.restoreOpenItems, {
     reportFailure: false,
   });
@@ -139,18 +136,5 @@ export function useStillOpenActions() {
     });
   };
 
-  /** Clears Commit items whose checkout is clean now. */
-  const refreshOpenItems = (
-    targets: ReadonlyArray<{
-      readonly environmentId: EnvironmentId;
-      readonly projectIds: ReadonlyArray<ProjectId>;
-    }>,
-  ) => {
-    for (const { environmentId, projectIds } of targets) {
-      if (projectIds.length === 0) continue;
-      void refreshCommand({ environmentId, input: { projectIds } });
-    }
-  };
-
-  return { markPublished, markDone, refreshOpenItems };
+  return { markPublished, markDone };
 }

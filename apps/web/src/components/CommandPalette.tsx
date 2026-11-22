@@ -1810,9 +1810,9 @@ function OpenCommandPaletteDialog(props: {
     actionItems.push({
       kind: "action",
       value: "action:history.open",
-      searchTerms: ["history", "topics", "still open", "what did i do", "outcomes", "settled"],
+      searchTerms: ["history", "topics", "unpublished", "what did i do", "outcomes", "settled"],
       title: "Open History",
-      description: "Every topic from every thread, newest first, with what is still open",
+      description: "Every topic from every thread, newest first, with what waits on a publish",
       icon: <HistoryIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "history.open",
       run: async () => {

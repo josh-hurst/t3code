@@ -6,6 +6,7 @@ import * as ContentsBackfillService from "./ContentsBackfillService.ts";
 import * as ContentsRegroupWorker from "./ContentsRegroupWorker.ts";
 import * as ThreadFollowUpService from "./ThreadFollowUpService.ts";
 import * as OpenItemService from "./OpenItemService.ts";
+import * as ProjectChangesService from "./ProjectChangesService.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -326,10 +327,14 @@ const layerScheduledTaskProvided = ScheduledTaskService.layer.pipe(
 const layerThreadFollowUpProvided = ThreadFollowUpService.layer.pipe(
   Layer.provide(Layer.merge(ProjectionStore.layer, layerThreadManagementProvided)),
 );
+const layerProjectChangesProvided = ProjectChangesService.layer.pipe(
+  Layer.provide(Layer.merge(layerProjectService, GitVcsDriver.layer)),
+);
 const layerOpenItemsProvided = OpenItemService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
       ThreadEntryStore.layer,
+      layerProjectChangesProvided,
       layerThreadManagementProvided,
       layerThreadFollowUpProvided,
       layerScheduledTaskProvided,
@@ -458,6 +463,7 @@ export const layerProduction = Layer.mergeAll(
     Layer.provide(OpenItemService.layerCleanCheckout.pipe(Layer.provide(layerOpenItemsProvided))),
   ),
   layerOpenItemsProvided,
+  layerProjectChangesProvided,
   layerContentsBackfillProvided,
   layerManagedProjectFoldersProvided,
   layerThreadLaunchProvided,

@@ -5,9 +5,13 @@ import {
   type RunId,
   THREAD_CARD_TOPICS_MAX,
   type ThreadCard,
+  threadCardHasOpenAsk,
+  threadCardOpenItemKey,
   type ThreadCardSummary,
   type ThreadId,
 } from "@t3tools/contracts";
+
+import * as DateTime from "effect/DateTime";
 
 import type { PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 
@@ -64,7 +68,42 @@ export function cardCallsForRetitle(
 }
 
 export function threadCardWithoutAsks(card: ThreadCard): ThreadCard {
-  return { ...card, open: card.open.filter((item) => item.kind !== "ask") };
+  const { askedAt: _askedAt, ...rest } = card;
+  return { ...rest, open: card.open.filter((item) => item.kind !== "ask") };
+}
+
+const askKeys = (open: ThreadCardSummary["open"]) =>
+  open.filter((item) => item.kind === "ask").map(threadCardOpenItemKey);
+
+/**
+ * A card that only repeats the previous card's questions keeps their time, so a background
+ * report cannot hand an already-read question back to the owner as new.
+ */
+function askedAtOf(
+  previous: ThreadCard | null,
+  open: ThreadCardSummary["open"],
+  repliedAt: string,
+): string | undefined {
+  const asks = askKeys(open);
+  if (asks.length === 0) return undefined;
+  if (previous?.askedAt === undefined) return repliedAt;
+  const known = new Set(askKeys(previous.open));
+  return asks.every((key) => known.has(key)) ? previous.askedAt : repliedAt;
+}
+
+/**
+ * The visit time that marks a thread unread: just before its latest run ended, or before the
+ * reply that raised its open question when a later report carried that question forward.
+ */
+export function unreadVisitedAt(
+  card: Pick<ThreadCard, "open" | "askedAt"> | null | undefined,
+  latestRunCompletedAt: DateTime.Utc,
+): DateTime.Utc {
+  const completedAtMs = DateTime.toEpochMillis(latestRunCompletedAt);
+  const askedAtMs =
+    threadCardHasOpenAsk(card) && card?.askedAt !== undefined ? Date.parse(card.askedAt) : NaN;
+  const newestMs = Number.isNaN(askedAtMs) ? completedAtMs : Math.min(completedAtMs, askedAtMs);
+  return DateTime.makeUnsafe(newestMs - 1);
 }
 
 export function nextThreadCard(input: {
@@ -75,15 +114,18 @@ export function nextThreadCard(input: {
   readonly topics: ThreadCardSummary["topics"];
   readonly open: ThreadCardSummary["open"];
   readonly at: string;
+  readonly repliedAt: string;
   /** The user has written since the reply, so its questions no longer wait on them. */
   readonly answered: boolean;
 }): ThreadCard {
+  const askedAt = askedAtOf(input.previous, input.open, input.repliedAt);
   const card: ThreadCard = {
     line: input.line,
     topics: mergeTopics(input.previous?.topics ?? [], input.topics),
     open: input.open,
     messageId: input.messageId,
     at: input.at,
+    ...(askedAt === undefined ? {} : { askedAt }),
     runId: input.runId,
   };
   return input.answered ? threadCardWithoutAsks(card) : card;
