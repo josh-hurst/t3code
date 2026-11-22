@@ -230,6 +230,7 @@ describe("command permissions", () => {
     ORCHESTRATION_V2_WS_METHODS.resolveOpenItem,
     ORCHESTRATION_V2_WS_METHODS.startContentsBackfill,
     ORCHESTRATION_V2_WS_METHODS.cancelContentsBackfill,
+    ORCHESTRATION_V2_WS_METHODS.summarizeProjectChanges,
   ])("uses the target grant for both availability and execution of %s", (method) =>
     Effect.gen(function* () {
       const registry = yield* setup;

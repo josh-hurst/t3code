@@ -628,6 +628,11 @@ export function createThreadEntryAtoms<R, ER>(
       tag: ORCHESTRATION_V2_WS_METHODS.undoPublished,
       ...commandOptions,
     }),
+    summarizeProjectChanges: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:orchestration:summarize-project-changes",
+      tag: ORCHESTRATION_V2_WS_METHODS.summarizeProjectChanges,
+      ...commandOptions,
+    }),
     resolveOpenItem: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:commands:orchestration:resolve-open-item",
       tag: ORCHESTRATION_V2_WS_METHODS.resolveOpenItem,

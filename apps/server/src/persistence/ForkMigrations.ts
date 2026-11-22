@@ -8,12 +8,14 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import ForkMigration0001 from "./ForkMigrations/001_TideContents.ts";
 import ForkMigration0002 from "./ForkMigrations/002_TidePublishMarkers.ts";
+import ForkMigration0003 from "./ForkMigrations/003_TideChangeDigests.ts";
 
 const FORK_MIGRATIONS_TABLE = "t3_fork_migrations";
 
 const forkMigrationEntries = [
   [1, "TideContents", ForkMigration0001],
   [2, "TidePublishMarkers", ForkMigration0002],
+  [3, "TideChangeDigests", ForkMigration0003],
 ] as const;
 
 export const forkMigrationManifest = forkMigrationEntries.map(([id, name]) => [id, name] as const);

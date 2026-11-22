@@ -328,7 +328,13 @@ const layerThreadFollowUpProvided = ThreadFollowUpService.layer.pipe(
   Layer.provide(Layer.merge(ProjectionStore.layer, layerThreadManagementProvided)),
 );
 const layerProjectChangesProvided = ProjectChangesService.layer.pipe(
-  Layer.provide(Layer.merge(layerProjectService, GitVcsDriver.layer)),
+  Layer.provide(
+    Layer.mergeAll(
+      layerProjectService,
+      GitVcsDriver.layer,
+      TextGeneration.layer.pipe(Layer.provide(ProviderInstallationGate.layer)),
+    ),
+  ),
 );
 const layerOpenItemsProvided = OpenItemService.layer.pipe(
   Layer.provide(

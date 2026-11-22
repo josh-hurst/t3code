@@ -2195,6 +2195,16 @@ export const layerWsRpc = (
                 }),
             ),
           ),
+        [ORCHESTRATION_V2_WS_METHODS.summarizeProjectChanges]: (input) =>
+          projectChanges.summarize(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ThreadContentsError({
+                  message: "Failed to summarize the project's changes",
+                  cause,
+                }),
+            ),
+          ),
         [ORCHESTRATION_V2_WS_METHODS.markPublished]: (input) =>
           openItems
             .markPublished(input)

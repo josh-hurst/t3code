@@ -88,6 +88,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   // A backfill spends model calls on this environment's summary model.
   [ORCHESTRATION_V2_WS_METHODS.startContentsBackfill]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.cancelContentsBackfill]: AuthOrchestrationOperateScope,
+  // A changelog spends a model call per period on this environment's summary model.
+  [ORCHESTRATION_V2_WS_METHODS.summarizeProjectChanges]: AuthOrchestrationOperateScope,
   // A guest link hands thread access to someone outside, like a pairing link.
   [WS_METHODS.guestShareCreate]: AuthAccessWriteScope,
   [WS_METHODS.peerLinksLink]: AuthAccessWriteScope,

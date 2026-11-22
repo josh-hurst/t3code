@@ -334,11 +334,11 @@ describe("resolveTideRowLead", () => {
       "Outcome",
     ],
     [
-      "a Later row with an open question",
-      thread("t", 2, { card: card("ask", "commit") }),
+      "a read question outside Needs you",
+      thread("t", 2, { card: { ...card("ask", "commit"), askedAt: hoursAgo(3) } }),
       false,
       false,
-      { kind: "owed", word: "Question" },
+      { kind: "status", tone: "question", word: "Question" },
       "Outcome",
     ],
     [

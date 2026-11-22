@@ -2,9 +2,11 @@ import {
   IsoDateTime,
   MessageId,
   type ProjectChangeCounts,
+  ProjectChangeItem,
   type ProjectChangesResult,
   ProjectId,
   RunId,
+  type SummarizeProjectChangesResult,
   ThreadEntryId,
   ThreadEntryRun,
   ThreadId,
@@ -13,6 +15,7 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -20,10 +23,19 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ProjectService from "../project/ProjectService.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import {
+  buildProjectChangelogPrompt,
+  changelogFolders,
+  CHANGELOG_COMMITS_MAX,
+  parseProjectChangelog,
+} from "../textGeneration/ProjectChangelog.ts";
+import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import {
   assembleTouches,
   buildProjectChanges,
+  changePeriods,
   parseGitLogWithFiles,
   parseGitStatusPaths,
   projectChangeEntryIds,
@@ -38,6 +50,8 @@ const OWN_COMMITS_MAX = 400;
 /** Every author's commits, read without files to fold the others into one line each run. */
 const ALL_COMMITS_MAX = 1_500;
 const GIT_OUTPUT_MAX_BYTES = 8 * 1024 * 1024;
+/** Periods summarized per request, newest first; the rest wait for the next one. */
+const SUMMARIZE_PERIODS_MAX = 4;
 
 export class ProjectChangesError extends Schema.TaggedError<ProjectChangesError>()(
   "ProjectChangesError",
@@ -86,6 +100,17 @@ const decodeRuns = Schema.decodeUnknownEffect(
 const decodeProjectIds = Schema.decodeUnknownEffect(
   Schema.Array(Schema.Struct({ projectId: ProjectId })),
 );
+const Digest = Schema.fromJsonString(
+  Schema.Struct({
+    items: Schema.Array(ProjectChangeItem),
+    labels: Schema.Record(Schema.String, Schema.String),
+  }),
+);
+const decodeDigests = Schema.decodeUnknownEffect(
+  Schema.Array(Schema.Struct({ key: Schema.String, digest: Digest })),
+);
+const encodeDigest = Schema.encodeEffect(Digest);
+const iso = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
 const decodePublishes = Schema.decodeUnknownEffect(
   Schema.Array(Schema.Struct({ publishedAt: IsoDateTime })),
 );
@@ -116,6 +141,13 @@ export class ProjectChangesService extends Context.Service<
     readonly read: (input: {
       readonly projectId: ProjectId;
     }) => Effect.Effect<ProjectChangesResult, ProjectChangesError>;
+    /**
+     * Writes the changelog of each period that has none, a model call apiece, a few per call.
+     * Does nothing while reply summaries are off. The count of periods written.
+     */
+    readonly summarize: (input: {
+      readonly projectId: ProjectId;
+    }) => Effect.Effect<SummarizeProjectChangesResult, ProjectChangesError>;
   }
 >()("t3/orchestration-v2/ProjectChangesService") {}
 
@@ -123,6 +155,9 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const projects = yield* ProjectService.ProjectService;
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const textGeneration = yield* TextGeneration.TextGeneration;
+  const fileSystem = yield* FileSystem.FileSystem;
   const failed = (operation: string) => (cause: unknown) =>
     new ProjectChangesError({ operation, cause });
 
@@ -304,6 +339,71 @@ const make = Effect.gen(function* () {
     Effect.mapError(failed("counts")),
   );
 
+  const logArgs = (since: string, format: string, extra: ReadonlyArray<string>) => [
+    "-c",
+    "core.quotepath=off",
+    "log",
+    "--no-merges",
+    `--since=${since}`,
+    `--format=${format}`,
+    ...extra,
+    "HEAD",
+  ];
+  /**
+   * The owner's commits with their bodies and files. A busy upstream must not crowd them out of
+   * the cap, so other authors' commits are read apart.
+   */
+  const readOwnCommits = Effect.fn("ProjectChangesService.readOwnCommits")(function* (
+    cwd: string,
+    since: string,
+  ) {
+    const email = (yield* run(cwd, "user", ["config", "user.email"]))?.trim() || null;
+    const log = yield* run(
+      cwd,
+      "ownLog",
+      logArgs(since, "%x1e%H%x1f%ct%x1f%an%x1f%ae%x1f%s%x1f%b%x1d", [
+        `--max-count=${OWN_COMMITS_MAX}`,
+        "--name-only",
+        ...(email === null ? [] : ["--fixed-strings", `--author=<${email}>`]),
+      ]),
+    );
+    return {
+      email,
+      commits: parseGitLogWithFiles(log ?? "", email).filter((commit) => commit.own),
+    };
+  });
+
+  const readPublishes = Effect.fn("ProjectChangesService.readPublishes")(function* (
+    projectId: ProjectId,
+    since: string,
+  ) {
+    const rows = yield* decodePublishes(
+      yield* sql`
+        SELECT published_at AS "publishedAt"
+        FROM tide_publish_markers
+        WHERE project_id = ${projectId} AND undone_at IS NULL AND published_at >= ${since}
+      `,
+    );
+    return rows.map((row) => Date.parse(row.publishedAt));
+  });
+
+  const readDigests = Effect.fn("ProjectChangesService.readDigests")(function* (
+    projectId: ProjectId,
+  ) {
+    const rows = yield* decodeDigests(
+      yield* sql`
+        SELECT period_key AS key, digest_json AS digest
+        FROM tide_change_digests
+        WHERE project_id = ${projectId}
+      `,
+    );
+    return new Map(rows.map((row) => [row.key, row.digest]));
+  });
+
+  const historySince = DateTime.now.pipe(
+    Effect.map((now) => DateTime.formatIso(DateTime.subtract(now, { days: HISTORY_DAYS }))),
+  );
+
   const read: ProjectChangesService["Service"]["read"] = Effect.fn("ProjectChangesService.read")(
     function* ({ projectId }) {
       const project = yield* projects.getById(projectId);
@@ -311,40 +411,20 @@ const make = Effect.gen(function* () {
       const cwd = project.value.workspaceRoot;
       const branch = yield* run(cwd, "branch", ["rev-parse", "--abbrev-ref", "HEAD"]);
       if (branch === null) return EMPTY;
-      const since = DateTime.formatIso(
-        DateTime.subtract(yield* DateTime.now, { days: HISTORY_DAYS }),
-      );
-      const email = (yield* run(cwd, "user", ["config", "user.email"]))?.trim() || null;
-      const logArgs = (extra: ReadonlyArray<string>) => [
-        "-c",
-        "core.quotepath=off",
-        "log",
-        "--no-merges",
-        `--since=${since}`,
-        "--format=%x1e%H%x1f%ct%x1f%an%x1f%ae%x1f%s",
-        ...extra,
-        "HEAD",
-      ];
-      const [status, ownLog, allLog, unpushed, evidence] = yield* Effect.all(
+      const since = yield* historySince;
+      const [status, own, allLog, unpushed, evidence, digests] = yield* Effect.all(
         [
           run(cwd, "status", statusArgs),
-          // The owner's commits with their files. A busy upstream must not crowd them out of
-          // the cap, so other authors' commits are read apart, without files.
+          readOwnCommits(cwd, since),
           run(
             cwd,
-            "ownLog",
-            logArgs([
-              `--max-count=${OWN_COMMITS_MAX}`,
-              "--name-only",
-              ...(email === null ? [] : ["--fixed-strings", `--author=<${email}>`]),
-            ]),
+            "allLog",
+            logArgs(since, "%x1e%H%x1f%ct%x1f%an%x1f%ae%x1f%s", [`--max-count=${ALL_COMMITS_MAX}`]),
           ),
-          email === null
-            ? Effect.succeed(null)
-            : run(cwd, "allLog", logArgs([`--max-count=${ALL_COMMITS_MAX}`])),
           // On no remote branch at all, so a branch without an upstream still reads right.
           run(cwd, "unpushed", ["rev-list", `--since=${since}`, "HEAD", "--not", "--remotes"]),
           loadEvidence(projectId, since),
+          readDigests(projectId),
         ],
         { concurrency: "unbounded" },
       );
@@ -352,8 +432,10 @@ const make = Effect.gen(function* () {
         touches: evidence.touches,
         dirtyPaths: parseGitStatusPaths(status ?? ""),
         commits: [
-          ...parseGitLogWithFiles(ownLog ?? "", email).filter((commit) => commit.own),
-          ...parseGitLogWithFiles(allLog ?? "", email).filter((commit) => !commit.own),
+          ...own.commits,
+          ...(own.email === null
+            ? []
+            : parseGitLogWithFiles(allLog ?? "", own.email).filter((commit) => !commit.own)),
         ],
         unpushedShas: new Set((unpushed ?? "").split("\n").filter((sha) => sha !== "")),
         publishedAtMs: evidence.publishedAtMs,
@@ -366,12 +448,117 @@ const make = Effect.gen(function* () {
         entries: evidence.entries
           .filter((entry) => named.has(entry.id))
           .map(({ runs: _runs, ...entry }) => entry),
+        periods: changePeriods({
+          ownCommits: own.commits,
+          publishedAtMs: evidence.publishedAtMs,
+        }).map((period) => ({
+          key: period.key,
+          publishedAt: period.publishedAtMs === null ? null : iso(period.publishedAtMs),
+          startedAt: iso(period.commits[0]!.committedAtMs),
+          endedAt: iso(period.commits.at(-1)!.committedAtMs),
+          shas: period.commits.map((commit) => commit.sha).toReversed(),
+          items: digests.get(period.key)?.items ?? null,
+          labels: digests.get(period.key)?.labels ?? {},
+        })),
       };
     },
     Effect.mapError(failed("read")),
   );
 
-  return ProjectChangesService.of({ counts, read });
+  const summarizing = yield* Ref.make<ReadonlySet<ProjectId>>(new Set());
+
+  const summarize: ProjectChangesService["Service"]["summarize"] = Effect.fn(
+    "ProjectChangesService.summarize",
+  )(
+    function* ({ projectId }) {
+      const settings = yield* serverSettings.getSettings;
+      if (settings.threadReplySummariesEnabled !== true) return { summarized: 0 };
+      const project = yield* projects.getById(projectId);
+      if (Option.isNone(project)) return { summarized: 0 };
+      // A second window asking while the first is still writing must not pay for the same call.
+      const claimed = yield* Ref.modify(summarizing, (held) =>
+        held.has(projectId) ? [false, held] : [true, new Set([...held, projectId])],
+      );
+      if (!claimed) return { summarized: 0 };
+      return yield* Effect.gen(function* () {
+        const cwd = project.value.workspaceRoot;
+        const since = yield* historySince;
+        const [own, publishedAtMs, digests] = yield* Effect.all([
+          readOwnCommits(cwd, since),
+          readPublishes(projectId, since),
+          readDigests(projectId),
+        ]);
+        const periods = changePeriods({ ownCommits: own.commits, publishedAtMs });
+        const keys = periods.map((period) => period.key);
+        // A period's key moves with every commit, so the open period leaves old rows behind.
+        if (keys.length > 0) {
+          yield* sql`
+            DELETE FROM tide_change_digests
+            WHERE project_id = ${projectId} AND period_key NOT IN ${sql.in(keys)}
+          `;
+        }
+        const missing = periods
+          .filter((period) => !digests.has(period.key))
+          .slice(0, SUMMARIZE_PERIODS_MAX);
+        // Providers run in a working directory; a changelog must not read the checkout.
+        const scratch = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-changelog-" });
+        let summarized = 0;
+        for (const period of missing) {
+          const commits = period.commits.slice(-CHANGELOG_COMMITS_MAX).map((commit) => ({
+            sha: commit.sha,
+            subject: commit.subject,
+            body: commit.body,
+            files: commit.files.length,
+            folders: changelogFolders(commit.files),
+          }));
+          const generated = yield* textGeneration.generateTranscriptionPostProcessing({
+            cwd: scratch,
+            prompt: buildProjectChangelogPrompt(commits),
+            modelSelection: settings.threadReplySummaryModelSelection,
+          });
+          // The prompt numbers these commits, so the reply's numbers index the same list.
+          const parsed = parseProjectChangelog(generated.transcription, commits);
+          if (parsed === null) continue;
+          // Commits past the cap were never shown to the model; they still belong in the list.
+          const uncounted = period.commits.slice(0, -CHANGELOG_COMMITS_MAX);
+          const changelog =
+            uncounted.length === 0
+              ? parsed
+              : {
+                  ...parsed,
+                  items: [
+                    ...parsed.items,
+                    {
+                      title: "Earlier commits",
+                      summary: "",
+                      shas: uncounted.map((commit) => commit.sha),
+                    },
+                  ],
+                };
+          yield* sql`
+            INSERT INTO tide_change_digests (project_id, period_key, digest_json, generated_at)
+            VALUES (
+              ${projectId}, ${period.key}, ${yield* encodeDigest(changelog)},
+              ${DateTime.formatIso(yield* DateTime.now)}
+            )
+            ON CONFLICT (project_id, period_key) DO UPDATE SET
+              digest_json = excluded.digest_json,
+              generated_at = excluded.generated_at
+          `;
+          summarized += 1;
+        }
+        return { summarized };
+      }).pipe(
+        Effect.scoped,
+        Effect.ensuring(
+          Ref.update(summarizing, (held) => new Set([...held].filter((id) => id !== projectId))),
+        ),
+      );
+    },
+    Effect.mapError(failed("summarize")),
+  );
+
+  return ProjectChangesService.of({ counts, read, summarize });
 });
 
 export const layer = Layer.effect(ProjectChangesService, make);

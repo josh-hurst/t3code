@@ -1,19 +1,25 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { projectChangeTimeline } from "@t3tools/client-runtime/state/thread-entries";
+import { trailDayLabel } from "@t3tools/client-runtime/state/thread-zones";
 import type {
   EnvironmentId,
   ProjectChangeCommit,
   ProjectChangeEntry,
+  ProjectChangeItem,
+  ProjectChangePeriod,
   ProjectChangesResult,
   ProjectChangeTopic,
+  ProjectId,
   ScopedProjectRef,
   ThreadEntryId,
 } from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { useEffect, useEffectEvent, useState } from "react";
 
-import { useProjectChanges } from "../../state/threadEntries";
+import { refreshEntries, threadEntryAtoms, useProjectChanges } from "../../state/threadEntries";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatFullTimestamp, formatShortTimestamp } from "../../timestampFormat";
 import { Badge } from "../ui/badge";
@@ -161,8 +167,222 @@ function CommitRow(props: {
   );
 }
 
+/**
+ * A commit under its change: the few words saying what it did, not its subject, which mostly
+ * repeats the change's title. The subject is on hover.
+ */
+function ChangeCommitRow(props: {
+  commit: ProjectChangeCommit;
+  label: string | undefined;
+  /** Only where a change holds both pushed and unpushed commits; else its own row says it. */
+  showNotPushed: boolean;
+  timestampFormat: TimestampFormat;
+}) {
+  const { commit } = props;
+  return (
+    <li className="flex min-w-0 items-baseline gap-3 rounded-md px-2 py-1 hover:bg-accent/50">
+      <time
+        dateTime={commit.committedAt}
+        className="w-16 shrink-0 text-xs text-secondary-label tabular-nums"
+      >
+        {formatShortTimestamp(commit.committedAt, props.timestampFormat)}
+      </time>
+      <Tooltip>
+        <TooltipTrigger
+          render={<span className="min-w-0 flex-1 truncate text-sm text-foreground/90" />}
+        >
+          {props.label ?? commit.subject}
+        </TooltipTrigger>
+        <TooltipPopup side="top">{commit.subject}</TooltipPopup>
+      </Tooltip>
+      {props.showNotPushed && !commit.pushed ? (
+        <Badge variant="warning" size="sm">
+          Not pushed
+        </Badge>
+      ) : null}
+      <span className="shrink-0 text-xs text-secondary-label tabular-nums">
+        <span className="font-mono">{commit.sha.slice(0, 7)}</span> · {plural(commit.files, "file")}
+      </span>
+    </li>
+  );
+}
+
+/** One piece of work: what changed, and on a click the commits that carry it. */
+function ChangeItemRow(props: {
+  item: ProjectChangeItem;
+  commits: ReadonlyMap<string, ProjectChangeCommit>;
+  labels: Readonly<Record<string, string>>;
+  timestampFormat: TimestampFormat;
+}) {
+  const [open, setOpen] = useState(false);
+  const commits = props.item.shas.flatMap((sha) => props.commits.get(sha) ?? []);
+  const mixed = commits.some((commit) => commit.pushed) && commits.some((commit) => !commit.pushed);
+  return (
+    <li className="flex min-w-0 flex-col">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex w-full min-w-0 cursor-pointer items-baseline gap-3 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      >
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate text-sm font-medium text-foreground">
+              {props.item.title}
+            </span>
+            {commits.some((commit) => !commit.pushed) ? (
+              <Badge variant="warning" size="sm">
+                Not pushed
+              </Badge>
+            ) : null}
+          </span>
+          {props.item.summary === "" ? null : (
+            <span className="line-clamp-2 min-w-0 text-xs text-secondary-label">
+              {props.item.summary}
+            </span>
+          )}
+        </span>
+        <span className="shrink-0 text-xs text-secondary-label tabular-nums">
+          {plural(props.item.shas.length, "commit")}
+        </span>
+      </button>
+      {open ? (
+        <ul className="ms-2 flex flex-col border-l border-border ps-1">
+          {commits.map((commit) => (
+            <ChangeCommitRow
+              key={commit.sha}
+              commit={commit}
+              label={props.labels[commit.sha]}
+              showNotPushed={mixed}
+              timestampFormat={props.timestampFormat}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+function periodTitle(
+  period: ProjectChangePeriod,
+  context: {
+    readonly everPublished: boolean;
+    readonly now: number;
+    readonly timestampFormat: TimestampFormat;
+  },
+): string {
+  if (period.publishedAt !== null) {
+    // The time too: two publishes on one day are two periods.
+    const day = trailDayLabel(Date.parse(period.publishedAt), context.now);
+    return `Published ${day}, ${formatShortTimestamp(period.publishedAt, context.timestampFormat)}`;
+  }
+  if (context.everPublished) return "Since the last publish";
+  const from = trailDayLabel(Date.parse(period.startedAt), context.now);
+  const to = trailDayLabel(Date.parse(period.endedAt), context.now);
+  return from === to ? from : `${from} – ${to}`;
+}
+
+/**
+ * The owner's commits as a changelog: a few changes per publish, each saying what changed.
+ * A period not yet summarized lists its commits and asks the server to write its changelog.
+ */
+function Changelog(props: {
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+  changes: ProjectChangesResult;
+  periods: ReadonlyArray<ProjectChangePeriod>;
+  entries: EntryLookup;
+  timestampFormat: TimestampFormat;
+  now: number;
+}) {
+  const { environmentId, projectId } = props;
+  const summarize = useAtomCommand(threadEntryAtoms.summarizeProjectChanges, {
+    reportFailure: false,
+  });
+  const canSummarize = useAtomValue(
+    threadEntryAtoms.summarizeProjectChanges.permissionAtom(environmentId),
+  );
+  const missing = props.periods
+    .filter((period) => period.items === null)
+    .map((period) => period.key)
+    .join("\n");
+  // The set of missing periods the server has answered for; until then they read "summarizing".
+  const [answered, setAnswered] = useState<string | null>(null);
+  const summarizing = missing !== "" && canSummarize && answered !== missing;
+  const requestSummaries = useEffectEvent(() => {
+    const askedFor = missing;
+    void summarize({ environmentId, input: { projectId } }).then((result) => {
+      setAnswered(askedFor);
+      if (result._tag === "Success" && result.value.summarized > 0) {
+        refreshEntries([environmentId]);
+      }
+    });
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the server to write the changelog of periods that have none; a server with summaries off writes none, so this never repeats
+  useEffect(() => {
+    if (missing !== "" && canSummarize) requestSummaries();
+  }, [missing, canSummarize]);
+
+  const commits = new Map(props.changes.commits.map((commit) => [commit.sha, commit]));
+  const others = props.changes.commits.filter((commit) => !commit.own);
+  const otherAuthors = [...new Set(others.map((commit) => commit.author))];
+  return (
+    <>
+      {props.periods.map((period) => (
+        <Section
+          key={period.key}
+          title={periodTitle(period, {
+            everPublished: props.changes.publishes.length > 0,
+            now: props.now,
+            timestampFormat: props.timestampFormat,
+          })}
+          note={
+            period.items === null && summarizing
+              ? `${plural(period.shas.length, "commit")} · summarizing…`
+              : plural(period.shas.length, "commit")
+          }
+        >
+          <ul className="flex flex-col">
+            {period.items === null
+              ? period.shas.flatMap((sha) => {
+                  const commit = commits.get(sha);
+                  return commit === undefined
+                    ? []
+                    : [
+                        <CommitRow
+                          key={sha}
+                          environmentId={environmentId}
+                          commit={commit}
+                          entries={props.entries}
+                          timestampFormat={props.timestampFormat}
+                        />,
+                      ];
+                })
+              : period.items.map((item) => (
+                  <ChangeItemRow
+                    key={`${item.title}:${item.shas[0]}`}
+                    item={item}
+                    commits={commits}
+                    labels={period.labels ?? {}}
+                    timestampFormat={props.timestampFormat}
+                  />
+                ))}
+          </ul>
+        </Section>
+      ))}
+      {others.length > 0 ? (
+        <p className="px-2 pt-3 text-xs text-secondary-label/70">
+          Plus {plural(others.length, "commit")} by {otherAuthors.slice(0, 3).join(", ")}
+          {otherAuthors.length > 3 ? " and others" : ""} in the last 30 days.
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function ProjectChanges(props: {
   environmentId: EnvironmentId;
+  projectId: ProjectId;
   changes: ProjectChangesResult;
   timestampFormat: TimestampFormat;
   now: number;
@@ -176,6 +396,8 @@ function ProjectChanges(props: {
     );
   }
   const entries: EntryLookup = new Map(changes.entries.map((entry) => [entry.id, entry]));
+  // A server that predates changelogs sends no periods; its commits are listed by day.
+  const periods = changes.periods;
   const days = projectChangeTimeline(changes, props.now);
   const published = changes.sincePublish;
   return (
@@ -222,44 +444,56 @@ function ProjectChanges(props: {
         </Section>
       ) : null}
 
-      {days.map((day, index) => (
-        <Section key={day.label} title={day.label} note={index === 0 ? "Commits" : ""}>
-          <ul className="flex flex-col">
-            {day.rows.map((row) =>
-              row.kind === "commit" ? (
-                <CommitRow
-                  key={row.commit.sha}
-                  environmentId={props.environmentId}
-                  commit={row.commit}
-                  entries={entries}
-                  timestampFormat={props.timestampFormat}
-                />
-              ) : row.kind === "publish" ? (
-                <li
-                  key={`publish:${row.at}`}
-                  className="flex items-center gap-3 px-2 py-1.5 text-xs font-medium text-success-foreground"
-                >
-                  <time dateTime={row.at} className="w-16 shrink-0 tabular-nums">
-                    {formatShortTimestamp(row.at, props.timestampFormat)}
-                  </time>
-                  <span>Published</span>
-                  <span aria-hidden className="h-px flex-1 bg-success/30" />
-                </li>
-              ) : (
-                <li
-                  key={`others:${row.sha}`}
-                  className="flex gap-3 px-2 py-1 text-xs text-secondary-label/70"
-                >
-                  <span aria-hidden className="w-16 shrink-0" />
-                  <span className="min-w-0 truncate">
-                    {plural(row.count, "commit")} by {row.authors.join(", ")}
-                  </span>
-                </li>
-              ),
-            )}
-          </ul>
-        </Section>
-      ))}
+      {periods !== undefined && periods.length > 0 ? (
+        <Changelog
+          environmentId={props.environmentId}
+          projectId={props.projectId}
+          changes={changes}
+          periods={periods}
+          entries={entries}
+          timestampFormat={props.timestampFormat}
+          now={props.now}
+        />
+      ) : (
+        days.map((day, index) => (
+          <Section key={day.label} title={day.label} note={index === 0 ? "Commits" : ""}>
+            <ul className="flex flex-col">
+              {day.rows.map((row) =>
+                row.kind === "commit" ? (
+                  <CommitRow
+                    key={row.commit.sha}
+                    environmentId={props.environmentId}
+                    commit={row.commit}
+                    entries={entries}
+                    timestampFormat={props.timestampFormat}
+                  />
+                ) : row.kind === "publish" ? (
+                  <li
+                    key={`publish:${row.at}`}
+                    className="flex items-center gap-3 px-2 py-1.5 text-xs font-medium text-success-foreground"
+                  >
+                    <time dateTime={row.at} className="w-16 shrink-0 tabular-nums">
+                      {formatShortTimestamp(row.at, props.timestampFormat)}
+                    </time>
+                    <span>Published</span>
+                    <span aria-hidden className="h-px flex-1 bg-success/30" />
+                  </li>
+                ) : (
+                  <li
+                    key={`others:${row.sha}`}
+                    className="flex gap-3 px-2 py-1 text-xs text-secondary-label/70"
+                  >
+                    <span aria-hidden className="w-16 shrink-0" />
+                    <span className="min-w-0 truncate">
+                      {plural(row.count, "commit")} by {row.authors.join(", ")}
+                    </span>
+                  </li>
+                ),
+              )}
+            </ul>
+          </Section>
+        ))
+      )}
       {days.length === 0 && changes.uncommitted.files === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">
           Nothing uncommitted and no commits in the last 30 days.
@@ -271,7 +505,7 @@ function ProjectChanges(props: {
 
 /**
  * What each project's root checkout holds that is not committed, pushed or published, by topic,
- * then its commits by day with the publishes between them.
+ * then a changelog of its commits for each publish.
  */
 export function ProjectChangesView(props: {
   refs: ReadonlyArray<ScopedProjectRef>;
@@ -293,6 +527,7 @@ export function ProjectChangesView(props: {
           <ProjectChanges
             key={`${project.environmentId}:${project.projectId}`}
             environmentId={project.environmentId}
+            projectId={project.projectId}
             changes={project.changes}
             timestampFormat={props.timestampFormat}
             now={props.now}

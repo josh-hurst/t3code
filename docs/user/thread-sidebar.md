@@ -234,10 +234,11 @@ the project when nothing in it is waiting.
 
 ### Changes not out yet
 
-A **Changes** row under **New thread** names each project you worked in lately whose main
-checkout holds work that is not out: the number of uncommitted files, then **↑** and the number
-of commits on no remote. The numbers come from Git and can trail a commit or a push by half a
-minute. Click a project to open its [Changes](#history-every-topic). Thread rows carry no
+A **Changes** section under **New thread** lists each project you worked in lately whose main
+checkout holds work that is not out, one row a project: its uncommitted files, then **↑** and
+its commits on no remote. The numbers come from Git and can trail a commit or a push by half a
+minute. Click the heading to fold the section away.
+Click a project to open its [Changes](#history-every-topic). Thread rows carry no
 publish, commit or check label: an agent that cannot go on until you do something raises it as
 a question, which puts the thread in Needs you.
 
@@ -409,8 +410,12 @@ whose summary changed since; re-checks it started stay started. An agent you tel
 published" marks it for you. History and Mark published need a server that keeps topics.
 
 **Changes**, with a project chosen, shows what that project's main checkout holds that is not
-out yet: uncommitted files by topic, what changed since the last publish, then its commits by
-day with **Not pushed** on those on no remote and a **Published** line at each publish.
+out yet: uncommitted files by topic, what changed since the last publish, then a changelog of
+your commits for each publish. A changelog groups commits that belong to one piece of work
+into one item that says what changed; click an item for its commits, each with a few words
+on what it did (hover for its full subject), and **Not pushed** marks work on no remote. A project never marked published gets one changelog per week. Changelogs
+are written by the summary model, one call per publish, when you open the view; with
+**Summarize latest reply** off, the commits are listed as they are.
 Threads working in their own worktrees are left out. File and commit counts come from Git.
 The topic a file sits under is the last thread known to have changed it, which can be wrong
 when several threads work in one checkout at once. The sidebar's [Changes](#changes-not-out-yet) row opens here.

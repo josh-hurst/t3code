@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   assembleTouches,
   buildProjectChanges,
+  changePeriods,
   type ChangeTouch,
   type GitCommitFacts,
   parseGitLogWithFiles,
@@ -29,6 +30,7 @@ const commit = (
 ): GitCommitFacts => ({
   sha,
   subject: sha,
+  body: "",
   author: own ? "Owner" : "Friend",
   own,
   committedAtMs: hour * HOUR,
@@ -161,14 +163,48 @@ describe("assembleTouches", () => {
   });
 });
 
+describe("changePeriods", () => {
+  it("cuts the owner's commits at each publish, newest period first", () => {
+    const periods = changePeriods({
+      ownCommits: [commit("c3", 9, []), commit("c1", 1, []), commit("c2", 2, [])],
+      publishedAtMs: [3 * HOUR, 4 * HOUR],
+    });
+    expect(
+      periods.map((period) => [period.publishedAtMs, period.commits.map((c) => c.sha)]),
+    ).toEqual([
+      [null, ["c3"]],
+      [3 * HOUR, ["c1", "c2"]],
+    ]);
+    // Another commit in the open period is another set, so its stored changelog no longer fits.
+    const grown = changePeriods({
+      ownCommits: [commit("c3", 9, []), commit("c4", 10, [])],
+      publishedAtMs: [3 * HOUR],
+    });
+    expect(grown[0]!.key).not.toBe(periods[0]!.key);
+  });
+
+  it("cuts a project never marked published by week", () => {
+    // Hour 0 is a Thursday, so day 4 is the first Monday.
+    const periods = changePeriods({
+      ownCommits: [commit("thu", 0, []), commit("sun", 3 * 24, []), commit("mon", 4 * 24, [])],
+      publishedAtMs: [],
+    });
+    expect(periods.map((period) => period.commits.map((c) => c.sha))).toEqual([
+      ["mon"],
+      ["thu", "sun"],
+    ]);
+    expect(periods.every((period) => period.publishedAtMs === null)).toBe(true);
+  });
+});
+
 describe("git output", () => {
-  it("reads log records with their files, marking the checkout's own author", () => {
+  it("reads log records with their bodies and files, marking the checkout's own author", () => {
     const stdout = [
-      "\x1eaaa\x1f1700000000\x1fOwner\x1fOwner@Example.com\x1ffix: a | b",
-      "",
+      "\x1eaaa\x1f1700000000\x1fOwner\x1fOwner@Example.com\x1ffix: a | b\x1fWhy it broke.\n\nTwo lines.\n\x1d",
       "src/a.ts",
       "src/b c.ts",
       "",
+      // Another author's commits are read without a body or files.
       "\x1ebbb\x1f1700003600\x1fFriend\x1ffriend@example.com\x1fmaps",
       "",
     ].join("\n");
@@ -176,6 +212,7 @@ describe("git output", () => {
       {
         sha: "aaa",
         subject: "fix: a | b",
+        body: "Why it broke.\n\nTwo lines.",
         author: "Owner",
         own: true,
         committedAtMs: 1_700_000_000_000,
@@ -184,6 +221,7 @@ describe("git output", () => {
       {
         sha: "bbb",
         subject: "maps",
+        body: "",
         author: "Friend",
         own: false,
         committedAtMs: 1_700_003_600_000,

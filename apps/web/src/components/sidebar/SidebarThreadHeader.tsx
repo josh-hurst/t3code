@@ -1,9 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { useGT } from "gt-react";
 import {
   ArrowUpIcon,
   BellDotIcon,
   FolderPlusIcon,
+  GitCommitHorizontalIcon,
   SearchIcon,
   SquarePenIcon,
   XIcon,
@@ -18,7 +20,10 @@ import {
 } from "react";
 
 import { cn } from "~/lib/utils";
+import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { Button } from "../ui/button";
+import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { SidebarBrand } from "./SidebarBrand";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -26,6 +31,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 export interface SidebarChangedProject {
   readonly projectKey: string;
   readonly name: string;
+  readonly icon: ProjectFaviconProject | null;
   readonly uncommittedFiles: number;
   readonly unpushedCommits: number;
 }
@@ -209,70 +215,102 @@ export function SidebarThreadHeader({
           onShowAllProjects={onShowAllProjects}
         />
       ) : null}
-      {changedProjects.length > 0 ? <SidebarChangesStrip projects={changedProjects} /> : null}
+      {changedProjects.length > 0 ? <SidebarChangesSection projects={changedProjects} /> : null}
     </div>
   );
 }
 
+// A folder of untracked output can hold tens of thousands of files; the tooltip has the count.
+const compactCount = (count: number) =>
+  count < 1_000 ? `${count}` : `${Math.floor(count / 100) / 10}k`;
+
 /**
- * Each project's uncommitted files and unpushed commits, read from Git. They sit here, per
- * project, and not on thread rows; each opens the project's changes in History.
+ * Each project's uncommitted files and unpushed commits, read from Git, one row a project in
+ * the sidebar's own section shape. They sit here, per project, and not on thread rows; a row
+ * opens the project's changes in History.
  */
-function SidebarChangesStrip(props: { projects: ReadonlyArray<SidebarChangedProject> }) {
+function SidebarChangesSection(props: { projects: ReadonlyArray<SidebarChangedProject> }) {
   const navigate = useNavigate();
+  const [expanded, setExpanded] = useLocalStorage("sidebar_changes_expanded", true, Schema.Boolean);
   return (
-    // The row's inset is the thread rows'; each button is pulled back by its own padding so a
-    // name on a wrapped line starts at that inset too.
-    <div className="flex min-h-7 min-w-0 flex-wrap items-center gap-x-2.5 ps-3 pe-1 text-xs text-sidebar-muted-foreground">
-      <span className="shrink-0">Changes</span>
-      {props.projects.map((project) => {
-        const summary = [
-          project.uncommittedFiles > 0
-            ? `${project.uncommittedFiles} ${project.uncommittedFiles === 1 ? "file" : "files"} uncommitted`
-            : null,
-          project.unpushedCommits > 0
-            ? `${project.unpushedCommits} ${project.unpushedCommits === 1 ? "commit" : "commits"} not pushed`
-            : null,
-        ]
-          .filter((part) => part !== null)
-          .join(", ");
-        return (
-          <span key={project.projectKey} className="-ms-1.5 flex min-w-0">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="micro"
-                    variant="ghost-muted"
-                    aria-label={`${project.name}: ${summary}. Show its changes`}
-                    onClick={() =>
-                      void navigate({
-                        to: "/history",
-                        search: { project: project.projectKey, view: "changes" },
-                      })
+    <div className="flex flex-col">
+      {/* The header's own padding plus this margin lands its label on the rows' inset. */}
+      <div className="mx-1">
+        <CollapsibleSectionHeader
+          expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+          accessory={<span className="font-normal tabular-nums">{props.projects.length}</span>}
+        >
+          {/* Shelf headers lead with an icon only in the frameless sidebar. */}
+          <GitCommitHorizontalIcon
+            aria-hidden
+            className="me-1.5 hidden size-3.5 align-[-0.15rem] group-data-[variant=frameless]:inline"
+          />
+          Changes
+        </CollapsibleSectionHeader>
+      </div>
+      {expanded ? (
+        <ul className="flex flex-col">
+          {props.projects.map((project) => {
+            const summary = [
+              project.uncommittedFiles > 0
+                ? `${project.uncommittedFiles} ${project.uncommittedFiles === 1 ? "file" : "files"} uncommitted`
+                : null,
+              project.unpushedCommits > 0
+                ? `${project.unpushedCommits} ${project.unpushedCommits === 1 ? "commit" : "commits"} not pushed`
+                : null,
+            ]
+              .filter((part) => part !== null)
+              .join(", ");
+            return (
+              <li key={project.projectKey}>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <SidebarMenuButton
+                        type="button"
+                        size="sm"
+                        aria-label={`${project.name}: ${summary}. Show its changes`}
+                        onClick={() =>
+                          void navigate({
+                            to: "/history",
+                            search: { project: project.projectKey, view: "changes" },
+                          })
+                        }
+                      />
                     }
-                  />
-                }
-              >
-                <span className="max-w-28 truncate">{project.name}</span>
-                {project.uncommittedFiles > 0 ? (
-                  <span className="font-medium text-sidebar-foreground tabular-nums">
-                    {project.uncommittedFiles}
-                  </span>
-                ) : null}
-                {project.unpushedCommits > 0 ? (
-                  <span className="flex items-center font-medium text-sidebar-foreground tabular-nums">
-                    <ArrowUpIcon aria-hidden className="size-3" />
-                    {project.unpushedCommits}
-                  </span>
-                ) : null}
-              </TooltipTrigger>
-              <TooltipPopup side="top">{summary}</TooltipPopup>
-            </Tooltip>
-          </span>
-        );
-      })}
+                  >
+                    {/* The icon sits as close to its name as on a thread row. */}
+                    <span className="flex min-w-0 flex-1 items-center gap-1">
+                      {project.icon ? (
+                        <span className="flex shrink-0">
+                          <ProjectFavicon project={project.icon} className="size-3" />
+                        </span>
+                      ) : null}
+                      <span className="min-w-0 truncate">{project.name}</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2 font-normal tabular-nums">
+                      {project.uncommittedFiles > 0 ? (
+                        <span>
+                          {compactCount(project.uncommittedFiles)}{" "}
+                          {project.uncommittedFiles === 1 ? "file" : "files"}
+                        </span>
+                      ) : null}
+                      {project.unpushedCommits > 0 ? (
+                        <span className="flex items-center">
+                          <ArrowUpIcon aria-hidden className="size-3" />
+                          {compactCount(project.unpushedCommits)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipPopup side="right">{summary}</TooltipPopup>
+                </Tooltip>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
     </div>
   );
 }

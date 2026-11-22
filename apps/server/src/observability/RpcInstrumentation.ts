@@ -34,6 +34,7 @@ const RPC_AGGREGATES = {
   [ORCHESTRATION_V2_WS_METHODS.listEntries]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.getOpenItemCounts]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.getProjectChanges]: "orchestration",
+  [ORCHESTRATION_V2_WS_METHODS.summarizeProjectChanges]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.markPublished]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.undoPublished]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.refreshOpenItems]: "orchestration",

@@ -127,6 +127,7 @@ describe("runMigrations", () => {
         after.filter((name) => !before.includes(name)),
         [
           "t3_fork_migrations",
+          "tide_change_digests",
           "tide_publish_markers",
           "tide_publish_markers_project_idx",
           "tide_thread_contents",

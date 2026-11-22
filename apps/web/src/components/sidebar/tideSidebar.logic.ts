@@ -319,7 +319,7 @@ export function resolveTideRowLead(
   if (workingLine !== null) return { lead: null, text: workingLine, running };
   const question = threadCardQuestionLabel(thread.card);
   return {
-    lead: question === null ? null : { kind: "owed", word: question },
+    lead: question === null ? null : { kind: "status", tone: "question", word: question },
     text: line(false),
     running,
   };

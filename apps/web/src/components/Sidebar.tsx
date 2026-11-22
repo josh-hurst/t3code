@@ -1516,7 +1516,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const changes = projectChangeCounts(openItemCounts, group.memberProjectRefs);
     return changes.uncommittedFiles === 0 && changes.unpushedCommits === 0
       ? []
-      : [{ projectKey: group.projectKey, name: group.displayName, ...changes }];
+      : [{ projectKey: group.projectKey, name: group.displayName, icon: group, ...changes }];
   });
   const scopedProjectRefs = scopedProjectGroups.flatMap((project) => project.memberProjectRefs);
   const scopedProjectKeys = revealWidensScope

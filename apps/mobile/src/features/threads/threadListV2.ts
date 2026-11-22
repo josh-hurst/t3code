@@ -19,7 +19,6 @@ import {
   sortNeedsYouThreads,
   sortTrailThreads,
   splitTrail,
-  threadCardQuestionLabel,
   threadCardRowLine,
   threadLaterLead,
   threadRowLineText,
@@ -1007,8 +1006,8 @@ function sortSettledThreadsReusingLast(
 }
 
 /**
- * A slim row in the self-filing list: the outcome, after Question when one was left. A Later row
- * leads with what it waits for instead, such as "Re-check 2 of 3" and its reason.
+ * A slim row in the self-filing list: the outcome (the row draws its own Done or Question lead).
+ * A Later row leads with what it waits for instead, such as "Re-check 2 of 3" and its reason.
  */
 function slimRowLine(
   thread: EnvironmentThreadShell,
@@ -1016,10 +1015,7 @@ function slimRowLine(
 ): string | null {
   const lead = later === null ? null : threadLaterLead(thread, later);
   const line = threadCardRowLine(thread.card, { needsYou: false });
-  return lead === null
-    ? // The row draws a Trail row's green Done lead itself.
-      threadRowLineText({ owed: threadCardQuestionLabel(thread.card), line })
-    : threadRowLineText({ owed: lead.word, line: lead.text ?? line });
+  return lead === null ? line : threadRowLineText({ owed: lead.word, line: lead.text ?? line });
 }
 
 /** The project a slim row names above its title, unless the list is scoped to one. */

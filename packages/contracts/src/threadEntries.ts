@@ -236,6 +236,49 @@ export const ProjectChangeEntry = Schema.Struct({
 });
 export type ProjectChangeEntry = typeof ProjectChangeEntry.Type;
 
+export const PROJECT_CHANGE_TITLE_MAX = 60;
+export const PROJECT_CHANGE_SUMMARY_MAX = 200;
+export const PROJECT_CHANGE_COMMIT_LABEL_MAX = 80;
+
+/** One piece of work in a changelog: what changed, and the commits that carry it. */
+export const ProjectChangeItem = Schema.Struct({
+  title: Schema.String.check(Schema.isMaxLength(PROJECT_CHANGE_TITLE_MAX)),
+  summary: Schema.String.check(Schema.isMaxLength(PROJECT_CHANGE_SUMMARY_MAX)),
+  shas: Schema.Array(TrimmedNonEmptyString),
+});
+export type ProjectChangeItem = typeof ProjectChangeItem.Type;
+
+/**
+ * The owner's commits between two publishes, or in one week of a project never marked
+ * published. `key` names exactly that set of commits, so a stored changelog is never shown for
+ * another.
+ */
+export const ProjectChangePeriod = Schema.Struct({
+  key: TrimmedNonEmptyString,
+  /** The publish that closed the period; null while it is still open, and for a week. */
+  publishedAt: Schema.NullOr(IsoDateTime),
+  startedAt: IsoDateTime,
+  endedAt: IsoDateTime,
+  /** Newest first. */
+  shas: Schema.Array(TrimmedNonEmptyString),
+  /** Null until the period has been summarized. */
+  items: Schema.NullOr(Schema.Array(ProjectChangeItem)),
+  /**
+   * What each commit did, by commit id, in a few words that do not repeat its change's title.
+   * A commit without one is shown by its subject.
+   */
+  labels: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      Schema.String.check(Schema.isMaxLength(PROJECT_CHANGE_COMMIT_LABEL_MAX)),
+    ),
+  ),
+});
+export type ProjectChangePeriod = typeof ProjectChangePeriod.Type;
+
+export const SummarizeProjectChangesResult = Schema.Struct({ summarized: NonNegativeInt });
+export type SummarizeProjectChangesResult = typeof SummarizeProjectChangesResult.Type;
+
 /**
  * What a project's root checkout holds that is not committed, pushed or published, and its
  * recent commits. File and commit totals come from Git and are exact; the topic a file is
@@ -259,6 +302,8 @@ export const ProjectChangesResult = Schema.Struct({
   /** Newest first. */
   publishes: Schema.Array(IsoDateTime),
   entries: Schema.Array(ProjectChangeEntry),
+  /** Newest first. Absent from a server that predates changelogs. */
+  periods: Schema.optional(Schema.Array(ProjectChangePeriod)),
 });
 export type ProjectChangesResult = typeof ProjectChangesResult.Type;
 

@@ -2077,6 +2077,15 @@ const WsOrchestrationV2GetProjectChangesRpc = Rpc.make(
   },
 );
 
+const WsOrchestrationV2SummarizeProjectChangesRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.summarizeProjectChanges,
+  {
+    payload: OrchestrationV2RpcSchemas.summarizeProjectChanges.input,
+    success: OrchestrationV2RpcSchemas.summarizeProjectChanges.output,
+    error: Schema.Union([ThreadContentsError, EnvironmentAuthorizationError]),
+  },
+);
+
 const WsOrchestrationV2MarkPublishedRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.markPublished, {
   payload: OrchestrationV2RpcSchemas.markPublished.input,
   success: OrchestrationV2RpcSchemas.markPublished.output,
@@ -2592,6 +2601,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2ListEntriesRpc,
   WsOrchestrationV2GetOpenItemCountsRpc,
   WsOrchestrationV2GetProjectChangesRpc,
+  WsOrchestrationV2SummarizeProjectChangesRpc,
   WsOrchestrationV2MarkPublishedRpc,
   WsOrchestrationV2UndoPublishedRpc,
   WsOrchestrationV2RefreshOpenItemsRpc,

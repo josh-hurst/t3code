@@ -76,6 +76,7 @@ describe("RPC authorization scopes", () => {
     for (const method of [
       ORCHESTRATION_V2_WS_METHODS.startContentsBackfill,
       ORCHESTRATION_V2_WS_METHODS.cancelContentsBackfill,
+      ORCHESTRATION_V2_WS_METHODS.summarizeProjectChanges,
     ]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
     }

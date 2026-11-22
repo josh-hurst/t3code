@@ -45,6 +45,8 @@ import {
   AUTO_SETTLE_SOON_MS,
   threadAutoSettleAt,
   threadCardQuestionLabel,
+  threadLaterLead,
+  threadRowLineText,
   threadWorkingLine,
 } from "@t3tools/client-runtime/state/thread-zones";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
@@ -1212,6 +1214,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     statusEntry === DONE_STATUS_LABEL &&
     !showsWoke &&
     (variant === "card" || (!snoozedRow && thread.settledOverride !== "settled"));
+  const hasLaterLead = snoozedRow && threadLaterLead(thread, { recheckLimit: null }) !== null;
+  const showsQuestion =
+    props.selfFiling === true &&
+    !showsDone &&
+    !hasLaterLead &&
+    statusEntry === QUESTION_STATUS_LABEL;
   const isRegeneratingTitle = thread.titleRegeneration != null;
   // List items keep marked text so they stay the same objects across a language switch.
   const timeLabel = props.timeLabel && m(props.timeLabel);
@@ -2200,6 +2208,31 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     </View>
   );
 
+  const slimLead = showsDone
+    ? {
+        icon: DONE_STATUS_LABEL.icon,
+        iconTintClassName: selected
+          ? selectedThreadRowColors.iconTintClassName
+          : DONE_STATUS_LABEL.iconTintClassName,
+        className: selected
+          ? selectedThreadRowColors.foregroundClassName
+          : DONE_STATUS_LABEL.className,
+        label: gt("Done", { $context: "thread status, turn finished" }),
+      }
+    : showsQuestion && statusLabel
+      ? {
+          icon: statusLabel.icon,
+          iconTintClassName: selected
+            ? selectedThreadRowColors.iconTintClassName
+            : statusLabel.iconTintClassName,
+          className: selected ? selectedThreadRowColors.foregroundClassName : statusLabel.className,
+          label: statusLabel.label,
+        }
+      : null;
+  const slimLine = showsDone
+    ? threadRowLineText({ owed: threadCardQuestionLabel(thread.card), line: cardLine })
+    : cardLine;
+
   const fadedCardContent = recede ? (
     <View style={{ opacity: 0.55 }}>{cardContent}</View>
   ) : (
@@ -2293,25 +2326,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </Text>
             {slimTrailing}
           </View>
-          {cardLine || showsDone ? (
+          {slimLine || slimLead ? (
             // Takes the provider line's place.
             <View className="mt-0.5">
               <ThreadRowStatusLine
-                lead={
-                  showsDone
-                    ? {
-                        icon: DONE_STATUS_LABEL.icon,
-                        iconTintClassName: selected
-                          ? selectedThreadRowColors.iconTintClassName
-                          : DONE_STATUS_LABEL.iconTintClassName,
-                        className: selected
-                          ? selectedThreadRowColors.foregroundClassName
-                          : DONE_STATUS_LABEL.className,
-                        label: gt("Done", { $context: "thread status, turn finished" }),
-                      }
-                    : null
-                }
-                text={cardLine}
+                lead={slimLead}
+                text={slimLine}
                 textClassName={
                   selected
                     ? selectedThreadRowColors.mutedForegroundClassName

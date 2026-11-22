@@ -4,15 +4,16 @@ An eval runs a real model against T3 Code's real text or code and scores what th
 
 Write or run an eval when a change affects what a model sees or does: agent instructions, MCP tool descriptions and schemas, tool results, generated titles, or the guidance an agent gets for a feature such as Device Manager.
 
-| Eval                                | Measures                                                                                             |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| [mcp-tool-use](mcp-tool-use/)       | Whether agents use T3's MCP tools correctly, including device routing and recovery, in fake threads. |
-| [thread-titles](thread-titles/)     | Whether generated thread titles name the right subject.                                              |
-| [pr-content](pr-content/)           | Whether PR generation describes the diff when project instructions try to redirect it.               |
-| [voice-cleanup](voice-cleanup/)     | Whether optional dictation cleanup edits only the spoken text and preserves its meaning.             |
-| [reply-summaries](reply-summaries/) | Whether thread cards keep a reply's detail and state, list only what it leaves open, and file runs.  |
-| [topic-regroup](topic-regroup/)     | Whether a long thread's runs are grouped into the topics a person would look for.                    |
-| [test-signal](test-signal/)         | Whether a cheap model running the test-signal check flags low-signal tests.                          |
+| Eval                                    | Measures                                                                                             |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| [mcp-tool-use](mcp-tool-use/)           | Whether agents use T3's MCP tools correctly, including device routing and recovery, in fake threads. |
+| [thread-titles](thread-titles/)         | Whether generated thread titles name the right subject.                                              |
+| [pr-content](pr-content/)               | Whether PR generation describes the diff when project instructions try to redirect it.               |
+| [voice-cleanup](voice-cleanup/)         | Whether optional dictation cleanup edits only the spoken text and preserves its meaning.             |
+| [reply-summaries](reply-summaries/)     | Whether thread cards keep a reply's detail and state, list only what it leaves open, and file runs.  |
+| [project-changelog](project-changelog/) | Whether a publish's commits become a few changes that each say what changed.                         |
+| [topic-regroup](topic-regroup/)         | Whether a long thread's runs are grouped into the topics a person would look for.                    |
+| [test-signal](test-signal/)             | Whether a cheap model running the test-signal check flags low-signal tests.                          |
 
 ## Run an eval
 

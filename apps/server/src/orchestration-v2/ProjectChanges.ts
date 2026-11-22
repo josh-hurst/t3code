@@ -18,6 +18,7 @@ export interface ChangeTouch {
 export interface GitCommitFacts {
   readonly sha: string;
   readonly subject: string;
+  readonly body: string;
   readonly author: string;
   /** Made by this checkout's own git user; another author's commit carries no topic. */
   readonly own: boolean;
@@ -223,8 +224,9 @@ export function projectChangeEntryIds(
 }
 
 /**
- * Splits `git log --format=%x1e<fields joined by %x1f> [--name-only]` output. A record is its
- * header line, then one path per line. With no `ownEmail` every commit counts as the owner's.
+ * Splits `git log --format=%x1e<fields joined by %x1f>[%x1d] [--name-only]` output. A record is
+ * its fields, the last of them the body when the format asks for one, then after `%x1d` one path
+ * per line. With no `ownEmail` every commit counts as the owner's.
  */
 export function parseGitLogWithFiles(
   stdout: string,
@@ -232,20 +234,69 @@ export function parseGitLogWithFiles(
 ): Array<GitCommitFacts> {
   const commits: Array<GitCommitFacts> = [];
   for (const record of stdout.split("\x1e")) {
-    const [header, ...rest] = record.split("\n");
-    const [sha, committedAt, author, email, subject] = (header ?? "").split("\x1f");
+    const [head = "", names = ""] = record.split("\x1d");
+    const [sha, committedAt, author, email, subject, body] = head.split("\x1f");
     const committedAtMs = Number(committedAt) * 1_000;
     if (!sha || !Number.isFinite(committedAtMs)) continue;
     commits.push({
       sha,
-      subject: subject ?? "",
+      subject: (subject ?? "").trim(),
+      body: (body ?? "").trim(),
       author: author ?? "",
       own: ownEmail === null || email?.toLowerCase() === ownEmail.toLowerCase(),
       committedAtMs,
-      files: rest.map((line) => line.trim()).filter((line) => line !== ""),
+      files: names
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line !== ""),
     });
   }
   return commits;
+}
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
+// 1970-01-01 was a Thursday; weeks here start on Monday, in UTC.
+const FIRST_MONDAY_MS = 4 * 24 * 60 * 60 * 1_000;
+
+export interface ChangePeriod {
+  /** Names this exact set of commits: a new commit, an amend or a rebase gives another key. */
+  readonly key: string;
+  readonly publishedAtMs: number | null;
+  /** Oldest first. */
+  readonly commits: ReadonlyArray<GitCommitFacts>;
+}
+
+/**
+ * The owner's commits cut at each publish, newest period first. A project never marked
+ * published is cut by week, so its changelog is not one list of a month's work.
+ */
+export function changePeriods(input: {
+  readonly ownCommits: ReadonlyArray<GitCommitFacts>;
+  readonly publishedAtMs: ReadonlyArray<number>;
+}): Array<ChangePeriod> {
+  const commits = input.ownCommits.toSorted(
+    (left, right) => left.committedAtMs - right.committedAtMs,
+  );
+  const publishes = input.publishedAtMs.toSorted((left, right) => left - right);
+  const groups = new Map<number, { publishedAtMs: number | null; commits: GitCommitFacts[] }>();
+  for (const commit of commits) {
+    const closedBy = publishes.find((at) => at >= commit.committedAtMs) ?? null;
+    const slot =
+      publishes.length === 0
+        ? Math.floor((commit.committedAtMs - FIRST_MONDAY_MS) / WEEK_MS)
+        : (closedBy ?? Number.POSITIVE_INFINITY);
+    const group = groups.get(slot) ?? { publishedAtMs: closedBy, commits: [] };
+    group.commits.push(commit);
+    groups.set(slot, group);
+  }
+  return [...groups.entries()]
+    .sort((left, right) => right[0] - left[0])
+    .map(([, group]) => ({
+      // A commit id fixes its whole ancestry, so the ends and the count fix the set.
+      key: `${group.commits.at(-1)!.sha}:${group.commits[0]!.sha}:${group.commits.length}`,
+      publishedAtMs: group.publishedAtMs,
+      commits: group.commits,
+    }));
 }
 
 /** Paths from `git status --porcelain=v1 -z`: `XY path`, with a rename's old path as the next field. */
