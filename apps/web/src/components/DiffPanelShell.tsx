@@ -10,7 +10,7 @@ export type DiffPanelMode = "inline" | "sheet" | "sidebar" | "embedded";
 function getDiffPanelHeaderRowClassName(mode: DiffPanelMode) {
   const shouldUseDragRegion = isElectron && mode !== "sheet" && mode !== "embedded";
   return cn(
-    "flex items-center justify-between gap-2",
+    "@container/diff-header flex items-center justify-between gap-2",
     mode === "embedded" ? "px-2" : "px-4",
     shouldUseDragRegion
       ? "drag-region topbar-band h-[var(--workspace-topbar-height)] wco:pr-(--workspace-native-controls-inset)"

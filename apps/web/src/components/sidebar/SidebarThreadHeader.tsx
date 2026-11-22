@@ -1,5 +1,5 @@
 import { useGT } from "gt-react";
-import { BellDotIcon, FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import { BellDotIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -23,7 +23,6 @@ export interface SidebarThreadHeaderProps {
   // The new layout names the projects the list is scoped to on a row of its own; null otherwise.
   focusedProjects: string | null;
   onShowAllProjects: () => void;
-  onNewProject: () => void;
   onNewThread: (event: ReactMouseEvent) => void;
   newThreadDisabled: boolean;
   newThreadShortcutLabel: string | null | undefined;
@@ -47,7 +46,6 @@ export function SidebarThreadHeader({
   needsYouElsewhere,
   focusedProjects,
   onShowAllProjects,
-  onNewProject,
   onNewThread,
   newThreadDisabled,
   newThreadShortcutLabel,
@@ -162,9 +160,6 @@ export function SidebarThreadHeader({
               </Button>
             ) : null}
             {projectScope}
-            <SidebarHeaderIconButton label={gt("Add project")} onClick={onNewProject}>
-              <FolderPlusIcon />
-            </SidebarHeaderIconButton>
           </div>
         ) : null}
       </div>

@@ -8,7 +8,6 @@
     /* Native text takes one family name, not Tailwind's font stack. */
     --t3-weight-medium: normal;
     --t3-weight-semibold: normal;
-    --t3-weight-bold: normal;
     @variant ios {
       --font-mono: "ui-monospace";
       /* SF Pro: one family, weights carry the emphasis that DM Sans's per-weight files do. */
@@ -17,7 +16,6 @@
       --font-bold: "System";
       --t3-weight-medium: 500;
       --t3-weight-semibold: 600;
-      --t3-weight-bold: 700;
     }
     @variant android {
       --font-mono: "monospace";
@@ -66,7 +64,7 @@
 
 @utility font-t3-bold {
   font-family: var(--font-bold);
-  font-weight: var(--t3-weight-bold);
+  font-weight: 700;
 }
 
 @utility font-t3-extrabold {

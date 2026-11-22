@@ -3,6 +3,7 @@ import { asLaunchingThread } from "@t3tools/client-runtime/state/thread-inbox";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
+import { formatWorktreePathForDisplay } from "../../worktreeCleanup";
 import { contextMenuSourceOf } from "../../contextMenuSource";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
@@ -54,6 +55,7 @@ import {
   BellDotIcon,
   CornerDownRightIcon,
   ClockIcon,
+  FolderGit2Icon,
   GitBranchIcon,
   MessageCircleQuestionIcon,
   PinIcon,
@@ -121,7 +123,6 @@ import { nonMainlineBranchName } from "@t3tools/shared/git";
 import {
   ThreadPullRequestBadgeControl,
   ThreadPullRequestsMiniList,
-  ThreadWorktreeIndicator,
   prStatusIndicator,
   resolveThreadPullRequestBadge,
   terminalStatusFromRunningIds,
@@ -222,7 +223,7 @@ const TIDE_NOTE_DAY_FORMATTER = new Intl.DateTimeFormat(undefined, {
   month: "short",
 });
 
-function JumpHintBadge(props: { label: string }) {
+export function JumpHintBadge(props: { label: string }) {
   return (
     <Kbd aria-hidden data-jump-hint>
       {props.label}
@@ -230,7 +231,7 @@ function JumpHintBadge(props: { label: string }) {
   );
 }
 
-const JUMP_HINT_SLOT_CLASS_NAME =
+export const JUMP_HINT_SLOT_CLASS_NAME =
   "[&>:not([data-jump-hint])]:invisible [&>:not([data-jump-hint])]:absolute";
 
 function WorkingDuration(props: { environmentId: EnvironmentId; startedAt: string | null }) {
@@ -356,6 +357,7 @@ function SidebarThreadTooltip({
   showCard?: boolean;
 }) {
   const driverKind = providerEntry?.driverKind ?? null;
+  const worktreePath = thread.worktreePath?.trim();
   const previousProviderNames = thread.providerInstanceHistory
     .filter((instanceId) => instanceId !== modelInstanceId)
     .map((instanceId) => providerEntryByInstanceId.get(instanceId)?.displayName ?? instanceId);
@@ -430,6 +432,12 @@ function SidebarThreadTooltip({
           <div className="flex min-w-0 items-center gap-2">
             <GitBranchIcon className="size-3 shrink-0 stroke-muted-foreground" />
             <MiddleTruncate value={thread.branch} className="flex" />
+          </div>
+        ) : null}
+        {worktreePath ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <FolderGit2Icon className="size-3 shrink-0 stroke-muted-foreground" />
+            <MiddleTruncate value={formatWorktreePathForDisplay(worktreePath)} className="flex" />
           </div>
         ) : null}
         {branchMismatch ? (
@@ -719,7 +727,7 @@ function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: 
 type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   // "folder" is a one-line row inside a boring sidebar project folder;
-  // "folder-multiline" adds the card's branch and PR line under it.
+  // "folder-multiline" adds the card's environment and PR line under it.
   variant: "card" | "slim" | "folder" | "folder-multiline";
   navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
@@ -745,7 +753,6 @@ type SidebarThreadRowProps = {
   currentEnvironmentId: string | null;
   environmentLabel: string | null;
   environmentMachine: EnvironmentMachineKind;
-  scratchMachineLabel: string | null;
   project: EnvironmentProject | null;
   projectDisplayName: string | null;
   rowDetail: SidebarRowDetail;
@@ -926,7 +933,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     JSON.stringify([thread.environmentId, gitCwd]),
     gitStatus.data,
   );
-  const checkoutThread = withoutRemovedCheckout(thread, visibleGitStatus);
+  const checkoutThread = withoutRemovedCheckout(thread, visibleGitStatus, props.project);
   const pr = linkedPullRequestStatus?.pr ?? null;
   const supportsMultiplePullRequests = useSupportsMultiplePullRequests(thread.environmentId);
   const currentLinkedPr = supportsMultiplePullRequests
@@ -1048,7 +1055,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     : thread.modelSelection.model;
 
   const isRemote = thread.environmentId !== props.currentEnvironmentId;
-  const showsScratchMachine = !checkoutThread.branch && props.scratchMachineLabel !== null;
   const showsBranch = props.rowDetail !== "message";
   const workingLine = props.tide ? null : threadWorkingLine(thread);
   const messagePreview =
@@ -1059,7 +1065,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       showCardLine: props.tide,
       needsYou: props.needsYou,
     });
-  const showsBranchDetail = showsBranch && (Boolean(checkoutThread.branch) || showsScratchMachine);
+  const showsBranchDetail = showsBranch && Boolean(checkoutThread.branch);
   // With the meta line given to the message, an off-main branch rides beside the project name.
   const projectLineBranch = showsBranch ? null : nonMainlineBranchName(checkoutThread.branch);
   // The new layout's last line; Needs you, Working and pinned rows (cards) show status.
@@ -1517,61 +1523,53 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     )
   ) : null;
 
-  const remoteMachineIcon =
-    isRemote && !showsScratchMachine ? (
-      <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
-        <EnvironmentMachineIcon aria-hidden kind={props.environmentMachine} className="size-3.5" />
-      </span>
-    ) : null;
   const diff = latestRunDiff(thread);
   // Only the trailing icons would remain, so the row moves them to the title line instead.
   const metaLineEmpty =
     messagePreview === null &&
+    props.environmentLabel === null &&
     !showsBranchDetail &&
     prBadge === null &&
     issueBadge === null &&
     diff === null &&
     runningTerminalIds.length === 0;
-  // Beside a preview, the branch moves to the right next to the provider icons, and the icon
-  // and code face mark it as a ref.
+  // The environment holds the left of the meta line, so the branch rides on the right next to
+  // the provider icons, and the icon and code face mark it as a ref.
   const besidePreview = messagePreview !== null;
   const branchDetail =
     showsBranch && checkoutThread.branch ? (
       <>
-        <ThreadWorktreeIndicator thread={checkoutThread} />
-        {besidePreview && !checkoutThread.worktreePath ? (
+        {checkoutThread.worktreePath ? (
+          <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
+        ) : (
           <GitBranchIcon aria-hidden className="size-3 shrink-0" />
-        ) : null}
-        <span
-          className={cn(
-            "flex min-w-0",
-            besidePreview ? "max-w-[40%] font-mono text-2xs" : "flex-1",
-          )}
-        >
+        )}
+        <span className="flex min-w-0 max-w-[40%] font-mono text-2xs">
           <MiddleTruncate value={checkoutThread.branch} showTitle={false} />
         </span>
       </>
-    ) : showsBranch && showsScratchMachine ? (
-      <>
-        <EnvironmentMachineIcon
-          aria-hidden
-          kind={props.environmentMachine}
-          className="size-3 shrink-0"
-        />
-        <span className={cn("min-w-0 truncate", besidePreview ? "max-w-[45%]" : "flex-1")}>
-          {props.scratchMachineLabel}
-        </span>
-      </>
     ) : null;
+  // A preview takes the environment's place, so a remote thread keeps an icon on the right.
+  const remoteMachineIcon = isRemote ? (
+    <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
+      <EnvironmentMachineIcon aria-hidden kind={props.environmentMachine} className="size-3.5" />
+    </span>
+  ) : null;
   const metaLine = metaLineEmpty ? null : (
     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
       {besidePreview ? (
         <span className="min-w-0 flex-1 truncate">{messagePreview}</span>
-      ) : (
+      ) : props.environmentLabel !== null ? (
         <>
-          {branchDetail}
-          {showsBranchDetail ? null : <span className="flex-1" />}
+          <EnvironmentMachineIcon
+            aria-hidden
+            kind={props.environmentMachine}
+            className="size-3.5 shrink-0 text-icon-muted"
+          />
+          <span className="min-w-0 flex-1 truncate">{props.environmentLabel}</span>
         </>
+      ) : (
+        <span className="flex-1" />
       )}
       {terminalStatusIcon}
       {prBadge}
@@ -1582,12 +1580,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           <span className="text-diff-deletion-foreground">−{formatDiffCount(diff.deletions)}</span>
         </span>
       ) : null}
-      {besidePreview ? branchDetail : null}
+      {branchDetail}
       <span
         aria-hidden
         className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
       >
-        {remoteMachineIcon}
+        {besidePreview ? remoteMachineIcon : null}
         <SidebarProviderStack
           thread={thread}
           providerEntryByInstanceId={props.providerEntryByInstanceId}
@@ -1597,7 +1595,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   );
   const titleLineIcons = metaLineEmpty ? (
     <span aria-hidden className="inline-flex shrink-0 items-center gap-1">
-      {remoteMachineIcon}
       <SidebarProviderStack
         thread={thread}
         providerEntryByInstanceId={props.providerEntryByInstanceId}
@@ -2498,7 +2495,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
     JSON.stringify([thread.environmentId, gitCwd]),
     gitStatus.data,
   );
-  const checkoutThread = withoutRemovedCheckout(thread, visibleGitStatus);
+  const checkoutThread = withoutRemovedCheckout(thread, visibleGitStatus, props.project);
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
     activeWorktreePath: thread.worktreePath,

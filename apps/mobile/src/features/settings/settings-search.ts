@@ -168,6 +168,7 @@ const SETTINGS_SEARCH_TERMS = {
     msg("group by project", { $context: "settings search keyword" }),
     msg("project folders", { $context: "settings search keyword" }),
     msg("boring sidebar", { $context: "settings search keyword" }),
+    msg("agent feedback", { $context: "settings search keyword" }),
   ],
   SettingsEnvironmentMaintenance: [
     msg("updates", { $context: "settings search keyword" }),

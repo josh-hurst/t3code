@@ -566,7 +566,9 @@ function PoolBar({
                   style={{
                     left: `${start}%`,
                     width: `${width}%`,
-                    backgroundImage: `repeating-linear-gradient(135deg, ${accountColor(member.account)} 0 1px, transparent 1px 5px)`,
+                    // A bare 45° gradient repeats every 5√2px, so some stripes rasterize thinner; a whole-pixel tile doesn't.
+                    backgroundImage: `repeating-linear-gradient(135deg, transparent 0 1px, ${accountColor(member.account)} 1px 2px, transparent 2px 50%)`,
+                    backgroundSize: "7px 7px",
                   }}
                 />
               ))}

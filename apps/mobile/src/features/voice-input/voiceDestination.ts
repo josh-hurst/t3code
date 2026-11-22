@@ -137,7 +137,7 @@ export function draftSpeechVocabulary(context: VoiceDraftContext | null): Speech
       ? resolveProjectSettings(settings, context.projectId).settings.speechProjectCustomWords
       : [],
     hints: context.projectName ? [context.projectName] : [],
-  });
+  }).speechCustomWords;
 }
 
 /**
