@@ -158,17 +158,75 @@ describe("sidebar header new thread", () => {
       </SidebarProvider>,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "New thread", exact: true }), {
+    const trigger = screen.getByRole(scenario.count > 1 ? "combobox" : "button", {
+      name: "New thread",
+      exact: true,
+    });
+    await userEvent.click(trigger, {
       modifiers: scenario.shift ? ["Shift"] : [],
     });
 
     if (scenario.picker) {
-      expect(openCommandPalette).toHaveBeenCalledExactlyOnceWith({ open: "new-thread-in" });
+      expect(openCommandPalette).not.toHaveBeenCalled();
       expect(startThread).not.toHaveBeenCalled();
+      await expect.element(page.getByRole("combobox", { name: "Search projects" })).toBeVisible();
+      await expect.element(page.getByRole("option", { name: "active" })).toBeVisible();
+      await expect.element(page.getByRole("option", { name: "idle" })).toBeVisible();
+
+      await userEvent.click(page.getByRole("option", { name: "idle" }));
+      expect(startThread).toHaveBeenCalledExactlyOnceWith(
+        scopeProjectRef(projects[1]!.environmentId, projects[1]!.id),
+      );
+      await expect
+        .element(page.getByRole("combobox", { name: "Search projects" }))
+        .not.toBeInTheDocument();
     } else {
       expect(openCommandPalette).not.toHaveBeenCalled();
+      await expect
+        .element(page.getByRole("combobox", { name: "Search projects" }))
+        .not.toBeInTheDocument();
       expect(startThread).toHaveBeenCalledExactlyOnceWith(currentProjectRef);
     }
+  });
+
+  it("starts a new thread in the current project, filters by path, and opens Add project from the dropdown", async () => {
+    const projects = [project("active"), project("idle")];
+    const currentProjectRef = scopeProjectRef(projects[0]!.environmentId, projects[0]!.id);
+    const startThread = vi.fn().mockResolvedValue(null);
+    vi.mocked(useProjects).mockReturnValue(projects);
+    vi.mocked(useHandleNewThread).mockReturnValue({
+      activeDraftThread: null,
+      activeThread: null,
+      defaultProjectRef: currentProjectRef,
+      defaultProjectFallbackReady: true,
+      handleNewThread: startThread,
+      routeDraftId: null,
+      routeThreadRef: null,
+    });
+    vi.mocked(openCommandPalette).mockClear();
+    await using screen = await render(
+      <SidebarProvider>
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+      </SidebarProvider>,
+    );
+
+    const trigger = screen.getByRole("combobox", { name: "New thread", exact: true });
+    await userEvent.click(trigger);
+    await expect.element(page.getByRole("combobox", { name: "Search projects" })).toHaveFocus();
+    await userEvent.keyboard("{Control>}n{/Control}");
+    await userEvent.keyboard("{Control>}n{/Control}");
+    await userEvent.keyboard("{Control>}p{/Control}");
+    await userEvent.keyboard("{Enter}");
+    expect(startThread).toHaveBeenCalledExactlyOnceWith(currentProjectRef);
+
+    await userEvent.click(trigger);
+    const search = page.getByRole("combobox", { name: "Search projects" });
+    await userEvent.type(search, "/projects/idle");
+    await expect.element(page.getByRole("option", { name: "idle" })).toBeVisible();
+    await expect.element(page.getByRole("option", { name: "active" })).not.toBeInTheDocument();
+    await userEvent.clear(search);
+    await userEvent.click(page.getByRole("option", { name: "Add project" }));
+    expect(openCommandPalette).toHaveBeenCalledExactlyOnceWith({ open: "add-project" });
   });
 
   it("opens search in place of the wordmark from its collapsed icon", async () => {

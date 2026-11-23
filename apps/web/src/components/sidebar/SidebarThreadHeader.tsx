@@ -1,9 +1,8 @@
 import { useGT } from "gt-react";
-import { BellDotIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import { BellDotIcon, SearchIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
   useState,
@@ -18,16 +17,12 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 export interface SidebarThreadHeaderProps {
   hasProjects: boolean;
   projectScope: ReactNode;
+  newThread: ReactNode;
   // Threads that need you in projects the current scope leaves out.
   needsYouElsewhere: number;
   // The new layout names the projects the list is scoped to on a row of its own; null otherwise.
   focusedProjects: string | null;
   onShowAllProjects: () => void;
-  onNewThread: (event: ReactMouseEvent) => void;
-  newThreadDisabled: boolean;
-  newThreadShortcutLabel: string | null | undefined;
-  newThreadInProjectShortcutLabel: string | null | undefined;
-  showNewThreadInProjectHint: boolean;
   searchInputRef: RefObject<HTMLInputElement | null>;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
@@ -43,14 +38,10 @@ export interface SidebarThreadHeaderProps {
 export function SidebarThreadHeader({
   hasProjects,
   projectScope,
+  newThread,
   needsYouElsewhere,
   focusedProjects,
   onShowAllProjects,
-  onNewThread,
-  newThreadDisabled,
-  newThreadShortcutLabel,
-  newThreadInProjectShortcutLabel,
-  showNewThreadInProjectHint,
   searchInputRef,
   searchQuery,
   onSearchQueryChange,
@@ -68,24 +59,6 @@ export function SidebarThreadHeader({
   const resultsVisible = isSearching && searchResultCount > 0;
   // Shrinking results can remove the active option; never leave aria-activedescendant pointing at it.
   const activeResultExists = resultsVisible && activeSearchResultIndex < searchResultCount;
-  const newThreadLabel = newThreadShortcutLabel
-    ? gt("New thread ({shortcut})", { shortcut: newThreadShortcutLabel })
-    : gt("New thread");
-
-  const newThreadTooltip = showNewThreadInProjectHint ? (
-    <span className="flex flex-col gap-0.5">
-      <span>{newThreadLabel}</span>
-      <span className="text-muted-foreground">
-        {newThreadInProjectShortcutLabel
-          ? gt("New thread in current project: Shift+click ({shortcut})", {
-              shortcut: newThreadInProjectShortcutLabel,
-            })
-          : gt("New thread in current project: Shift+click")}
-      </span>
-    </span>
-  ) : (
-    newThreadLabel
-  );
 
   return (
     // New thread stands apart: the gap above it matches the group's own padding below it.
@@ -163,22 +136,7 @@ export function SidebarThreadHeader({
           </div>
         ) : null}
       </div>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <SidebarMenuButton
-              type="button"
-              aria-label={gt("New thread")}
-              disabled={newThreadDisabled}
-              onClick={onNewThread}
-            />
-          }
-        >
-          <SquarePenIcon />
-          <span className="truncate">{gt("New thread")}</span>
-        </TooltipTrigger>
-        <TooltipPopup side="right">{newThreadTooltip}</TooltipPopup>
-      </Tooltip>
+      {newThread}
       {focusedProjects !== null ? (
         <SidebarFocusStrip
           projects={focusedProjects}

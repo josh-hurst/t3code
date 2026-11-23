@@ -7,6 +7,7 @@ import {
   buildProjectChanges,
   changePeriods,
   type ChangeTouch,
+  earlierChangelog,
   type GitCommitFacts,
   parseGitLogWithFiles,
   parseGitStatusPaths,
@@ -170,6 +171,31 @@ describe("changePeriods", () => {
       publishedAtMs: [3 * HOUR],
     });
     expect(grown[0]!.key).not.toBe(periods[0]!.key);
+    // Until it is rewritten, the old changelog shows for the commits it covers.
+    const changelogs = new Map([
+      [
+        periods[1]!.key,
+        { items: [{ title: "Shop", summary: "", shas: ["c1", "c2"] }], labels: {} },
+      ],
+      [
+        periods[0]!.key,
+        {
+          items: [
+            { title: "Ranked", summary: "", shas: ["c3"] },
+            { title: "Gone", summary: "", shas: ["rebased"] },
+          ],
+          labels: { c3: "Queue", rebased: "Old" },
+        },
+      ],
+    ]);
+    expect(earlierChangelog(["c4", "c3"], changelogs)).toEqual({
+      key: periods[0]!.key,
+      changelog: {
+        items: [{ title: "Ranked", summary: "", shas: ["c3"] }],
+        labels: { c3: "Queue" },
+      },
+    });
+    expect(earlierChangelog(["c5"], changelogs)).toBeNull();
 
     // A commit made right after mark_published before the publish turn finishes still ships in it.
     const sameTurn = changePeriods({

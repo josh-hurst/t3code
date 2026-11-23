@@ -7,6 +7,7 @@ import { useAppWindow } from "~/lib/appWindow";
 import { buttonVariants } from "./button";
 import { renderClosingPositioner } from "./closing-positioner";
 import { Input, type InputProps } from "./input";
+import { forwardCtrlListNavigationKeyDown } from "./listNavigationKeys";
 import { Spinner } from "./spinner";
 
 const Menu = MenuPrimitive.Root;
@@ -30,6 +31,7 @@ function MenuPopup({
   anchor,
   keepMounted = false,
   width = "default",
+  onKeyDownCapture,
   ...props
 }: MenuPrimitive.Popup.Props & {
   align?: MenuPrimitive.Positioner.Props["align"];
@@ -66,6 +68,10 @@ function MenuPopup({
           )}
           data-slot="menu-popup"
           {...props}
+          onKeyDownCapture={(event) => {
+            onKeyDownCapture?.(event);
+            forwardCtrlListNavigationKeyDown(event);
+          }}
         >
           <div className="max-h-(--available-height) w-full overflow-y-auto p-1">{children}</div>
         </MenuPrimitive.Popup>
@@ -103,7 +109,9 @@ function MenuSearchInput({
           unstyled
           onKeyDown={(event) => {
             // Menu typeahead would otherwise take the letters; arrows still reach the items.
-            if (event.key !== "ArrowDown" && event.key !== "Escape") event.stopPropagation();
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Escape") {
+              event.stopPropagation();
+            }
             onKeyDown?.(event);
           }}
         />

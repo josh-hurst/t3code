@@ -148,7 +148,6 @@ import { useProjectPin } from "../hooks/useProjectGroupUpdate";
 import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { updateClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -223,8 +222,6 @@ import {
   resolveSidebarThreadSection,
   resolveSidebarReorderableThreadKeys,
   searchSidebarThreads,
-  shouldCreateNewThreadInCurrentProject,
-  resolveScopedNewThreadProjectRef,
   shouldNavigateAfterThreadPark,
   sidebarListItemId,
   sidebarThreadKeyAtY,
@@ -274,8 +271,10 @@ import {
   ComboboxTrigger,
   useComboboxFilter,
 } from "./ui/combobox";
+import { resolveVerticalListNavigationKey } from "./ui/listNavigationKeys";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter } from "./sidebar/SidebarChrome";
+import { SidebarNewThreadButton } from "./sidebar/SidebarNewThreadButton";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
 import {
@@ -1917,13 +1916,24 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       return;
     }
     if (threadSearchResults.length === 0) return;
-    if (event.key === "ArrowDown") {
+    const navKey = resolveVerticalListNavigationKey({
+      key: event.key,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      isComposing: event.nativeEvent.isComposing,
+      keyCode: event.keyCode,
+    });
+    if (navKey === "ArrowDown") {
       event.preventDefault();
+      event.stopPropagation();
       moveSearchHighlight(1);
       return;
     }
-    if (event.key === "ArrowUp") {
+    if (navKey === "ArrowUp") {
       event.preventDefault();
+      event.stopPropagation();
       moveSearchHighlight(-1);
       return;
     }
@@ -3744,47 +3754,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       )
     : null;
 
-  const handleNewThreadClick = (event?: ReactMouseEvent) => {
-    const scopedProjectRef = resolveScopedNewThreadProjectRef({
-      shiftKey: event?.shiftKey ?? false,
-      // The folder sidebar's header button always opens the picker.
-      scopedProjectGroups: boringSidebarEnabled && !tide ? [] : scopedProjectGroups,
-      viewed: newThreadContext.activeThread ?? newThreadContext.activeDraftThread,
-    });
-    if (scopedProjectRef) {
-      if (isMobile) setOpenMobile(false);
-      void handleNewThread(scopedProjectRef);
-      return;
-    }
-    if (
-      shouldCreateNewThreadInCurrentProject(
-        event?.shiftKey ?? false,
-        scopeGroups.length,
-        projectGroups.length,
-      )
-    ) {
-      if (isMobile) setOpenMobile(false);
-      // With no current or open project, such as when every project is archived, pick one.
-      void startNewThreadFromContext({
-        activeDraftThread: newThreadContext.activeDraftThread,
-        activeThread: newThreadContext.activeThread ?? undefined,
-        defaultProjectRef: newThreadContext.defaultProjectRef,
-        handleNewThread,
-      }).then((started) => {
-        if (!started) openCommandPalette({ open: "new-thread-in" });
-      });
-      return;
-    }
-    if (isMobile) setOpenMobile(false);
-    openCommandPalette({ open: "new-thread-in" });
-  };
-
-  const newThreadShortcutLabel =
-    shortcutLabelForCommand(keybindings, "chat.new") ??
-    (shouldCreateNewThreadInCurrentProject(false, scopeGroups.length, projectGroups.length)
-      ? shortcutLabelForCommand(keybindings, "chat.newLocal")
-      : undefined);
-  const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   return (
     <SidebarFolderDrop rows={tide ? "card" : undefined}>
       <SidebarContent
@@ -3794,6 +3763,24 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           <SidebarGroup className="z-[1]">
             <SidebarThreadHeader
               hasProjects={projectGroups.length > 0}
+              newThread={
+                <SidebarNewThreadButton
+                  projectGroups={projectGroups}
+                  scopeGroups={scopeGroups}
+                  scopedProjectGroups={scopedProjectGroups}
+                  boringSidebarEnabled={boringSidebarEnabled}
+                  tide={tide}
+                  disabled={projects.length === 0}
+                  newThreadContext={newThreadContext}
+                  primaryEnvironmentId={primaryEnvironmentId}
+                  environmentMachineById={environmentMachineById}
+                  showProjectEnvironments={showProjectEnvironments}
+                  keybindings={keybindings}
+                  canPinProject={canPinProject}
+                  toggleProjectGroupPin={toggleProjectGroupPin}
+                  onAddProject={openAddProjectCommandPalette}
+                />
+              }
               projectScope={
                 <Combobox
                   items={projectScopeItems}
@@ -4082,17 +4069,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   : null
               }
               onShowAllProjects={() => setProjectScopeKeys([])}
-              onNewThread={handleNewThreadClick}
-              newThreadDisabled={projects.length === 0}
-              newThreadShortcutLabel={newThreadShortcutLabel}
-              newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}
-              showNewThreadInProjectHint={
-                !shouldCreateNewThreadInCurrentProject(
-                  false,
-                  scopeGroups.length,
-                  projectGroups.length,
-                )
-              }
               searchInputRef={threadSearchInputRef}
               searchQuery={threadSearchQuery}
               onSearchQueryChange={(value) => {

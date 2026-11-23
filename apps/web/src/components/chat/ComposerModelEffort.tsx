@@ -22,6 +22,7 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { Switch } from "../ui/switch";
+import { resolveVerticalListNavigationKey } from "../ui/listNavigationKeys";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerControlSize } from "./ComposerControl";
 import { ComposerPermissionsSection, type RuntimeModeOption } from "./ComposerFooterControls";
@@ -244,9 +245,17 @@ function ColumnRow(props: {
 }
 
 function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
-  const arrow = event.key === "ArrowDown" || event.key === "ArrowUp";
+  const navKey = resolveVerticalListNavigationKey({
+    key: event.key,
+    ctrlKey: event.ctrlKey,
+    metaKey: event.metaKey,
+    altKey: event.altKey,
+    shiftKey: event.shiftKey,
+    isComposing: event.nativeEvent.isComposing,
+    keyCode: event.keyCode,
+  });
   if (
-    !arrow &&
+    navKey === null &&
     (event.key.length !== 1 ||
       event.key.trim() === "" ||
       event.ctrlKey ||
@@ -261,8 +270,8 @@ function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
     event.currentTarget.querySelectorAll<HTMLButtonElement>("[data-effort-row]:not(:disabled)"),
   );
   const index = rows.findIndex((row) => row === document.activeElement);
-  const next = arrow
-    ? rows[Math.min(rows.length - 1, Math.max(0, index + (event.key === "ArrowDown" ? 1 : -1)))]
+  const next = navKey
+    ? rows[Math.min(rows.length - 1, Math.max(0, index + (navKey === "ArrowDown" ? 1 : -1)))]
     : [...rows.slice(index + 1), ...rows.slice(0, index + 1)].find((row) =>
         row.dataset.effortLevel?.toLowerCase().startsWith(event.key.toLowerCase()),
       );

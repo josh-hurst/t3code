@@ -6,6 +6,7 @@ import { replaceComposerContextReferences } from "@t3tools/shared/composerContex
 import { composerFileLinksToPlainText } from "@t3tools/shared/composerInlineTokens";
 
 import { RelativeTime } from "../RelativeTime";
+import { resolveVerticalListNavigationKey } from "../ui/listNavigationKeys";
 import { m, type MessageResolver } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 import { type PromptStashEntry } from "../../promptStashStore";
@@ -107,12 +108,13 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
       onClose();
       return;
     }
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    const navKey = resolveVerticalListNavigationKey(event);
+    if (navKey !== null) {
       if (entries.length === 0) return;
       event.preventDefault();
       event.stopPropagation();
       const currentIndex = entries.findIndex((entry) => entry.id === highlightedEntry?.id);
-      const offset = event.key === "ArrowDown" ? 1 : -1;
+      const offset = navKey === "ArrowDown" ? 1 : -1;
       const normalizedIndex = currentIndex >= 0 ? currentIndex : offset === 1 ? -1 : 0;
       const nextIndex = (normalizedIndex + offset + entries.length) % entries.length;
       setHighlightedId(entries[nextIndex]?.id ?? null);

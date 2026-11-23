@@ -16,6 +16,7 @@ import {
   AutocompleteListVirtualized,
 } from "~/components/ui/autocomplete";
 import { DIALOG_BACKDROP_CLASS, DIALOG_POPUP_CLASS } from "~/components/ui/dialog-styles";
+import { forwardCtrlListNavigationKeyDown } from "~/components/ui/listNavigationKeys";
 import { Button } from "~/components/ui/button";
 
 const CommandDialog = CommandDialogPrimitive.Root;
@@ -59,6 +60,7 @@ function CommandDialogPopup({
   className,
   children,
   onBackdropPointerDown,
+  onKeyDownCapture,
   ...props
 }: CommandDialogPrimitive.Popup.Props & {
   onBackdropPointerDown?: React.PointerEventHandler<HTMLDivElement>;
@@ -79,6 +81,10 @@ function CommandDialogPopup({
           )}
           data-slot="command-dialog-popup"
           {...props}
+          onKeyDownCapture={(event) => {
+            onKeyDownCapture?.(event);
+            forwardCtrlListNavigationKeyDown(event);
+          }}
         >
           {children}
         </CommandDialogPrimitive.Popup>

@@ -26,6 +26,7 @@ import { useSidebarProjectGroups } from "../../hooks/useSidebarProjectGroups";
 import { useThreadRouteTarget } from "../../hooks/useThreadRouteTarget";
 import type { MessageResolver } from "../../i18n/messages";
 import { resolveThreadActionProjectRef } from "../../lib/chatThreadActions";
+import { resolveVerticalListNavigationKey } from "../ui/listNavigationKeys";
 import { cn } from "../../lib/utils";
 import {
   useDelegatedUnderParent,
@@ -260,16 +261,27 @@ export function MenuBarPopover({ onClose }: { readonly onClose: () => void }) {
       onClose();
       return;
     }
-    if (event.key === "ArrowDown") {
+    const navKey = resolveVerticalListNavigationKey({
+      key: event.key,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      isComposing: event.nativeEvent.isComposing,
+      keyCode: event.keyCode,
+    });
+    if (navKey === "ArrowDown") {
       event.preventDefault();
+      event.stopPropagation();
       if (orderedRows.length === 0) return;
       setHighlightedIndex((current) =>
         current < 0 ? 0 : Math.min(current + 1, orderedRows.length - 1),
       );
       return;
     }
-    if (event.key === "ArrowUp") {
+    if (navKey === "ArrowUp") {
       event.preventDefault();
+      event.stopPropagation();
       setHighlightedIndex((current) => {
         if (current <= 0) {
           inputRef.current?.focus();

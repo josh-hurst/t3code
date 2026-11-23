@@ -4,6 +4,7 @@ import { ChevronsUpDownIcon, XIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useAppWindow } from "~/lib/appWindow";
 import { Input } from "~/components/ui/input";
+import { forwardCtrlListNavigationKeyDown } from "~/components/ui/listNavigationKeys";
 import { ScrollArea } from "~/components/ui/scroll-area";
 
 const Autocomplete = AutocompletePrimitive.Root;
@@ -14,6 +15,7 @@ function AutocompleteInput({
   showClear = false,
   startAddon,
   size,
+  onKeyDownCapture,
   ...props
 }: Omit<AutocompletePrimitive.Input.Props, "size"> & {
   showTrigger?: boolean;
@@ -47,6 +49,10 @@ function AutocompleteInput({
         data-slot="autocomplete-input"
         render={<Input nativeInput size={sizeValue} />}
         {...props}
+        onKeyDownCapture={(event) => {
+          onKeyDownCapture?.(event);
+          forwardCtrlListNavigationKeyDown(event);
+        }}
       />
       {showTrigger && (
         <AutocompleteTrigger
@@ -82,6 +88,7 @@ function AutocompletePopup({
   alignOffset,
   align = "start",
   anchor,
+  onKeyDownCapture,
   ...props
 }: AutocompletePrimitive.Popup.Props & {
   align?: AutocompletePrimitive.Positioner.Props["align"];
@@ -112,6 +119,10 @@ function AutocompletePopup({
             className="flex max-h-[min(var(--available-height),23rem)] flex-1 flex-col text-foreground [-webkit-app-region:no-drag]"
             data-slot="autocomplete-popup"
             {...props}
+            onKeyDownCapture={(event) => {
+              onKeyDownCapture?.(event);
+              forwardCtrlListNavigationKeyDown(event);
+            }}
           >
             {children}
           </AutocompletePrimitive.Popup>

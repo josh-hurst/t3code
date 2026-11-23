@@ -26,6 +26,7 @@ import {
 } from "@t3tools/contracts";
 import { type ReviewCommentContext } from "../../reviewCommentContext";
 import { composerTargetKey } from "../../composerDraftStore";
+import { resolveVerticalListNavigationKey } from "../ui/listNavigationKeys";
 import {
   type ComposerListEdit,
   listContinuationForEnter,
@@ -253,11 +254,12 @@ export function composerCommandKeyHandler(input: {
     ) {
       const currentItems = composerMenuItemsRef.current;
       const selectedItem = activeComposerMenuItemRef.current ?? currentItems[0];
-      if (key === "ArrowDown" && currentItems.length > 0) {
+      const navKey = resolveVerticalListNavigationKey(event);
+      if (navKey === "ArrowDown" && currentItems.length > 0) {
         nudgeComposerMenuHighlight("ArrowDown");
         return true;
       }
-      if (key === "ArrowUp" && currentItems.length > 0) {
+      if (navKey === "ArrowUp" && currentItems.length > 0) {
         nudgeComposerMenuHighlight("ArrowUp");
         return true;
       }

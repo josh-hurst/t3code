@@ -1,4 +1,6 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
+
+import { resolveVerticalListNavigationKey } from "./components/ui/listNavigationKeys";
 import { msg } from "gt-react";
 
 import { m } from "./i18n/messages";
@@ -331,7 +333,7 @@ export function showContextMenuFallback<T extends string>(
       );
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       let target: HTMLButtonElement | undefined;
-      switch (event.key) {
+      switch (resolveVerticalListNavigationKey(event) ?? event.key) {
         case "ArrowDown":
           target = buttons[(index + 1) % buttons.length];
           break;

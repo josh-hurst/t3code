@@ -1,5 +1,6 @@
 import type {
   ProjectChangeCommit,
+  ProjectChangeItem,
   ProjectChangeTopic,
   RunId,
   ThreadEntryId,
@@ -305,6 +306,36 @@ export function changePeriods(input: {
       publishedAtMs: group.publishedAtMs,
       commits: group.commits,
     }));
+}
+
+interface Changelog {
+  readonly items: ReadonlyArray<ProjectChangeItem>;
+  readonly labels: Readonly<Record<string, string>>;
+}
+
+/**
+ * The stored changelog sharing the most commits with a period that has none of its own, cut to
+ * those commits. A new commit renames its period, so this is what shows while it is rewritten.
+ */
+export function earlierChangelog(
+  shas: ReadonlyArray<string>,
+  changelogs: ReadonlyMap<string, Changelog>,
+): { readonly key: string; readonly changelog: Changelog } | null {
+  const inPeriod = new Set(shas);
+  let best: { key: string; changelog: Changelog; shared: number } | null = null;
+  for (const [key, changelog] of changelogs) {
+    const items = changelog.items.flatMap((item) => {
+      const kept = item.shas.filter((sha) => inPeriod.has(sha));
+      return kept.length === 0 ? [] : [{ ...item, shas: kept }];
+    });
+    const shared = new Set(items.flatMap((item) => item.shas)).size;
+    if (shared === 0 || (best !== null && shared <= best.shared)) continue;
+    const labels = Object.fromEntries(
+      Object.entries(changelog.labels).filter(([sha]) => inPeriod.has(sha)),
+    );
+    best = { key, changelog: { items, labels }, shared };
+  }
+  return best === null ? null : { key: best.key, changelog: best.changelog };
 }
 
 /** Paths from `git status --porcelain=v1 -z`: `XY path`, with a rename's old path as the next field. */

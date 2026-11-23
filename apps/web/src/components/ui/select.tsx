@@ -7,6 +7,7 @@ import type * as React from "react";
 
 import { cn } from "~/lib/utils";
 import { useAppWindow } from "~/lib/appWindow";
+import { forwardCtrlListNavigationKeyDown } from "./listNavigationKeys";
 
 const Select = SelectPrimitive.Root;
 
@@ -106,6 +107,7 @@ function SelectPopup({
   alignItemWithTrigger = true,
   matchTriggerWidth = true,
   anchor,
+  onKeyDownCapture,
   ...props
 }: SelectPrimitive.Popup.Props & {
   side?: SelectPrimitive.Positioner.Props["side"];
@@ -133,6 +135,10 @@ function SelectPopup({
           className="origin-(--transform-origin) rounded-lg text-foreground outline-none [-webkit-app-region:no-drag]"
           data-slot="select-popup"
           {...props}
+          onKeyDownCapture={(event) => {
+            onKeyDownCapture?.(event);
+            forwardCtrlListNavigationKeyDown(event);
+          }}
         >
           <SelectPrimitive.ScrollUpArrow
             className="top-0 z-50 flex h-6 w-full cursor-default items-center justify-center before:pointer-events-none before:absolute before:inset-x-px before:top-px before:h-[200%] before:rounded-t-[calc(var(--radius-lg)-1px)] before:bg-linear-to-b before:from-50% before:from-popover"

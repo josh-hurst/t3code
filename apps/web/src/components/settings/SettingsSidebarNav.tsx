@@ -7,6 +7,7 @@ import {
   type ComponentType,
   type KeyboardEvent,
 } from "react";
+import { resolveVerticalListNavigationKey } from "../ui/listNavigationKeys";
 import {
   ArchiveIcon,
   FlaskConicalIcon,
@@ -241,13 +242,24 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       return;
     }
     if (results.length === 0) return;
-    if (event.key === "ArrowDown") {
+    const navKey = resolveVerticalListNavigationKey({
+      key: event.key,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      isComposing: event.nativeEvent.isComposing,
+      keyCode: event.keyCode,
+    });
+    if (navKey === "ArrowDown") {
       event.preventDefault();
+      event.stopPropagation();
       setActiveResultIndex((activeResultIndex + 1) % results.length);
       return;
     }
-    if (event.key === "ArrowUp") {
+    if (navKey === "ArrowUp") {
       event.preventDefault();
+      event.stopPropagation();
       setActiveResultIndex((activeResultIndex - 1 + results.length) % results.length);
       return;
     }

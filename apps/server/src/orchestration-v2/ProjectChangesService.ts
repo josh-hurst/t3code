@@ -36,6 +36,7 @@ import {
   assembleTouches,
   buildProjectChanges,
   changePeriods,
+  earlierChangelog,
   parseGitLogWithFiles,
   parseGitStatusPaths,
   projectChangeEntryIds,
@@ -492,15 +493,22 @@ const make = Effect.gen(function* () {
         periods: changePeriods({
           ownCommits: own.commits,
           publishedAtMs: evidence.publishes,
-        }).map((period) => ({
-          key: period.key,
-          publishedAt: period.publishedAtMs === null ? null : iso(period.publishedAtMs),
-          startedAt: iso(period.commits[0]!.committedAtMs),
-          endedAt: iso(period.commits.at(-1)!.committedAtMs),
-          shas: period.commits.map((commit) => commit.sha).toReversed(),
-          items: digests.get(period.key)?.items ?? null,
-          labels: digests.get(period.key)?.labels ?? {},
-        })),
+        }).map((period) => {
+          const shas = period.commits.map((commit) => commit.sha).toReversed();
+          const own = digests.get(period.key);
+          const earlier = own === undefined ? earlierChangelog(shas, digests) : null;
+          const changelog = own ?? earlier?.changelog;
+          return {
+            key: period.key,
+            publishedAt: period.publishedAtMs === null ? null : iso(period.publishedAtMs),
+            startedAt: iso(period.commits[0]!.committedAtMs),
+            endedAt: iso(period.commits.at(-1)!.committedAtMs),
+            shas,
+            items: changelog?.items ?? null,
+            labels: changelog?.labels ?? {},
+            ...(earlier === null ? {} : { stale: true }),
+          };
+        }),
       };
     },
     Effect.mapError(failed("read")),
@@ -530,21 +538,38 @@ const make = Effect.gen(function* () {
           readDigests(projectId),
         ]);
         const periods = changePeriods({ ownCommits: own.commits, publishedAtMs });
-        const keys = periods.map((period) => period.key);
-        // A period's key moves with every commit, so the open period leaves old rows behind.
-        if (keys.length > 0) {
-          yield* sql`
-            DELETE FROM tide_change_digests
-            WHERE project_id = ${projectId} AND period_key NOT IN ${sql.in(keys)}
-          `;
-        }
         const missing = periods
           .filter((period) => !digests.has(period.key))
           .slice(0, SUMMARIZE_PERIODS_MAX);
         // Providers run in a working directory; a changelog must not read the checkout.
         const scratch = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-changelog-" });
-        let summarized = 0;
-        for (const period of missing) {
+        const writeChangelog = Effect.fn("ProjectChangesService.writeChangelog")(function* (
+          period: (typeof periods)[number],
+        ) {
+          const store = Effect.fn("ProjectChangesService.storeChangelog")(function* (
+            changelog: typeof Digest.Type,
+          ) {
+            yield* sql`
+                INSERT INTO tide_change_digests (project_id, period_key, digest_json, generated_at)
+                VALUES (
+                  ${projectId}, ${period.key}, ${yield* encodeDigest(changelog)},
+                  ${DateTime.formatIso(yield* DateTime.now)}
+                )
+                ON CONFLICT (project_id, period_key) DO UPDATE SET
+                  digest_json = excluded.digest_json,
+                  generated_at = excluded.generated_at
+              `;
+            return period.key;
+          });
+          // Commits aging out of the window only shrink a period; its old changelog still fits.
+          const earlier = earlierChangelog(
+            period.commits.map((commit) => commit.sha),
+            digests,
+          )?.changelog;
+          const coveredByEarlier = new Set(earlier?.items.flatMap((item) => item.shas));
+          if (earlier && period.commits.every((commit) => coveredByEarlier.has(commit.sha))) {
+            return yield* store(earlier);
+          }
           const commits = period.commits.slice(-CHANGELOG_COMMITS_MAX).map((commit) => ({
             sha: commit.sha,
             subject: commit.subject,
@@ -559,7 +584,7 @@ const make = Effect.gen(function* () {
           });
           // The prompt numbers these commits, so the reply's numbers index the same list.
           const parsed = parseProjectChangelog(generated.transcription, commits);
-          if (parsed === null) continue;
+          if (parsed === null) return null;
           // Commits past the cap were never shown to the model; they still belong in the list.
           const uncounted = period.commits.slice(0, -CHANGELOG_COMMITS_MAX);
           const changelog =
@@ -576,19 +601,27 @@ const make = Effect.gen(function* () {
                     },
                   ],
                 };
+          return yield* store(changelog);
+        });
+        const written = yield* Effect.forEach(missing, writeChangelog, {
+          concurrency: SUMMARIZE_PERIODS_MAX,
+        });
+        const done = new Set(written.filter((key) => key !== null));
+        // A period's key moves with every commit, so old rows pile up. One stays while it is
+        // still what a period without its own changelog shows.
+        const kept = periods.flatMap((period) => {
+          if (digests.has(period.key) || done.has(period.key)) return [period.key];
+          const shas = period.commits.map((commit) => commit.sha);
+          const earlier = earlierChangelog(shas, digests);
+          return earlier === null ? [period.key] : [period.key, earlier.key];
+        });
+        if (kept.length > 0) {
           yield* sql`
-            INSERT INTO tide_change_digests (project_id, period_key, digest_json, generated_at)
-            VALUES (
-              ${projectId}, ${period.key}, ${yield* encodeDigest(changelog)},
-              ${DateTime.formatIso(yield* DateTime.now)}
-            )
-            ON CONFLICT (project_id, period_key) DO UPDATE SET
-              digest_json = excluded.digest_json,
-              generated_at = excluded.generated_at
+            DELETE FROM tide_change_digests
+            WHERE project_id = ${projectId} AND period_key NOT IN ${sql.in(kept)}
           `;
-          summarized += 1;
         }
-        return { summarized };
+        return { summarized: done.size };
       }).pipe(
         Effect.scoped,
         Effect.ensuring(

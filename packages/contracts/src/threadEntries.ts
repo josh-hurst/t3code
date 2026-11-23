@@ -264,6 +264,11 @@ export const ProjectChangePeriod = Schema.Struct({
   /** Null until the period has been summarized. */
   items: Schema.NullOr(Schema.Array(ProjectChangeItem)),
   /**
+   * The items come from an earlier changelog that covers only some of these commits, shown
+   * while this period's own changelog is written. Commits in no item are listed apart.
+   */
+  stale: Schema.optional(Schema.Boolean),
+  /**
    * What each commit did, by commit id, in a few words that do not repeat its change's title.
    * A commit without one is shown by its subject.
    */

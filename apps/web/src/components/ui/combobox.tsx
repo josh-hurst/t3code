@@ -5,6 +5,7 @@ import * as React from "react";
 import { cn } from "~/lib/utils";
 import { useAppWindow } from "~/lib/appWindow";
 import { Input } from "~/components/ui/input";
+import { forwardCtrlListNavigationKeyDown } from "~/components/ui/listNavigationKeys";
 import { ScrollArea } from "~/components/ui/scroll-area";
 
 const ComboboxContext = React.createContext<{
@@ -34,6 +35,7 @@ function ComboboxInput({
   startAddon,
   size,
   unstyled = false,
+  onKeyDownCapture,
   ...props
 }: Omit<ComboboxPrimitive.Input.Props, "size"> & {
   showTrigger?: boolean;
@@ -78,6 +80,10 @@ function ComboboxInput({
           />
         }
         {...props}
+        onKeyDownCapture={(event) => {
+          onKeyDownCapture?.(event);
+          forwardCtrlListNavigationKeyDown(event);
+        }}
       />
       {showTrigger && (
         <ComboboxTrigger
@@ -142,6 +148,7 @@ function ComboboxPopup({
   align = "start",
   collisionAvoidance,
   anchor: anchorProp,
+  onKeyDownCapture,
   ...props
 }: ComboboxPrimitive.Popup.Props & {
   align?: ComboboxPrimitive.Positioner.Props["align"];
@@ -177,6 +184,10 @@ function ComboboxPopup({
             className="flex min-w-0 max-h-[min(var(--available-height),23rem)] flex-1 flex-col overflow-hidden text-foreground [-webkit-app-region:no-drag]"
             data-slot="combobox-popup"
             {...props}
+            onKeyDownCapture={(event) => {
+              onKeyDownCapture?.(event);
+              forwardCtrlListNavigationKeyDown(event);
+            }}
           >
             {children}
           </ComboboxPrimitive.Popup>

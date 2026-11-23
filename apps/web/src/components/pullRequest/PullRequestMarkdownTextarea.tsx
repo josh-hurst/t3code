@@ -24,6 +24,7 @@ import { cn } from "~/lib/utils";
 import { usePullRequestFilterOptions } from "~/state/pullRequests";
 import { useDebouncedValue } from "~/state/queries";
 
+import { resolveVerticalListNavigationKey } from "../ui/listNavigationKeys";
 import { Popover, PopoverPopup } from "../ui/popover";
 import { Textarea, type TextareaProps } from "../ui/textarea";
 import { PULL_REQUEST_STATE_PRESENTATION } from "./pullRequestIcons";
@@ -257,8 +258,17 @@ export function PullRequestMarkdownTextarea({
                 return true;
               }
               if (candidates.length === 0) return false;
-              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                const step = event.key === "ArrowDown" ? 1 : -1;
+              const navKey = resolveVerticalListNavigationKey({
+                key: event.key,
+                ctrlKey: event.ctrlKey,
+                metaKey: event.metaKey,
+                altKey: event.altKey,
+                shiftKey: event.shiftKey,
+                isComposing: event.nativeEvent.isComposing,
+                keyCode: event.keyCode,
+              });
+              if (navKey !== null) {
+                const step = navKey === "ArrowDown" ? 1 : -1;
                 setHighlight({
                   query: trigger.query,
                   index: (activeIndex + step + candidates.length) % candidates.length,

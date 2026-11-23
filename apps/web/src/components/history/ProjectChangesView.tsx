@@ -324,7 +324,7 @@ function Changelog(props: {
     threadEntryAtoms.summarizeProjectChanges.permissionAtom(environmentId),
   );
   const missing = props.periods
-    .filter((period) => period.items === null)
+    .filter((period) => period.items === null || period.stale === true)
     .map((period) => period.key)
     .join("\n");
   // The set of missing periods the server has answered for; until then they read "summarizing".
@@ -351,6 +351,22 @@ function Changelog(props: {
       {sections.map((section) => {
         const { period, others } = section;
         const count = period === null ? "" : plural(period.shas.length, "commit");
+        const covered = new Set(period?.items?.flatMap((item) => item.shas));
+        const commitRows = (shas: ReadonlyArray<string>) =>
+          shas.flatMap((sha) => {
+            const commit = commits.get(sha);
+            return commit === undefined
+              ? []
+              : [
+                  <CommitRow
+                    key={sha}
+                    environmentId={environmentId}
+                    commit={commit}
+                    entries={props.entries}
+                    timestampFormat={props.timestampFormat}
+                  />,
+                ];
+          });
         return (
           <Section
             key={section.key}
@@ -360,35 +376,29 @@ function Changelog(props: {
               timestampFormat: props.timestampFormat,
             })}
             published={section.publishedAt !== null}
-            note={period?.items === null && summarizing ? `${count} · summarizing…` : count}
+            note={
+              (period?.items === null || period?.stale === true) && summarizing
+                ? `${count} · summarizing…`
+                : count
+            }
           >
             <ul className="flex flex-col">
               {period === null
                 ? null
                 : period.items === null
-                  ? period.shas.flatMap((sha) => {
-                      const commit = commits.get(sha);
-                      return commit === undefined
-                        ? []
-                        : [
-                            <CommitRow
-                              key={sha}
-                              environmentId={environmentId}
-                              commit={commit}
-                              entries={props.entries}
-                              timestampFormat={props.timestampFormat}
-                            />,
-                          ];
-                    })
-                  : period.items.map((item) => (
-                      <ChangeItemRow
-                        key={`${item.title}:${item.shas[0]}`}
-                        item={item}
-                        commits={commits}
-                        labels={period.labels ?? {}}
-                        timestampFormat={props.timestampFormat}
-                      />
-                    ))}
+                  ? commitRows(period.shas)
+                  : [
+                      ...commitRows(period.shas.filter((sha) => !covered.has(sha))),
+                      ...period.items.map((item) => (
+                        <ChangeItemRow
+                          key={`${item.title}:${item.shas[0]}`}
+                          item={item}
+                          commits={commits}
+                          labels={period.labels ?? {}}
+                          timestampFormat={props.timestampFormat}
+                        />
+                      )),
+                    ]}
               {others === null ? null : (
                 <li className="min-w-0 truncate px-2 py-1 text-xs text-secondary-label/70">
                   {plural(others.count, "commit")} by {others.authors.slice(0, 3).join(", ")}
