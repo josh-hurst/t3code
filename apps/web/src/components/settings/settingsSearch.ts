@@ -575,6 +575,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sidebar branch latest message preview last reply subtitle second line"],
   },
   {
+    id: "sidebar-footer-items",
+    title: msg("Sidebar footer"),
+    to: "/settings/general",
+    searchTerms: [msg("customize show hide bottom buttons pull requests issues changes usage")],
+  },
+  {
     id: "needs-you-placement",
     title: msg("Needs you section"),
     to: "/settings/general",

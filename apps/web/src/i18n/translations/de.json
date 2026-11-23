@@ -10477,6 +10477,23 @@
   "fed2d32de2b0c566": "Einstellungssuche leeren",
   "833639e235c97484": "Suchergebnisse in den Einstellungen",
   "be82bbfef472ab44": "Keine Einstellungen gefunden",
+  "8e511e0d3b73ff91": "Wähle, welche Schaltflächen neben den Einstellungen unten in der Seitenleiste stehen. Du kannst auch mit der rechten Maustaste darauf klicken.",
+  "ebf12374a8af2930": "Fußleiste der Seitenleiste auf Standard zurücksetzen",
+  "73576a9e2cdde1e5": "Fußleiste der Seitenleiste: {enabled} von {total} an",
+  "cec1fbb8b4c9180d": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " von ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " an"
+  ],
   "4e811ba442250819": "Simlock-Host hinzufügen",
   "0c9fe2452393d9d1": "Simlock-Host bearbeiten",
   "184e65faa37982d1": "Der Server jeder ausgewählten Umgebung leiht Geräte mit seinem eigenen Agent-Token von deinem Simlock-Gateway und gibt sie beim Schließen frei.",
@@ -11479,20 +11496,6 @@
   "b480281b3791b685": "Wähle, was die Karte mit Thread-Details anzeigt. Du kannst auch mit der rechten Maustaste auf die Karte klicken.",
   "662288b90e19635f": "Thread-Details auf Standard zurücksetzen",
   "871d059d88548434": "Thread-Details: {enabled} von {total} an",
-  "cec1fbb8b4c9180d": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " von ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    },
-    " an"
-  ],
   "42d843f45e1de53b": "Wird an den Prompt für neue und neu generierte Thread-Titel angehängt.",
   "169d0ed4364b4644": "Anweisungen für Thread-Titel auf Standard zurücksetzen",
   "f307391eb1c5c9d7": "Titel auf wenige Wörter beschränken. Mit dem Hauptthema beginnen.",
@@ -11878,6 +11881,8 @@
   "d44ef1deaf6e32d5": "Classic sidebar",
   "85dbcfec2d41f534": "ausblenden einklappen laufende überwachende threads posteingang seitenleiste in arbeit ablage",
   "6743fa9087cdc148": "Thread row details",
+  "4d463db527c156d5": "Fußleiste der Seitenleiste",
+  "589d7d8023127dbf": "anpassen anzeigen ausblenden untere Schaltflächen Pull Requests Issues Änderungen Nutzung",
   "7e0619494c7b2a24": "Needs you section",
   "f93b2339b7356dfa": "Finished threads in Needs you",
   "405a2295152c9d77": "beta ordner projektbaum klassische seitenleiste",
@@ -12081,15 +12086,16 @@
   "27727bda79d97ffa": "Nur Ordner können als Projekte hinzugefügt werden",
   "eb9f51eb8bd8a43c": "Lege Dateien auf einem Thread ab, um sie anzuhängen.",
   "671a8b8ab44e83e2": "Ordner ablegen, um Projekte hinzuzufügen",
+  "680929a5fe8d4027": "In der Fußleiste der Seitenleiste anzeigen",
+  "0f90824868d6c3af": "Neuer Thread ({shortcut})",
+  "bcda2ccaa871dc46": "Neuer Thread im aktuellen Projekt: Shift+Klick ({shortcut})",
+  "aa5c379423baace1": "Neuer Thread im aktuellen Projekt: Shift+Klick",
   "3134603052b8f460": ", braucht dich",
   "18fc8976ddb6783d": ", fehlgeschlagen",
   "10ae251c9435642b": ", fertig",
   "ef436cc0f1cee213": ", arbeitet",
   "2c3bb8ccf6c38078": "Hinweis zum Anbieter-Update schließen",
   "3cef7762c22f5fb1": "Ausblenden, bis sich der Anbieterstatus ändert",
-  "0f90824868d6c3af": "Neuer Thread ({shortcut})",
-  "bcda2ccaa871dc46": "Neuer Thread im aktuellen Projekt: Shift+Klick ({shortcut})",
-  "aa5c379423baace1": "Neuer Thread im aktuellen Projekt: Shift+Klick",
   "201317aac48d4d9f": "Thread-Suche leeren",
   "9d9d32b401d2931a": "{count, plural, one {{count} Terminal-Prozess läuft} other {{count} Terminal-Prozesse laufen}}",
   "ade06f6723949b39": "Fehler aufgetreten",

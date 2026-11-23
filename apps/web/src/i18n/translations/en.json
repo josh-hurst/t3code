@@ -10486,6 +10486,23 @@
   "fed2d32de2b0c566": "Clear settings search",
   "833639e235c97484": "Settings search results",
   "be82bbfef472ab44": "No settings found",
+  "8e511e0d3b73ff91": "Choose which buttons sit beside Settings at the bottom of the sidebar. You can also right-click them.",
+  "ebf12374a8af2930": "Reset sidebar footer to default",
+  "73576a9e2cdde1e5": "Sidebar footer: {enabled} of {total} on",
+  "cec1fbb8b4c9180d": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " of ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " on"
+  ],
   "4e811ba442250819": "Add Simlock host",
   "0c9fe2452393d9d1": "Edit Simlock host",
   "184e65faa37982d1": "Each selected environment's server leases devices from your Simlock gateway with its own agent token, and releases them when they close.",
@@ -11489,20 +11506,6 @@
   "b480281b3791b685": "Choose what the thread details card shows. You can also right-click the card.",
   "662288b90e19635f": "Reset thread details to default",
   "871d059d88548434": "Thread details: {enabled} of {total} on",
-  "cec1fbb8b4c9180d": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " of ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    },
-    " on"
-  ],
   "42d843f45e1de53b": "Appended to the prompt for new and regenerated thread titles.",
   "169d0ed4364b4644": "Reset thread title instructions to default",
   "f307391eb1c5c9d7": "Keep titles to a few words. Lead with the main subject.",
@@ -11886,6 +11889,8 @@
   "d44ef1deaf6e32d5": "Classic sidebar",
   "85dbcfec2d41f534": "hide fold running monitoring threads inbox sidebar shelf",
   "6743fa9087cdc148": "Thread row details",
+  "4d463db527c156d5": "Sidebar footer",
+  "589d7d8023127dbf": "customize show hide bottom buttons pull requests issues changes usage",
   "7e0619494c7b2a24": "Needs you section",
   "f93b2339b7356dfa": "Finished threads in Needs you",
   "405a2295152c9d77": "beta folders project tree classic sidebar",
@@ -12089,15 +12094,16 @@
   "27727bda79d97ffa": "Only folders can be added as projects",
   "eb9f51eb8bd8a43c": "Drop files on a thread to attach them.",
   "671a8b8ab44e83e2": "Drop folders to add projects",
+  "680929a5fe8d4027": "Show in sidebar footer",
+  "0f90824868d6c3af": "New thread ({shortcut})",
+  "bcda2ccaa871dc46": "New thread in current project: Shift+click ({shortcut})",
+  "aa5c379423baace1": "New thread in current project: Shift+click",
   "3134603052b8f460": ", needs you",
   "18fc8976ddb6783d": ", failed",
   "10ae251c9435642b": ", done",
   "ef436cc0f1cee213": ", working",
   "2c3bb8ccf6c38078": "Dismiss provider update notice",
   "3cef7762c22f5fb1": "Dismiss until provider status changes",
-  "0f90824868d6c3af": "New thread ({shortcut})",
-  "bcda2ccaa871dc46": "New thread in current project: Shift+click ({shortcut})",
-  "aa5c379423baace1": "New thread in current project: Shift+click",
   "201317aac48d4d9f": "Clear thread search",
   "9d9d32b401d2931a": "{count, plural, one {{count} terminal process running} other {{count} terminal processes running}}",
   "ade06f6723949b39": "Error occurred",

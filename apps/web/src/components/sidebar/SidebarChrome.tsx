@@ -7,11 +7,11 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { T, useGT } from "gt-react";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useAtomValue } from "@effect/atom-react";
-import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import { useClientSettings, useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { shortcutLabelForCommand } from "../../keybindings";
 import {
   navigateHistory,
@@ -30,6 +30,7 @@ import {
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { Menu, MenuPopup } from "../ui/menu";
 import {
   SidebarFooter,
   SidebarMenu,
@@ -44,6 +45,8 @@ import { readIssueListPreferences } from "../issue/issueListPreferences";
 import { IssueGlyph } from "../issue/issuePresentation";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarChangesButton, type SidebarChangedProject } from "./SidebarChangesButton";
+import { resolveSidebarFooterVisibility } from "./sidebarFooterItems";
+import { SidebarFooterItemsMenuItems } from "./SidebarFooterItemsMenu";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
@@ -231,6 +234,8 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
   });
   const pullRequestsSupported = usePullRequestsSupported();
   const issuesSupported = useIssuesSupported();
+  const visible = useClientSettings(resolveSidebarFooterVisibility);
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -265,7 +270,17 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
   };
 
   return (
-    <div className="in-data-[sidebar-rows=card]:px-1">
+    <div
+      className="in-data-[sidebar-rows=card]:px-1"
+      onContextMenu={(event) => {
+        // Popups opened from the footer bubble here through React; they keep their own menus.
+        const target = event.target;
+        if (isOnUtilityPage || !(target instanceof Node) || !event.currentTarget.contains(target))
+          return;
+        event.preventDefault();
+        setMenuPosition({ x: event.clientX, y: event.clientY });
+      }}
+    >
       <SidebarMenu className="flex-row items-center">
         {isOnUtilityPage ? (
           <SidebarMenuItem className="min-w-0 flex-1">
@@ -283,31 +298,50 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
               label={gt("Settings")}
               onClick={handleSettingsClick}
             />
-            {pullRequestsSupported ? (
+            {visible.pullRequests && pullRequestsSupported ? (
               <SidebarUtilityItem
                 icon={<PullRequestGlyph.pullRequest />}
                 label={gt("Pull requests")}
                 onClick={handlePullRequestsClick}
               />
             ) : null}
-            {issuesSupported ? (
+            {visible.issues && issuesSupported ? (
               <SidebarUtilityItem
                 icon={<IssueGlyph.issue />}
                 label={gt("Issues", { $context: "sidebar link to the list of issues" })}
                 onClick={handleIssuesClick}
               />
             ) : null}
-            <SidebarChangesButton projects={changedProjects} onNavigate={closeMobileSidebar} />
-            <SidebarUtilityItem
-              icon={<ChartNoAxesColumnIcon />}
-              label={gt("Usage")}
-              onClick={handleUsageClick}
-            />
+            {visible.changes ? (
+              <SidebarChangesButton projects={changedProjects} onNavigate={closeMobileSidebar} />
+            ) : null}
+            {visible.usage ? (
+              <SidebarUtilityItem
+                icon={<ChartNoAxesColumnIcon />}
+                label={gt("Usage")}
+                onClick={handleUsageClick}
+              />
+            ) : null}
           </>
         )}
         <SidebarThreadUndoNotice />
         <SidebarUpdatePill />
       </SidebarMenu>
+      <Menu open={menuPosition !== null} onOpenChange={(open) => !open && setMenuPosition(null)}>
+        <MenuPopup
+          anchor={
+            menuPosition
+              ? {
+                  getBoundingClientRect: () => new DOMRect(menuPosition.x, menuPosition.y, 0, 0),
+                }
+              : undefined
+          }
+          align="start"
+          side="top"
+        >
+          <SidebarFooterItemsMenuItems />
+        </MenuPopup>
+      </Menu>
     </div>
   );
 });

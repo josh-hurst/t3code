@@ -10474,6 +10474,23 @@
   "fed2d32de2b0c566": "Borrar búsqueda de ajustes",
   "833639e235c97484": "Resultados de búsqueda de ajustes",
   "be82bbfef472ab44": "No se encontraron ajustes",
+  "8e511e0d3b73ff91": "Elige qué botones aparecen junto a Ajustes en la parte inferior de la barra lateral. También puedes hacer clic derecho sobre ellos.",
+  "ebf12374a8af2930": "Restablecer el pie de la barra lateral",
+  "73576a9e2cdde1e5": "Pie de la barra lateral: {enabled} de {total} activados",
+  "cec1fbb8b4c9180d": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " de ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " activados"
+  ],
   "4e811ba442250819": "Añadir host de Simlock",
   "0c9fe2452393d9d1": "Editar host de Simlock",
   "184e65faa37982d1": "El servidor de cada entorno seleccionado alquila dispositivos de tu gateway de Simlock con su propio token de agente y los libera cuando se cierran.",
@@ -11474,20 +11491,6 @@
   "b480281b3791b685": "Elige qué muestra la tarjeta de detalles del hilo. También puedes hacer clic derecho en la tarjeta.",
   "662288b90e19635f": "Restablecer los detalles del hilo al valor predeterminado",
   "871d059d88548434": "Detalles del hilo: {enabled} de {total} activados",
-  "cec1fbb8b4c9180d": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " de ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    },
-    " activados"
-  ],
   "42d843f45e1de53b": "Se añade al prompt de los títulos de hilos nuevos y regenerados.",
   "169d0ed4364b4644": "Restablecer las instrucciones de títulos de hilos al valor predeterminado",
   "f307391eb1c5c9d7": "Limita los títulos a unas pocas palabras. Empieza por el tema principal.",
@@ -11871,6 +11874,8 @@
   "d44ef1deaf6e32d5": "Classic sidebar",
   "85dbcfec2d41f534": "ocultar agrupar en ejecución seguimiento hilos bandeja de entrada barra lateral estante en curso",
   "6743fa9087cdc148": "Thread row details",
+  "4d463db527c156d5": "Pie de la barra lateral",
+  "589d7d8023127dbf": "personalizar mostrar ocultar botones inferiores pull requests issues incidencias cambios uso",
   "7e0619494c7b2a24": "Needs you section",
   "f93b2339b7356dfa": "Finished threads in Needs you",
   "405a2295152c9d77": "beta carpetas proyecto árbol barra lateral clásica",
@@ -12074,15 +12079,16 @@
   "27727bda79d97ffa": "Solo se pueden añadir carpetas como proyectos",
   "eb9f51eb8bd8a43c": "Suelta archivos en un hilo para adjuntarlos.",
   "671a8b8ab44e83e2": "Suelta carpetas para añadir proyectos",
+  "680929a5fe8d4027": "Mostrar en el pie de la barra lateral",
+  "0f90824868d6c3af": "Nuevo hilo ({shortcut})",
+  "bcda2ccaa871dc46": "Nuevo hilo en el proyecto actual: Shift+clic ({shortcut})",
+  "aa5c379423baace1": "Nuevo hilo en el proyecto actual: Shift+clic",
   "3134603052b8f460": ", te necesita",
   "18fc8976ddb6783d": ", con errores",
   "10ae251c9435642b": ", terminado",
   "ef436cc0f1cee213": ", en curso",
   "2c3bb8ccf6c38078": "Descartar aviso de actualización del proveedor",
   "3cef7762c22f5fb1": "Descartar hasta que cambie el estado del proveedor",
-  "0f90824868d6c3af": "Nuevo hilo ({shortcut})",
-  "bcda2ccaa871dc46": "Nuevo hilo en el proyecto actual: Shift+clic ({shortcut})",
-  "aa5c379423baace1": "Nuevo hilo en el proyecto actual: Shift+clic",
   "201317aac48d4d9f": "Borrar búsqueda de hilos",
   "9d9d32b401d2931a": "{count, plural, one {{count} proceso de terminal en ejecución} other {{count} procesos de terminal en ejecución}}",
   "ade06f6723949b39": "Se produjo un error",

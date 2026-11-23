@@ -10476,6 +10476,23 @@
   "fed2d32de2b0c566": "Effacer la recherche dans les paramètres",
   "833639e235c97484": "Résultats de la recherche dans les paramètres",
   "be82bbfef472ab44": "Aucun paramètre trouvé",
+  "8e511e0d3b73ff91": "Choisissez les boutons affichés à côté des Réglages en bas de la barre latérale. Vous pouvez aussi faire un clic droit dessus.",
+  "ebf12374a8af2930": "Réinitialiser le pied de la barre latérale",
+  "73576a9e2cdde1e5": "Pied de la barre latérale : {enabled} sur {total} activés",
+  "cec1fbb8b4c9180d": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " sur ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " activés"
+  ],
   "4e811ba442250819": "Ajouter un hôte Simlock",
   "0c9fe2452393d9d1": "Modifier l’hôte Simlock",
   "184e65faa37982d1": "Le serveur de chaque environnement sélectionné loue des appareils à votre passerelle Simlock avec son propre jeton d’agent, et les libère à leur fermeture.",
@@ -11479,20 +11496,6 @@
   "b480281b3791b685": "Choisissez ce qu’affiche la carte de détails du fil. Vous pouvez aussi faire un clic droit sur la carte.",
   "662288b90e19635f": "Réinitialiser les détails du fil à la valeur par défaut",
   "871d059d88548434": "Détails du fil : {enabled} sur {total} activés",
-  "cec1fbb8b4c9180d": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " sur ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    },
-    " activés"
-  ],
   "42d843f45e1de53b": "Ajouté au prompt pour les titres de fil nouveaux ou régénérés.",
   "169d0ed4364b4644": "Réinitialiser les instructions de titre des fils à la valeur par défaut",
   "f307391eb1c5c9d7": "Limiter les titres à quelques mots. Commencer par le sujet principal.",
@@ -11876,6 +11879,8 @@
   "d44ef1deaf6e32d5": "Classic sidebar",
   "85dbcfec2d41f534": "masquer regrouper en cours surveillance fils boîte de réception barre latérale étagère",
   "6743fa9087cdc148": "Thread row details",
+  "4d463db527c156d5": "Pied de la barre latérale",
+  "589d7d8023127dbf": "personnaliser afficher masquer boutons du bas pull requests issues tickets modifications utilisation",
   "7e0619494c7b2a24": "Needs you section",
   "f93b2339b7356dfa": "Finished threads in Needs you",
   "405a2295152c9d77": "bêta dossiers arborescence de projets barre latérale classique",
@@ -12079,15 +12084,16 @@
   "27727bda79d97ffa": "Seuls des dossiers peuvent être ajoutés comme projets",
   "eb9f51eb8bd8a43c": "Déposez des fichiers sur un fil pour les joindre.",
   "671a8b8ab44e83e2": "Déposez des dossiers pour ajouter des projets",
+  "680929a5fe8d4027": "Afficher dans le pied de la barre latérale",
+  "0f90824868d6c3af": "Nouveau fil ({shortcut})",
+  "bcda2ccaa871dc46": "Nouveau fil dans le projet actuel : Shift+clic ({shortcut})",
+  "aa5c379423baace1": "Nouveau fil dans le projet actuel : Shift+clic",
   "3134603052b8f460": ", a besoin de vous",
   "18fc8976ddb6783d": ", en échec",
   "10ae251c9435642b": ", terminé",
   "ef436cc0f1cee213": ", en cours",
   "2c3bb8ccf6c38078": "Ignorer l’avis de mise à jour du fournisseur",
   "3cef7762c22f5fb1": "Ignorer jusqu’au prochain changement de statut du fournisseur",
-  "0f90824868d6c3af": "Nouveau fil ({shortcut})",
-  "bcda2ccaa871dc46": "Nouveau fil dans le projet actuel : Shift+clic ({shortcut})",
-  "aa5c379423baace1": "Nouveau fil dans le projet actuel : Shift+clic",
   "201317aac48d4d9f": "Effacer la recherche de fils",
   "9d9d32b401d2931a": "{count, plural, one {{count} processus de terminal en cours} other {{count} processus de terminal en cours}}",
   "ade06f6723949b39": "Une erreur s’est produite",

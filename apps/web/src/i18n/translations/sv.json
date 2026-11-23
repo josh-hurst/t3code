@@ -10484,6 +10484,23 @@
   "fed2d32de2b0c566": "Rensa sökningen i inställningar",
   "833639e235c97484": "Sökresultat i inställningar",
   "be82bbfef472ab44": "Inga inställningar hittades",
+  "8e511e0d3b73ff91": "Välj vilka knappar som visas bredvid Inställningar längst ned i sidofältet. Du kan också högerklicka på dem.",
+  "ebf12374a8af2930": "Återställ sidofältets nederkant till standard",
+  "73576a9e2cdde1e5": "Sidofältets nederkant: {enabled} av {total} på",
+  "cec1fbb8b4c9180d": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " av ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " på"
+  ],
   "4e811ba442250819": "Lägg till Simlock-värd",
   "0c9fe2452393d9d1": "Redigera Simlock-värd",
   "184e65faa37982d1": "Varje vald miljös server hyr enheter från din Simlock-gateway med sin egen agenttoken och släpper dem när de stängs.",
@@ -11487,20 +11504,6 @@
   "b480281b3791b685": "Välj vad kortet med tråddetaljer visar. Du kan också högerklicka på kortet.",
   "662288b90e19635f": "Återställ tråddetaljer till standard",
   "871d059d88548434": "Tråddetaljer: {enabled} av {total} på",
-  "cec1fbb8b4c9180d": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " av ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    },
-    " på"
-  ],
   "42d843f45e1de53b": "Läggs till i prompten för nya och omgenererade trådtitlar.",
   "169d0ed4364b4644": "Återställ instruktioner för trådtitlar till standard",
   "f307391eb1c5c9d7": "Håll titlarna till några ord. Börja med huvudämnet.",
@@ -11884,6 +11887,8 @@
   "d44ef1deaf6e32d5": "Classic sidebar",
   "85dbcfec2d41f534": "dölj fäll ihop pågående bevakning trådar inkorg sidofält hylla",
   "6743fa9087cdc148": "Thread row details",
+  "4d463db527c156d5": "Sidofältets nederkant",
+  "589d7d8023127dbf": "anpassa visa dölj nedre knappar pull requests ärenden issues ändringar användning",
   "7e0619494c7b2a24": "Needs you section",
   "f93b2339b7356dfa": "Finished threads in Needs you",
   "405a2295152c9d77": "beta mappar projektträd klassiskt sidofält",
@@ -12087,15 +12092,16 @@
   "27727bda79d97ffa": "Endast mappar kan läggas till som projekt",
   "eb9f51eb8bd8a43c": "Släpp filer på en tråd för att bifoga dem.",
   "671a8b8ab44e83e2": "Släpp mappar för att lägga till projekt",
+  "680929a5fe8d4027": "Visa i sidofältets nederkant",
+  "0f90824868d6c3af": "Ny tråd ({shortcut})",
+  "bcda2ccaa871dc46": "Ny tråd i aktuellt projekt: Shift+klick ({shortcut})",
+  "aa5c379423baace1": "Ny tråd i aktuellt projekt: Shift+klick",
   "3134603052b8f460": ", behöver dig",
   "18fc8976ddb6783d": ", misslyckades",
   "10ae251c9435642b": ", klar",
   "ef436cc0f1cee213": ", arbetar",
   "2c3bb8ccf6c38078": "Stäng meddelandet om leverantörsuppdatering",
   "3cef7762c22f5fb1": "Stäng tills leverantörsstatusen ändras",
-  "0f90824868d6c3af": "Ny tråd ({shortcut})",
-  "bcda2ccaa871dc46": "Ny tråd i aktuellt projekt: Shift+klick ({shortcut})",
-  "aa5c379423baace1": "Ny tråd i aktuellt projekt: Shift+klick",
   "201317aac48d4d9f": "Rensa trådsökningen",
   "9d9d32b401d2931a": "{count, plural, one {{count} terminalprocess körs} other {{count} terminalprocesser körs}}",
   "ade06f6723949b39": "Ett fel uppstod",

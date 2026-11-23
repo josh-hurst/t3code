@@ -73,6 +73,7 @@ const clientSettings: ClientSettings = {
   boringSidebarMultilineRows: false,
   threadDetailsUsageEnabled: false,
   threadDetailsItems: {},
+  sidebarFooterItems: {},
   sidebarWorkingShelfEnabled: false,
   sharedProjectTerminals: false,
   loadBalancingEnabled: false,

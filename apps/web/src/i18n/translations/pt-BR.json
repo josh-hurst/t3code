@@ -10476,6 +10476,23 @@
   "fed2d32de2b0c566": "Limpar pesquisa de configurações",
   "833639e235c97484": "Resultados da pesquisa de configurações",
   "be82bbfef472ab44": "Nenhuma configuração encontrada",
+  "8e511e0d3b73ff91": "Escolha quais botões ficam ao lado de Configurações na parte inferior da barra lateral. Você também pode clicar com o botão direito neles.",
+  "ebf12374a8af2930": "Redefinir o rodapé da barra lateral para o padrão",
+  "73576a9e2cdde1e5": "Rodapé da barra lateral: {enabled} de {total} ativados",
+  "cec1fbb8b4c9180d": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " de ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " ativados"
+  ],
   "4e811ba442250819": "Adicionar host Simlock",
   "0c9fe2452393d9d1": "Editar host Simlock",
   "184e65faa37982d1": "O servidor de cada ambiente selecionado reserva dispositivos do seu gateway Simlock com o próprio token de agente e os libera quando são fechados.",
@@ -11479,20 +11496,6 @@
   "b480281b3791b685": "Escolha o que o cartão de detalhes da thread mostra. Você também pode clicar com o botão direito no cartão.",
   "662288b90e19635f": "Redefinir os detalhes da thread para o padrão",
   "871d059d88548434": "Detalhes da thread: {enabled} de {total} ativados",
-  "cec1fbb8b4c9180d": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " de ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    },
-    " ativados"
-  ],
   "42d843f45e1de53b": "Acrescentado ao prompt de títulos de threads novos e regenerados.",
   "169d0ed4364b4644": "Redefinir as instruções de título da thread para o padrão",
   "f307391eb1c5c9d7": "Mantenha os títulos com poucas palavras. Comece pelo assunto principal.",
@@ -11876,6 +11879,8 @@
   "d44ef1deaf6e32d5": "Classic sidebar",
   "85dbcfec2d41f534": "ocultar agrupar em execução monitoramento threads caixa de entrada barra lateral prateleira",
   "6743fa9087cdc148": "Thread row details",
+  "4d463db527c156d5": "Rodapé da barra lateral",
+  "589d7d8023127dbf": "personalizar mostrar ocultar botões inferiores pull requests issues alterações uso",
   "7e0619494c7b2a24": "Needs you section",
   "f93b2339b7356dfa": "Finished threads in Needs you",
   "405a2295152c9d77": "beta pastas projeto árvore barra lateral clássica",
@@ -12079,15 +12084,16 @@
   "27727bda79d97ffa": "Só pastas podem ser adicionadas como projetos",
   "eb9f51eb8bd8a43c": "Solte arquivos em uma thread para anexá-los.",
   "671a8b8ab44e83e2": "Solte pastas para adicionar projetos",
+  "680929a5fe8d4027": "Mostrar no rodapé da barra lateral",
+  "0f90824868d6c3af": "Nova thread ({shortcut})",
+  "bcda2ccaa871dc46": "Nova thread no projeto atual: Shift+clique ({shortcut})",
+  "aa5c379423baace1": "Nova thread no projeto atual: Shift+clique",
   "3134603052b8f460": ", precisa de você",
   "18fc8976ddb6783d": ", falhou",
   "10ae251c9435642b": ", pronto",
   "ef436cc0f1cee213": ", trabalhando",
   "2c3bb8ccf6c38078": "Dispensar aviso de atualização do provedor",
   "3cef7762c22f5fb1": "Dispensar até o status do provedor mudar",
-  "0f90824868d6c3af": "Nova thread ({shortcut})",
-  "bcda2ccaa871dc46": "Nova thread no projeto atual: Shift+clique ({shortcut})",
-  "aa5c379423baace1": "Nova thread no projeto atual: Shift+clique",
   "201317aac48d4d9f": "Limpar pesquisa de threads",
   "9d9d32b401d2931a": "{count, plural, one {{count} processo de terminal em execução} other {{count} processos de terminal em execução}}",
   "ade06f6723949b39": "Ocorreu um erro",

@@ -73,6 +73,7 @@ import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettin
 import { ReplySummarySettings } from "./ReplySummarySettings";
 import { LaterRecheckSettings } from "./LaterRecheckSettings";
 import { SnoozePresetsRow } from "./SnoozePresetsSettings";
+import { SidebarFooterItemsRow } from "./SidebarFooterItemsRow";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { managedTelemetryOffMessage, usePrimaryManagedPolicy } from "../../state/managedPolicy";
 import {
@@ -1207,6 +1208,7 @@ export function GeneralSettingsPanel() {
             }
           />
         )}
+        <SidebarFooterItemsRow />
       </SettingsSection>
 
       <SettingsSection id="confirmations" title={gt("Confirmations")}>
