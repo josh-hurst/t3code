@@ -423,14 +423,18 @@ export function unpublishedCount(
   return total;
 }
 
-/** Uncommitted files and unpushed commits across these projects' checkouts. */
+/**
+ * Uncommitted files and unpushed commits across these projects' checkouts, or null when none of
+ * them is a recently active Git checkout.
+ */
 export function projectChangeCounts(
   counts: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly result: OpenItemCountsResult;
   }>,
   scope: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly projectId: ProjectId }>,
-): ProjectChangeCounts {
+): ProjectChangeCounts | null {
+  let tracked = false;
   let uncommittedFiles = 0;
   let unpushedCommits = 0;
   for (const { environmentId, result } of counts) {
@@ -440,11 +444,12 @@ export function projectChangeCounts(
         (ref) => ref.environmentId === environmentId && ref.projectId === project.projectId,
       );
       if (!inScope) continue;
+      tracked = true;
       uncommittedFiles += project.changes.uncommittedFiles;
       unpushedCommits += project.changes.unpushedCommits;
     }
   }
-  return { uncommittedFiles, unpushedCommits };
+  return tracked ? { uncommittedFiles, unpushedCommits } : null;
 }
 
 export type ProjectChangeTimelineRow =

@@ -186,9 +186,7 @@ const make = Effect.gen(function* () {
       const projectIds = new Set([
         ...byProject.map((row) => row.projectId),
         ...published.keys(),
-        ...changed
-          .filter((row) => row.uncommittedFiles > 0 || row.unpushedCommits > 0)
-          .map((row) => row.projectId),
+        ...changed.map((row) => row.projectId),
       ]);
       const countsOf = new Map(byProject.map((row) => [row.projectId, row.counts]));
       return {

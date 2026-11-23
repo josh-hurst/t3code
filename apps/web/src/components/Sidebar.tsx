@@ -301,7 +301,6 @@ import {
 } from "./sidebar/SidebarDraftBlock";
 import { SidebarNeedsYouNext, SidebarTrailHeader, SidebarTrailMore } from "./sidebar/SidebarTrail";
 import { registerTideCommands } from "./sidebar/tideCommands";
-import { SidebarChangesShelf } from "./sidebar/SidebarChangesShelf";
 import { SidebarHistoryAllButton } from "./sidebar/SidebarHistoryAllButton";
 import { useEntriesEnvironmentIds, useOpenItemCounts } from "../state/threadEntries";
 import { useStillOpenActions } from "../hooks/useStillOpenActions";
@@ -1520,7 +1519,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   ).flatMap((group) => {
     if (hiddenProjectKeys.has(group.projectKey)) return [];
     const changes = projectChangeCounts(openItemCounts, group.memberProjectRefs);
-    return changes.uncommittedFiles === 0 && changes.unpushedCommits === 0
+    return changes === null
       ? []
       : [{ projectKey: group.projectKey, name: group.displayName, icon: group, ...changes }];
   });
@@ -4668,21 +4667,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             );
                             break;
                           case "settled-header":
-                            // Changes sits with the shelves, above History's long list.
-                            if (changedProjects.length > 0) {
-                              items.push(
-                                <SidebarChangesShelf
-                                  key="changes-shelf"
-                                  projects={changedProjects}
-                                  first={startsShelves}
-                                />,
-                              );
-                            }
                             items.push(
                               <SidebarSectionHeader
                                 key="settled-shelf-header"
                                 marker="settled-header"
-                                first={startsShelves && changedProjects.length === 0}
+                                first={startsShelves}
                                 tide={tide}
                                 label={
                                   tide
@@ -4766,7 +4755,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           ) : null}
         </SidebarGroup>
       </SidebarContent>
-      <SidebarChromeFooter />
+      <SidebarChromeFooter changedProjects={changedProjects} />
     </SidebarFolderDrop>
   );
 }

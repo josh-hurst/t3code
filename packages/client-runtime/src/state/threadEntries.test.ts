@@ -281,13 +281,18 @@ describe("History lists", () => {
         },
       },
     ];
-    // A project whose server sends no change counts adds nothing.
+    // A project whose server sends no change counts adds nothing; a scope with none returns null.
     expect(
       projectChangeCounts(withChanges, [
         { environmentId: local, projectId: ProjectId.make("project:a") },
         { environmentId: local, projectId: ProjectId.make("project:b") },
       ]),
     ).toEqual({ uncommittedFiles: 7, unpushedCommits: 2 });
+    expect(
+      projectChangeCounts(withChanges, [
+        { environmentId: local, projectId: ProjectId.make("project:b") },
+      ]),
+    ).toBeNull();
   });
 
   it("lays commits and publishes out by day, folding other authors' commits into one row", () => {

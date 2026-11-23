@@ -237,14 +237,11 @@ the project when nothing in it is waiting.
 
 ### Changes not out yet
 
-A **Changes** section sits with Later and History and lists each project you worked in lately
-whose main checkout holds work that is not out, one row a project: its uncommitted files, then
-**↑** and its commits on no remote. The numbers come from Git and can trail a commit or a push
-by half a minute. Click the heading to fold the section away, and use the filter button beside
-it to choose which projects it lists; a project you leave out stays in that menu.
-Click a project to open its [Changes](#history-every-topic). Thread rows carry no
-publish, commit or check label: an agent that cannot go on until you do something raises it as
-a question, which puts the thread in Needs you.
+A **Changes** button sits in the sidebar footer beside Pull requests, Issues, and Usage. Click it
+to pick a recently active project (showing any uncommitted files or unpushed commits from Git) and
+open its [Changes](#history-every-topic) view, or jump straight there when a single project is in
+scope. Thread rows carry no publish, commit or check label: an agent that cannot go on until you do
+something raises it as a question, which puts the thread in Needs you.
 
 ### Hide projects
 
@@ -426,7 +423,7 @@ are written by the summary model, one call per publish, when you open the view; 
 **Summarize latest reply** off, the commits are listed as they are.
 Threads working in their own worktrees are left out. File and commit counts come from Git.
 The topic a file sits under is the last thread known to have changed it, which can be wrong
-when several threads work in one checkout at once. The sidebar's [Changes](#changes-not-out-yet) row opens here.
+when several threads work in one checkout at once. The sidebar footer's [Changes](#changes-not-out-yet) button opens here.
 
 On mobile, **All** beside the thread list's History label opens the same History screen, with
 a project filter, Unpublished, search, **Mark published** (it asks first) and **Done**. Tap a

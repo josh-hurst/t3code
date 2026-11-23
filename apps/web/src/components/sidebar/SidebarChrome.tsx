@@ -43,6 +43,7 @@ import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPr
 import { readIssueListPreferences } from "../issue/issueListPreferences";
 import { IssueGlyph } from "../issue/issuePresentation";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
+import { SidebarChangesButton, type SidebarChangedProject } from "./SidebarChangesButton";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
@@ -216,7 +217,11 @@ function SidebarUtilityItem({
   );
 }
 
-const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
+  changedProjects = [],
+}: {
+  changedProjects?: ReadonlyArray<SidebarChangedProject>;
+}) {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const gt = useGT();
@@ -292,6 +297,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
                 onClick={handleIssuesClick}
               />
             ) : null}
+            <SidebarChangesButton projects={changedProjects} onNavigate={closeMobileSidebar} />
             <SidebarUtilityItem
               icon={<ChartNoAxesColumnIcon />}
               label={gt("Usage")}
@@ -306,12 +312,16 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   );
 });
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+export const SidebarChromeFooter = memo(function SidebarChromeFooter({
+  changedProjects = [],
+}: {
+  changedProjects?: ReadonlyArray<SidebarChangedProject> | undefined;
+}) {
   return (
     <SidebarFooter>
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
-      <SidebarUtilityMenu />
+      <SidebarUtilityMenu changedProjects={changedProjects} />
     </SidebarFooter>
   );
 });

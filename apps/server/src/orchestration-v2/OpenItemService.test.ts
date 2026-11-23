@@ -279,11 +279,12 @@ describe("OpenItemService", () => {
             lastPublishedAt: now,
           },
         ]);
-        // A project owing nothing still shows once its checkout holds changes; a clean one doesn't.
+        // Recently active Git checkouts show up in counts even when clean, so Changes still lists them.
         const dirty = ProjectId.make("project:dirty");
+        const clean = ProjectId.make("project:clean");
         harness.changeCounts.push(
           { projectId: dirty, uncommittedFiles: 4, unpushedCommits: 1 },
-          { projectId: ProjectId.make("project:clean"), uncommittedFiles: 0, unpushedCommits: 0 },
+          { projectId: clean, uncommittedFiles: 0, unpushedCommits: 0 },
         );
         assert.deepEqual((yield* service.counts()).projects.slice(1), [
           {
@@ -291,6 +292,12 @@ describe("OpenItemService", () => {
             counts: { ask: 0, verify: 0, commit: 0, ship: 0, followup: 0 },
             lastPublishedAt: null,
             changes: { uncommittedFiles: 4, unpushedCommits: 1 },
+          },
+          {
+            projectId: clean,
+            counts: { ask: 0, verify: 0, commit: 0, ship: 0, followup: 0 },
+            lastPublishedAt: null,
+            changes: { uncommittedFiles: 0, unpushedCommits: 0 },
           },
         ]);
         harness.changeCounts.length = 0;

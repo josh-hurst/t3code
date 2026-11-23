@@ -218,27 +218,3 @@ export function SidebarSectionHeader(props: {
     </SortableSidebarMarker>
   );
 }
-
-/** A shelf that holds no threads and takes no drops, so it has no part in the list's sorting. */
-export function SidebarStaticShelfHeader(props: {
-  shelf: string;
-  Icon: LucideIcon;
-  label: string;
-  count: number;
-  first: boolean;
-  tide: boolean;
-  toggle: { expanded: boolean; onToggle: () => void };
-  action?: ReactNode;
-}) {
-  return (
-    <li
-      data-thread-selection-safe
-      className={cn(
-        "list-none",
-        shelfHeaderClassName({ first: props.first, tide: props.tide, tall: true }),
-      )}
-    >
-      <ShelfHeaderBody {...props} />
-    </li>
-  );
-}
