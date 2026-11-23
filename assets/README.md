@@ -17,7 +17,9 @@ Exporting requires Icon Composer 2 or newer and Xcode 26 on macOS. The script se
 
 ## macOS exports
 
-The macOS PNGs (`*-macos-1024.png` and `app-icons/`) use the classic pre-Tahoe safe area: an 824×824 body inset 100 pixels on every side, with only the native shadow outside it. Icon Composer's command-line exporter cannot produce that preset, so the script compiles each project with `actool` for an older macOS target and extracts the 1024px fallback render from the asset catalog (`scripts/lib/extract-asset-catalog-icon.swift`). That fallback only covers the default appearance; dark renders compile a copy whose dark specializations are promoted to the defaults. The result matches Icon Composer's `macOS pre-Tahoe` export, except that the dark rim is slightly brighter.
+The `*-macos-1024.png` files use the classic pre-Tahoe safe area: an 824×824 body inset 100 pixels on every side, with only the native shadow outside it. Icon Composer's command-line exporter cannot produce that preset, so the script compiles each project with `actool` for an older macOS target and extracts the 1024px fallback render from the asset catalog (`scripts/lib/extract-asset-catalog-icon.swift`).
+
+The Dock icon choices in `app-icons/` are set at runtime with `app.dock.setIcon`, which draws the image exactly as given, so they use the current macOS style instead: Icon Composer's full-bleed `macOS` render for each appearance, placed on the same 824×824 inset with a soft shadow (`scripts/lib/compose-dock-icon.swift`). A runtime image cannot follow the system's Clear or Tinted icon styles; the bundled copper icon does.
 
 Do not edit the generated PNG or ICO files directly.
 

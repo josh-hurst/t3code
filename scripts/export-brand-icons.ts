@@ -42,8 +42,8 @@ const decodeIconComposerVersion = Schema.decodeUnknownEffect(
   Schema.fromJsonString(IconComposerVersion),
 );
 
-type IconPlatform = "iOS";
-type MacIconAppearance = "light" | "dark";
+type IconPlatform = "iOS" | "macOS";
+type IconRendition = "Default" | "Dark";
 
 interface VariantOutputs {
   readonly ios: string;
@@ -65,8 +65,13 @@ interface IconVariant {
 
 interface MacIconRequest {
   readonly source: string;
-  readonly appearance: MacIconAppearance;
-  readonly outputs: ReadonlyArray<string>;
+  readonly output: string;
+}
+
+interface DockIconRequest {
+  readonly source: string;
+  readonly rendition: IconRendition;
+  readonly output: string;
 }
 
 interface IconComposerTool {
@@ -93,7 +98,6 @@ export class IconExportFileSystemError extends Schema.TaggedError<IconExportFile
       "make-directory",
       "make-temp-directory",
       "make-temp-file",
-      "copy-path",
       "write-file",
       "rename-file",
     ]),
@@ -263,38 +267,41 @@ const ICON_VARIANTS = [
 const MAC_ICON_REQUESTS = [
   {
     source: BRAND_ASSET_PATHS.developmentIconComposerProject,
-    appearance: "light",
-    outputs: [BRAND_ASSET_PATHS.developmentDesktopIconPng],
+    output: BRAND_ASSET_PATHS.developmentDesktopIconPng,
   },
   {
     source: BRAND_ASSET_PATHS.nightlyIconComposerProject,
-    appearance: "light",
-    outputs: [BRAND_ASSET_PATHS.nightlyMacIconPng],
+    output: BRAND_ASSET_PATHS.nightlyMacIconPng,
   },
   {
     source: BRAND_ASSET_PATHS.productionIconComposerProject,
-    appearance: "light",
-    outputs: [
-      BRAND_ASSET_PATHS.productionMacIconPng,
-      `${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-copper-light.png`,
-    ],
-  },
-  {
-    source: BRAND_ASSET_PATHS.productionIconComposerProject,
-    appearance: "dark",
-    outputs: [`${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-copper-dark.png`],
-  },
-  {
-    source: BRAND_ASSET_PATHS.blueIconComposerProject,
-    appearance: "light",
-    outputs: [`${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-blue-light.png`],
-  },
-  {
-    source: BRAND_ASSET_PATHS.blueIconComposerProject,
-    appearance: "dark",
-    outputs: [`${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-blue-dark.png`],
+    output: BRAND_ASSET_PATHS.productionMacIconPng,
   },
 ] as const satisfies ReadonlyArray<MacIconRequest>;
+
+// The Dock icon choices the desktop app sets at runtime, one per appearance.
+const DOCK_ICON_REQUESTS = [
+  {
+    source: BRAND_ASSET_PATHS.productionIconComposerProject,
+    rendition: "Default",
+    output: `${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-copper-light.png`,
+  },
+  {
+    source: BRAND_ASSET_PATHS.productionIconComposerProject,
+    rendition: "Dark",
+    output: `${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-copper-dark.png`,
+  },
+  {
+    source: BRAND_ASSET_PATHS.blueIconComposerProject,
+    rendition: "Default",
+    output: `${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-blue-light.png`,
+  },
+  {
+    source: BRAND_ASSET_PATHS.blueIconComposerProject,
+    rendition: "Dark",
+    output: `${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-blue-dark.png`,
+  },
+] as const satisfies ReadonlyArray<DockIconRequest>;
 
 const RepositoryRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
@@ -516,45 +523,12 @@ const resolveIconComposerTool = Effect.fn("iconExport.resolveIconComposerTool")(
   });
 });
 
-const renderIcon = Effect.fn("iconExport.renderIcon")(function* (
-  toolPath: string,
+const readIconPng = Effect.fn("iconExport.readIconPng")(function* (
   sourcePath: string,
   outputPath: string,
-  platform: IconPlatform,
   size: number,
 ) {
   const fs = yield* FileSystem.FileSystem;
-  const args = [
-    sourcePath,
-    "--export-image",
-    "--output-file",
-    outputPath,
-    "--platform",
-    platform,
-    "--rendition",
-    "Default",
-    "--width",
-    String(size),
-    "--height",
-    String(size),
-    "--scale",
-    "1",
-    "--design-generation",
-    String(DESIGN_GENERATION),
-  ];
-  const result = yield* runCommand(toolPath, args);
-  if (result.exitCode !== 0) {
-    return yield* new IconExportCommandFailedError({
-      command: toolPath,
-      argumentCount: args.length,
-      exitCode: result.exitCode,
-      sourcePath,
-      size,
-      ...(result.stdout.trim() ? { stdout: result.stdout.trim() } : {}),
-      ...(result.stderr.trim() ? { stderr: result.stderr.trim() } : {}),
-    });
-  }
-
   const contents = yield* fs.readFile(outputPath).pipe(
     Effect.mapError(
       (cause) =>
@@ -586,6 +560,47 @@ const renderIcon = Effect.fn("iconExport.renderIcon")(function* (
     });
   }
   return buffer;
+});
+
+const renderIcon = Effect.fn("iconExport.renderIcon")(function* (
+  toolPath: string,
+  sourcePath: string,
+  outputPath: string,
+  platform: IconPlatform,
+  size: number,
+  rendition: IconRendition = "Default",
+) {
+  const args = [
+    sourcePath,
+    "--export-image",
+    "--output-file",
+    outputPath,
+    "--platform",
+    platform,
+    "--rendition",
+    rendition,
+    "--width",
+    String(size),
+    "--height",
+    String(size),
+    "--scale",
+    "1",
+    "--design-generation",
+    String(DESIGN_GENERATION),
+  ];
+  const result = yield* runCommand(toolPath, args);
+  if (result.exitCode !== 0) {
+    return yield* new IconExportCommandFailedError({
+      command: toolPath,
+      argumentCount: args.length,
+      exitCode: result.exitCode,
+      sourcePath,
+      size,
+      ...(result.stdout.trim() ? { stdout: result.stdout.trim() } : {}),
+      ...(result.stderr.trim() ? { stderr: result.stderr.trim() } : {}),
+    });
+  }
+  return yield* readIconPng(sourcePath, outputPath, size);
 });
 
 const renderVariant = Effect.fn("iconExport.renderVariant")(function* (
@@ -650,27 +665,6 @@ const renderVariant = Effect.fn("iconExport.renderVariant")(function* (
   ]);
 });
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const promoteDarkAppearance = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(promoteDarkAppearance);
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => {
-      if (key.endsWith("-specializations") && Array.isArray(entry)) {
-        const dark = entry.find((item) => isRecord(item) && item.appearance === "dark");
-        if (isRecord(dark)) return [key, [{ value: dark.value }]];
-      }
-      return [key, promoteDarkAppearance(entry)];
-    }),
-  );
-};
-
-const IconDocumentJson = Schema.fromJsonString(Schema.Unknown);
-const decodeIconDocument = Schema.decodeUnknownEffect(IconDocumentJson);
-const encodeIconDocument = Schema.encodeUnknownEffect(IconDocumentJson);
-
 const failedCommand =
   (command: string, args: ReadonlyArray<string>, sourcePath: string) => (result: CommandResult) =>
     new IconExportCommandFailedError({
@@ -684,8 +678,7 @@ const failedCommand =
     });
 
 // ictool cannot export the "macOS pre-Tahoe" icon, but actool pre-renders it into the asset
-// catalog for older macOS targets. That render only covers the default appearance, so dark
-// requests compile a copy whose dark specializations are promoted to the defaults.
+// catalog for older macOS targets.
 const renderMacIcons = Effect.fn("iconExport.renderMacIcons")(function* (
   repositoryRoot: string,
   temporaryDirectory: string,
@@ -697,7 +690,6 @@ const renderMacIcons = Effect.fn("iconExport.renderMacIcons")(function* (
     requests,
     Effect.fnUntraced(function* (request, index) {
       const workDirectory = path.join(temporaryDirectory, `macos-${index}`);
-      const projectPath = path.join(workDirectory, "app-icon.icon");
       const catalogDirectory = path.join(workDirectory, "catalog");
       yield* fs.makeDirectory(catalogDirectory, { recursive: true }).pipe(
         Effect.mapError(
@@ -709,40 +701,9 @@ const renderMacIcons = Effect.fn("iconExport.renderMacIcons")(function* (
             }),
         ),
       );
-      yield* fs.copy(path.join(repositoryRoot, request.source), projectPath).pipe(
-        Effect.mapError(
-          (cause) =>
-            new IconExportFileSystemError({
-              operation: "copy-path",
-              path: request.source,
-              cause,
-            }),
-        ),
-      );
-      if (request.appearance === "dark") {
-        const documentPath = path.join(projectPath, "icon.json");
-        const document = yield* fs.readFileString(documentPath).pipe(
-          Effect.mapError(
-            (cause) =>
-              new IconExportFileSystemError({ operation: "read-file", path: documentPath, cause }),
-          ),
-          Effect.flatMap(decodeIconDocument),
-        );
-        const darkDocument = yield* encodeIconDocument(promoteDarkAppearance(document));
-        yield* fs.writeFileString(documentPath, darkDocument).pipe(
-          Effect.mapError(
-            (cause) =>
-              new IconExportFileSystemError({
-                operation: "write-file",
-                path: documentPath,
-                cause,
-              }),
-          ),
-        );
-      }
       const args = [
         "actool",
-        projectPath,
+        path.join(repositoryRoot, request.source),
         "--compile",
         catalogDirectory,
         "--app-icon",
@@ -780,41 +741,56 @@ const renderMacIcons = Effect.fn("iconExport.renderMacIcons")(function* (
     return yield* failedCommand("xcrun", extractorArgs, "macOS asset catalogs")(extracted);
   }
 
-  return yield* Effect.forEach(
-    jobs,
-    Effect.fnUntraced(function* ({ request, outputPath }) {
-      const sourcePath = request.source;
-      const contents = Buffer.from(
-        yield* fs
-          .readFile(outputPath)
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new IconExportFileSystemError({ operation: "read-file", path: outputPath, cause }),
-            ),
-          ),
+  return yield* Effect.forEach(jobs, ({ request, outputPath }) =>
+    readIconPng(request.source, outputPath, MAC_ICON_SIZE).pipe(
+      Effect.map((contents) => ({ output: request.output, contents })),
+    ),
+  );
+});
+
+const renderDockIcons = Effect.fn("iconExport.renderDockIcons")(function* (
+  toolPath: string,
+  repositoryRoot: string,
+  temporaryDirectory: string,
+  requests: ReadonlyArray<DockIconRequest>,
+) {
+  const path = yield* Path.Path;
+  const jobs = yield* Effect.forEach(
+    requests,
+    (request, index) => {
+      const fullBleedPath = path.join(temporaryDirectory, `dock-${index}-full-bleed.png`);
+      return renderIcon(
+        toolPath,
+        path.join(repositoryRoot, request.source),
+        fullBleedPath,
+        "macOS",
+        MAC_ICON_SIZE,
+        request.rendition,
+      ).pipe(
+        Effect.as({
+          request,
+          fullBleedPath,
+          outputPath: path.join(temporaryDirectory, `dock-${index}.png`),
+        }),
       );
-      const dimensions = yield* Effect.try({
-        try: () => readPngDimensions(contents),
-        catch: (cause) =>
-          new IconExportRenditionError({
-            sourcePath,
-            outputPath,
-            expectedSize: MAC_ICON_SIZE,
-            cause,
-          }),
-      });
-      if (dimensions.width !== MAC_ICON_SIZE || dimensions.height !== MAC_ICON_SIZE) {
-        return yield* new IconExportRenditionError({
-          sourcePath,
-          outputPath,
-          expectedSize: MAC_ICON_SIZE,
-          actualWidth: dimensions.width,
-          actualHeight: dimensions.height,
-        });
-      }
-      return { outputs: request.outputs, contents };
-    }),
+    },
+    { concurrency: 1 },
+  );
+
+  const composeArgs = [
+    "swift",
+    path.join(repositoryRoot, "scripts", "lib", "compose-dock-icon.swift"),
+    ...jobs.flatMap((job) => [job.fullBleedPath, job.outputPath]),
+  ];
+  const composed = yield* runCommand("xcrun", composeArgs);
+  if (composed.exitCode !== 0) {
+    return yield* failedCommand("xcrun", composeArgs, "Dock icon renders")(composed);
+  }
+
+  return yield* Effect.forEach(jobs, ({ request, outputPath }) =>
+    readIconPng(request.source, outputPath, MAC_ICON_SIZE).pipe(
+      Effect.map((contents) => ({ output: request.output, contents })),
+    ),
   );
 });
 
@@ -946,8 +922,15 @@ export const exportBrandIcons = Effect.fn("exportBrandIcons")(function* (checkOn
 
   yield* Console.log("Rendering macOS icons with actool...");
   const macIcons = yield* renderMacIcons(repositoryRoot, temporaryDirectory, MAC_ICON_REQUESTS);
-  for (const { outputs, contents } of macIcons) {
-    for (const output of outputs) generated.set(output, contents);
+  yield* Console.log("Rendering Dock icon choices...");
+  const dockIcons = yield* renderDockIcons(
+    tool.path,
+    repositoryRoot,
+    temporaryDirectory,
+    DOCK_ICON_REQUESTS,
+  );
+  for (const { output, contents } of [...macIcons, ...dockIcons]) {
+    generated.set(output, contents);
   }
 
   for (const override of DEVELOPMENT_PUBLIC_ICON_OVERRIDES) {
