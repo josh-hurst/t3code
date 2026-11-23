@@ -329,6 +329,13 @@ export class ThreadEntryStore extends Context.Service<
       readonly projectIds?: ReadonlyArray<ProjectId>;
       readonly kind?: ThreadCardOpenKind;
     }) => Effect.Effect<ReadonlyArray<OpenItemRow>, ThreadEntryStoreError>;
+    /** Whether an active publish marker covers this run (called during it, or after its reply). */
+    readonly hasPublishCoveringRun: (input: {
+      readonly projectId: ProjectId;
+      readonly threadId: ThreadId;
+      readonly runRequestedAt: string;
+      readonly repliedAt: string;
+    }) => Effect.Effect<boolean, ThreadEntryStoreError>;
     readonly runLines: (
       threadId: ThreadId,
     ) => Effect.Effect<ReadonlyArray<ThreadRunLine>, ThreadEntryStoreError>;
@@ -522,6 +529,30 @@ const make = Effect.gen(function* () {
     NodeSqliteClient.readOnly,
   );
 
+  const hasPublishCoveringRun = Effect.fn("ThreadEntryStore.hasPublishCoveringRun")(
+    function* (input: {
+      readonly projectId: ProjectId;
+      readonly threadId: ThreadId;
+      readonly runRequestedAt: string;
+      readonly repliedAt: string;
+    }) {
+      const rows = yield* sql`
+        SELECT 1 AS hit
+        FROM tide_publish_markers
+        WHERE project_id = ${input.projectId}
+          AND undone_at IS NULL
+          AND (
+            published_at >= ${input.repliedAt}
+            OR (source_thread_id = ${input.threadId} AND published_at >= ${input.runRequestedAt})
+          )
+        LIMIT 1
+      `;
+      return rows.length > 0;
+    },
+    Effect.mapError(failed("hasPublishCoveringRun")),
+    NodeSqliteClient.readOnly,
+  );
+
   const runLines = Effect.fn("ThreadEntryStore.runLines")(
     function* (threadId: ThreadId) {
       return yield* readRunLines(sql, threadId);
@@ -573,6 +604,7 @@ const make = Effect.gen(function* () {
     list,
     counts,
     openItems,
+    hasPublishCoveringRun,
     runLines,
     regroupCandidates,
     regroupIdleAt,

@@ -433,8 +433,12 @@ function ProjectChanges(props: {
           </>
         )}
         {plural(changes.uncommitted.files, "file")} uncommitted
-        <span aria-hidden> · </span>
-        {plural(changes.unpushedCommits, "commit")} not pushed
+        {changes.hasRemote === false ? null : (
+          <>
+            <span aria-hidden> · </span>
+            {plural(changes.unpushedCommits, "commit")} not pushed
+          </>
+        )}
         {lastPublishedAt === null ? null : (
           <>
             <span aria-hidden> · </span>

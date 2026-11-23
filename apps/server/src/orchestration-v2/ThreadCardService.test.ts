@@ -973,4 +973,73 @@ describe("ThreadCardService", () => {
       }).pipe(Effect.provide(harness.layer));
     }),
   );
+
+  it.effect("drops ship items when a publish covers the run, while keeping later ship items", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const threadId = yield* createThread("published");
+        const shipCard = [
+          "line: Marked published and committed locally",
+          "topics: publishing",
+          "verify: Check live telemetry",
+          "ship: Push or publish commit",
+        ].join("\n");
+
+        // Publish marker called during the run by this thread.
+        const publishedAt = DateTime.formatIso(yield* DateTime.now);
+        const publishRun = yield* recordRun({
+          threadId,
+          run: "run:card:published:1",
+          ordinal: 1,
+          assistant: "Marked published.",
+        });
+        yield* sql`
+          INSERT INTO tide_publish_markers (
+            marker_id, project_id, published_at, source_thread_id, cleared_json, undone_at
+          ) VALUES (
+            'publish:same-run', ${projectId}, ${publishedAt}, ${threadId}, '[]', NULL
+          )`;
+        harness.generate.mockReturnValueOnce(Effect.succeed({ transcription: shipCard }));
+        yield* execute(threadId, publishRun);
+        assert.deepEqual(openKinds(yield* readThread(threadId)), ["verify"]);
+        yield* assertEntriesMatchCard(threadId);
+
+        // Publish marker clicked after the reply while the card was still generating.
+        yield* TestClock.adjust("5 minutes");
+        const lateRun = yield* recordRun({
+          threadId,
+          run: "run:card:published:2",
+          ordinal: 2,
+          assistant: "Ready to publish.",
+        });
+        yield* TestClock.adjust("10 seconds");
+        const clickedAt = DateTime.formatIso(yield* DateTime.now);
+        yield* sql`
+          INSERT INTO tide_publish_markers (
+            marker_id, project_id, published_at, source_thread_id, cleared_json, undone_at
+          ) VALUES (
+            'publish:after-reply', ${projectId}, ${clickedAt}, NULL, '[]', NULL
+          )`;
+        harness.generate.mockReturnValueOnce(Effect.succeed({ transcription: shipCard }));
+        yield* execute(threadId, lateRun);
+        assert.deepEqual(openKinds(yield* readThread(threadId)), ["verify"]);
+        yield* assertEntriesMatchCard(threadId);
+
+        // A later run after the publish can still raise a new ship item.
+        yield* TestClock.adjust("5 minutes");
+        const afterRun = yield* recordRun({
+          threadId,
+          run: "run:card:published:3",
+          ordinal: 3,
+          assistant: "Built a new feature ready to publish.",
+        });
+        harness.generate.mockReturnValueOnce(Effect.succeed({ transcription: shipCard }));
+        yield* execute(threadId, afterRun);
+        assert.deepEqual(openKinds(yield* readThread(threadId)), ["verify", "ship"]);
+        yield* assertEntriesMatchCard(threadId);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
 });

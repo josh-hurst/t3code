@@ -244,23 +244,53 @@ export interface ChangePeriod {
   readonly commits: ReadonlyArray<GitCommitFacts>;
 }
 
+/** One publish marker: when it was recorded, and when the run that recorded it finished (if any). */
+export interface PublishBoundary {
+  readonly publishedAtMs: number;
+  /**
+   * End of the turn that called `mark_published`, so a commit made later in that same turn to
+   * record what was published lands in this publish rather than "Since the last publish".
+   */
+  readonly closedAtMs?: number | undefined;
+}
+
 /**
  * The owner's commits cut at each publish, newest period first. A project never marked
  * published is cut by week, so its changelog is not one list of a month's work.
  */
 export function changePeriods(input: {
   readonly ownCommits: ReadonlyArray<GitCommitFacts>;
-  readonly publishedAtMs: ReadonlyArray<number>;
+  readonly publishedAtMs: ReadonlyArray<number | PublishBoundary>;
 }): Array<ChangePeriod> {
   const commits = input.ownCommits.toSorted(
     (left, right) => left.committedAtMs - right.committedAtMs,
   );
-  const publishes = input.publishedAtMs.toSorted((left, right) => left - right);
+  const publishes = input.publishedAtMs
+    .map((entry) =>
+      typeof entry === "number"
+        ? { publishedAtMs: entry, closedAtMs: entry }
+        : {
+            publishedAtMs: entry.publishedAtMs,
+            closedAtMs: Math.max(entry.publishedAtMs, entry.closedAtMs ?? entry.publishedAtMs),
+          },
+    )
+    .toSorted((left, right) => left.publishedAtMs - right.publishedAtMs);
+  // Keep cutoffs monotonic so an earlier publish turn never steals commits past a later publish.
+  const boundaries = publishes.map((publish, index) => {
+    const next = publishes[index + 1];
+    return {
+      publishedAtMs: publish.publishedAtMs,
+      cutoffMs:
+        next === undefined ? publish.closedAtMs : Math.min(publish.closedAtMs, next.publishedAtMs),
+    };
+  });
   const groups = new Map<number, { publishedAtMs: number | null; commits: GitCommitFacts[] }>();
   for (const commit of commits) {
-    const closedBy = publishes.find((at) => at >= commit.committedAtMs) ?? null;
+    const closedBy =
+      boundaries.find((boundary) => boundary.cutoffMs >= commit.committedAtMs)?.publishedAtMs ??
+      null;
     const slot =
-      publishes.length === 0
+      boundaries.length === 0
         ? Math.floor((commit.committedAtMs - FIRST_MONDAY_MS) / WEEK_MS)
         : (closedBy ?? Number.POSITIVE_INFINITY);
     const group = groups.get(slot) ?? { publishedAtMs: closedBy, commits: [] };

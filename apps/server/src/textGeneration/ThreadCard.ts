@@ -237,6 +237,7 @@ const FOLLOWUP_REST = /^\s*(?::\s*(?=\d{4}-))?(\S*?)\s*:\s+(.*)$/;
 const OPEN_ITEM_PREFIX: Partial<Record<ThreadCardOpenKind, RegExp>> = {
   ask: /^(blocking|offer)\s*\|\s*(.*)$/i,
   commit: /^(pending|intentional)\s*\|\s*(.*)$/i,
+  ship: /^(pending|intentional)\s*\|\s*(.*)$/i,
   followup: /^(user|agent|none)\s*\|\s*(.*)$/i,
 };
 const ACTIONABLE_PREFIXES = new Set(["blocking", "pending", "user"]);

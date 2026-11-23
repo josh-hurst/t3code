@@ -170,6 +170,33 @@ describe("changePeriods", () => {
       publishedAtMs: [3 * HOUR],
     });
     expect(grown[0]!.key).not.toBe(periods[0]!.key);
+
+    // A commit made right after mark_published before the publish turn finishes still ships in it.
+    const sameTurn = changePeriods({
+      ownCommits: [commit("c1", 3.5, []), commit("c2", 5, [])],
+      publishedAtMs: [{ publishedAtMs: 3 * HOUR, closedAtMs: 4 * HOUR }],
+    });
+    expect(
+      sameTurn.map((period) => [period.publishedAtMs, period.commits.map((c) => c.sha)]),
+    ).toEqual([
+      [null, ["c2"]],
+      [3 * HOUR, ["c1"]],
+    ]);
+
+    // A later publish caps an earlier publish turn's cutoff.
+    const capped = changePeriods({
+      ownCommits: [commit("c1", 3.2, []), commit("c2", 3.8, [])],
+      publishedAtMs: [
+        { publishedAtMs: 3 * HOUR, closedAtMs: 5 * HOUR },
+        { publishedAtMs: 3.5 * HOUR, closedAtMs: 3.5 * HOUR },
+      ],
+    });
+    expect(
+      capped.map((period) => [period.publishedAtMs, period.commits.map((c) => c.sha)]),
+    ).toEqual([
+      [null, ["c2"]],
+      [3 * HOUR, ["c1"]],
+    ]);
   });
 
   it("cuts a project never marked published by week", () => {

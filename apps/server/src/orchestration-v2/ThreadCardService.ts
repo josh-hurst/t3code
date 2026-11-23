@@ -184,16 +184,37 @@ const make = Effect.gen(function* () {
     const card = parseThreadCard(generated.transcription, DateTime.toEpochMillis(now));
     if (card === null) return;
 
+    const repliedAt = DateTime.formatIso(reply.updatedAt);
+    const dropShip =
+      card.open.some((item) => item.kind === "ship") &&
+      (yield* entryStore
+        .hasPublishCoveringRun({
+          projectId: thread.projectId,
+          threadId: input.threadId,
+          runRequestedAt: DateTime.formatIso(run.requestedAt),
+          repliedAt,
+        })
+        .pipe(
+          Effect.catchTags({
+            ThreadEntryStoreError: (cause) =>
+              Effect.logWarning("Publish markers could not be read for thread card", {
+                ...input,
+                cause,
+              }).pipe(Effect.as(false)),
+          }),
+        ));
+    const open = dropShip ? card.open.filter((item) => item.kind !== "ship") : card.open;
+
     yield* threads.dispatch({
       type: "thread.card.record",
       commandId: CommandId.make(`command:thread-card:${input.runId}`),
       threadId: input.threadId,
       runId: input.runId,
       messageId: reply.id,
-      repliedAt: DateTime.formatIso(reply.updatedAt),
+      repliedAt,
       line: card.line,
       topics: card.topics,
-      open: card.open,
+      open,
       ...(stored === null
         ? {}
         : {

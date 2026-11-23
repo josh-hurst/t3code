@@ -288,6 +288,8 @@ export const ProjectChangesResult = Schema.Struct({
   /** Null when the project's folder is not a Git checkout. */
   branch: Schema.NullOr(Schema.String),
   isRepository: Schema.Boolean,
+  /** Absent from a server that predates it; false for a local-only Git repo with no remotes. */
+  hasRemote: Schema.optional(Schema.Boolean),
   uncommitted: Schema.Struct({
     files: NonNegativeInt,
     topics: Schema.Array(ProjectChangeTopic),

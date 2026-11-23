@@ -112,7 +112,12 @@ const decodeDigests = Schema.decodeUnknownEffect(
 const encodeDigest = Schema.encodeEffect(Digest);
 const iso = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
 const decodePublishes = Schema.decodeUnknownEffect(
-  Schema.Array(Schema.Struct({ publishedAt: IsoDateTime })),
+  Schema.Array(
+    Schema.Struct({
+      publishedAt: IsoDateTime,
+      runCompletedAt: Schema.NullOr(IsoDateTime),
+    }),
+  ),
 );
 
 const EMPTY: ProjectChangesResult = {
@@ -179,9 +184,42 @@ const make = Effect.gen(function* () {
         }),
       );
 
+  const readPublishes = Effect.fn("ProjectChangesService.readPublishes")(function* (
+    projectId: ProjectId,
+    since: string,
+    nowIso: string,
+  ) {
+    const rows = yield* decodePublishes(
+      yield* sql`
+        SELECT
+          m.published_at AS "publishedAt",
+          (
+            SELECT CASE
+              WHEN r.completed_at IS NOT NULL THEN r.completed_at
+              WHEN r.status IN ('running', 'starting') THEN ${nowIso}
+              ELSE NULL
+            END
+            FROM orchestration_v2_projection_runs r
+            WHERE r.thread_id = m.source_thread_id
+              AND r.requested_at <= m.published_at
+              AND (r.completed_at IS NULL OR r.completed_at >= m.published_at)
+            ORDER BY r.requested_at DESC
+            LIMIT 1
+          ) AS "runCompletedAt"
+        FROM tide_publish_markers m
+        WHERE m.project_id = ${projectId} AND m.undone_at IS NULL AND m.published_at >= ${since}
+      `,
+    );
+    return rows.map((row) => ({
+      publishedAtMs: Date.parse(row.publishedAt),
+      ...(row.runCompletedAt === null ? {} : { closedAtMs: Date.parse(row.runCompletedAt) }),
+    }));
+  });
+
   const loadEvidence = Effect.fn("ProjectChangesService.loadEvidence")(function* (
     projectId: ProjectId,
     since: string,
+    nowIso: string,
   ) {
     const threads = yield* decodeThreads(
       yield* sql`
@@ -239,13 +277,7 @@ const make = Effect.gen(function* () {
         WHERE t.project_id = ${projectId} AND r.requested_at >= ${since}
       `,
     );
-    const publishes = yield* decodePublishes(
-      yield* sql`
-        SELECT published_at AS "publishedAt"
-        FROM tide_publish_markers
-        WHERE project_id = ${projectId} AND undone_at IS NULL AND published_at >= ${since}
-      `,
-    );
+    const publishes = yield* readPublishes(projectId, since, nowIso);
     return {
       touches: assembleTouches({
         threads,
@@ -259,7 +291,7 @@ const make = Effect.gen(function* () {
         })),
       }),
       entries,
-      publishedAtMs: publishes.map((row) => Date.parse(row.publishedAt)),
+      publishes,
     };
   }, NodeSqliteClient.readOnly);
 
@@ -305,11 +337,15 @@ const make = Effect.gen(function* () {
             const project = yield* projects.getById(projectId);
             if (Option.isNone(project)) return [];
             const cwd = project.value.workspaceRoot;
-            const [status, unpushed] = yield* Effect.all(
-              [
-                run(cwd, "status", statusArgs),
-                // The same commits the project's change list marks as not pushed.
-                run(cwd, "unpushedCount", [
+            const [status, remotes] = yield* Effect.all(
+              [run(cwd, "status", statusArgs), run(cwd, "remotes", ["remote"])],
+              { concurrency: 2 },
+            );
+            if (status === null) return [];
+            const hasRemote = (remotes ?? "").trim() !== "";
+            const unpushed = hasRemote
+              ? // The same commits the project's change list marks as not pushed.
+                yield* run(cwd, "unpushedCount", [
                   "rev-list",
                   "--count",
                   "--no-merges",
@@ -317,11 +353,8 @@ const make = Effect.gen(function* () {
                   "HEAD",
                   "--not",
                   "--remotes",
-                ]),
-              ],
-              { concurrency: 2 },
-            );
-            if (status === null) return [];
+                ])
+              : null;
             return [
               {
                 projectId,
@@ -372,18 +405,24 @@ const make = Effect.gen(function* () {
     };
   });
 
-  const readPublishes = Effect.fn("ProjectChangesService.readPublishes")(function* (
-    projectId: ProjectId,
+  const readUnpushed = Effect.fn("ProjectChangesService.readUnpushed")(function* (
+    cwd: string,
     since: string,
   ) {
-    const rows = yield* decodePublishes(
-      yield* sql`
-        SELECT published_at AS "publishedAt"
-        FROM tide_publish_markers
-        WHERE project_id = ${projectId} AND undone_at IS NULL AND published_at >= ${since}
-      `,
-    );
-    return rows.map((row) => Date.parse(row.publishedAt));
+    const remotes = yield* run(cwd, "remotes", ["remote"]);
+    if ((remotes ?? "").trim() === "") return { hasRemote: false, shas: new Set<string>() };
+    // On no remote branch at all, so a branch without an upstream still reads right.
+    const unpushed = yield* run(cwd, "unpushed", [
+      "rev-list",
+      `--since=${since}`,
+      "HEAD",
+      "--not",
+      "--remotes",
+    ]);
+    return {
+      hasRemote: true,
+      shas: new Set((unpushed ?? "").split("\n").filter((sha) => sha !== "")),
+    };
   });
 
   const readDigests = Effect.fn("ProjectChangesService.readDigests")(function* (
@@ -399,8 +438,11 @@ const make = Effect.gen(function* () {
     return new Map(rows.map((row) => [row.key, row.digest]));
   });
 
-  const historySince = DateTime.now.pipe(
-    Effect.map((now) => DateTime.formatIso(DateTime.subtract(now, { days: HISTORY_DAYS }))),
+  const historyWindow = DateTime.now.pipe(
+    Effect.map((now) => ({
+      nowIso: DateTime.formatIso(now),
+      since: DateTime.formatIso(DateTime.subtract(now, { days: HISTORY_DAYS })),
+    })),
   );
 
   const read: ProjectChangesService["Service"]["read"] = Effect.fn("ProjectChangesService.read")(
@@ -410,7 +452,7 @@ const make = Effect.gen(function* () {
       const cwd = project.value.workspaceRoot;
       const branch = yield* run(cwd, "branch", ["rev-parse", "--abbrev-ref", "HEAD"]);
       if (branch === null) return EMPTY;
-      const since = yield* historySince;
+      const { since, nowIso } = yield* historyWindow;
       const [status, own, allLog, unpushed, evidence, digests] = yield* Effect.all(
         [
           run(cwd, "status", statusArgs),
@@ -420,9 +462,8 @@ const make = Effect.gen(function* () {
             "allLog",
             logArgs(since, "%x1e%H%x1f%ct%x1f%an%x1f%ae%x1f%s", [`--max-count=${ALL_COMMITS_MAX}`]),
           ),
-          // On no remote branch at all, so a branch without an upstream still reads right.
-          run(cwd, "unpushed", ["rev-list", `--since=${since}`, "HEAD", "--not", "--remotes"]),
-          loadEvidence(projectId, since),
+          readUnpushed(cwd, since),
+          loadEvidence(projectId, since, nowIso),
           readDigests(projectId),
         ],
         { concurrency: "unbounded" },
@@ -436,20 +477,21 @@ const make = Effect.gen(function* () {
             ? []
             : parseGitLogWithFiles(allLog ?? "", own.email).filter((commit) => !commit.own)),
         ],
-        unpushedShas: new Set((unpushed ?? "").split("\n").filter((sha) => sha !== "")),
-        publishedAtMs: evidence.publishedAtMs,
+        unpushedShas: unpushed.shas,
+        publishedAtMs: evidence.publishes.map((publish) => publish.publishedAtMs),
       });
       const named = projectChangeEntryIds(changes);
       return {
         branch: branch.trim() === "HEAD" ? null : branch.trim(),
         isRepository: true,
+        hasRemote: unpushed.hasRemote,
         ...changes,
         entries: evidence.entries
           .filter((entry) => named.has(entry.id))
           .map(({ runs: _runs, ...entry }) => entry),
         periods: changePeriods({
           ownCommits: own.commits,
-          publishedAtMs: evidence.publishedAtMs,
+          publishedAtMs: evidence.publishes,
         }).map((period) => ({
           key: period.key,
           publishedAt: period.publishedAtMs === null ? null : iso(period.publishedAtMs),
@@ -481,10 +523,10 @@ const make = Effect.gen(function* () {
       if (!claimed) return { summarized: 0 };
       return yield* Effect.gen(function* () {
         const cwd = project.value.workspaceRoot;
-        const since = yield* historySince;
+        const { since, nowIso } = yield* historyWindow;
         const [own, publishedAtMs, digests] = yield* Effect.all([
           readOwnCommits(cwd, since),
-          readPublishes(projectId, since),
+          readPublishes(projectId, since, nowIso),
           readDigests(projectId),
         ]);
         const periods = changePeriods({ ownCommits: own.commits, publishedAtMs });
