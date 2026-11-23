@@ -42,8 +42,7 @@ const decodeIconComposerVersion = Schema.decodeUnknownEffect(
   Schema.fromJsonString(IconComposerVersion),
 );
 
-type IconPlatform = "iOS" | "macOS";
-type IconRendition = "Default" | "Dark";
+type IconPlatform = "iOS";
 
 interface VariantOutputs {
   readonly ios: string;
@@ -70,7 +69,7 @@ interface MacIconRequest {
 
 interface DockIconRequest {
   readonly source: string;
-  readonly rendition: IconRendition;
+  readonly appearance: "light" | "dark";
   readonly output: string;
 }
 
@@ -283,22 +282,22 @@ const MAC_ICON_REQUESTS = [
 const DOCK_ICON_REQUESTS = [
   {
     source: BRAND_ASSET_PATHS.productionIconComposerProject,
-    rendition: "Default",
+    appearance: "light",
     output: `${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-copper-light.png`,
   },
   {
     source: BRAND_ASSET_PATHS.productionIconComposerProject,
-    rendition: "Dark",
+    appearance: "dark",
     output: `${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-copper-dark.png`,
   },
   {
     source: BRAND_ASSET_PATHS.blueIconComposerProject,
-    rendition: "Default",
+    appearance: "light",
     output: `${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-blue-light.png`,
   },
   {
     source: BRAND_ASSET_PATHS.blueIconComposerProject,
-    rendition: "Dark",
+    appearance: "dark",
     output: `${BRAND_ASSET_PATHS.appIconsDirectory}/app-icon-blue-dark.png`,
   },
 ] as const satisfies ReadonlyArray<DockIconRequest>;
@@ -568,7 +567,6 @@ const renderIcon = Effect.fn("iconExport.renderIcon")(function* (
   outputPath: string,
   platform: IconPlatform,
   size: number,
-  rendition: IconRendition = "Default",
 ) {
   const args = [
     sourcePath,
@@ -578,7 +576,7 @@ const renderIcon = Effect.fn("iconExport.renderIcon")(function* (
     "--platform",
     platform,
     "--rendition",
-    rendition,
+    "Default",
     "--width",
     String(size),
     "--height",
@@ -748,43 +746,81 @@ const renderMacIcons = Effect.fn("iconExport.renderMacIcons")(function* (
   );
 });
 
+// The Dock draws an icon set at runtime exactly as given, so render each choice with the system's
+// own icon renderer: compile the project for macOS 26 into a throwaway app and draw its icon.
 const renderDockIcons = Effect.fn("iconExport.renderDockIcons")(function* (
-  toolPath: string,
   repositoryRoot: string,
   temporaryDirectory: string,
   requests: ReadonlyArray<DockIconRequest>,
 ) {
+  const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const jobs = yield* Effect.forEach(
     requests,
-    (request, index) => {
-      const fullBleedPath = path.join(temporaryDirectory, `dock-${index}-full-bleed.png`);
-      return renderIcon(
-        toolPath,
-        path.join(repositoryRoot, request.source),
-        fullBleedPath,
-        "macOS",
-        MAC_ICON_SIZE,
-        request.rendition,
-      ).pipe(
-        Effect.as({
-          request,
-          fullBleedPath,
-          outputPath: path.join(temporaryDirectory, `dock-${index}.png`),
-        }),
+    Effect.fnUntraced(function* (request, index) {
+      const bundlePath = path.join(temporaryDirectory, `dock-${index}`, "T3 Icon.app");
+      const resourcesDirectory = path.join(bundlePath, "Contents", "Resources");
+      yield* fs.makeDirectory(resourcesDirectory, { recursive: true }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new IconExportFileSystemError({
+              operation: "make-directory",
+              path: resourcesDirectory,
+              cause,
+            }),
+        ),
       );
-    },
+      const args = [
+        "actool",
+        path.join(repositoryRoot, request.source),
+        "--compile",
+        resourcesDirectory,
+        "--app-icon",
+        "app-icon",
+        "--platform",
+        "macosx",
+        "--target-device",
+        "mac",
+        "--minimum-deployment-target",
+        "26.0",
+        "--output-partial-info-plist",
+        path.join(temporaryDirectory, `dock-${index}`, "partial-info.plist"),
+      ];
+      const result = yield* runCommand("xcrun", args);
+      if (result.exitCode !== 0) {
+        return yield* failedCommand("xcrun", args, request.source)(result);
+      }
+      // A bundle identifier unique to this run keeps the system icon cache from answering.
+      const infoPath = path.join(bundlePath, "Contents", "Info.plist");
+      const bundleIdentifier = `t3.icon-export.${path.basename(temporaryDirectory)}.${index}`;
+      yield* fs
+        .writeFileString(
+          infoPath,
+          `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>${bundleIdentifier}</string><key>CFBundleIconName</key><string>app-icon</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>\n`,
+        )
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new IconExportFileSystemError({ operation: "write-file", path: infoPath, cause }),
+          ),
+        );
+      return {
+        request,
+        bundlePath,
+        outputPath: path.join(temporaryDirectory, `dock-${index}.png`),
+      };
+    }),
     { concurrency: 1 },
   );
 
-  const composeArgs = [
+  const renderArgs = [
     "swift",
-    path.join(repositoryRoot, "scripts", "lib", "compose-dock-icon.swift"),
-    ...jobs.flatMap((job) => [job.fullBleedPath, job.outputPath]),
+    path.join(repositoryRoot, "scripts", "lib", "render-bundle-icon.swift"),
+    ...jobs.flatMap((job) => [job.request.appearance, job.bundlePath, job.outputPath]),
   ];
-  const composed = yield* runCommand("xcrun", composeArgs);
-  if (composed.exitCode !== 0) {
-    return yield* failedCommand("xcrun", composeArgs, "Dock icon renders")(composed);
+  const rendered = yield* runCommand("xcrun", renderArgs);
+  if (rendered.exitCode !== 0) {
+    return yield* failedCommand("xcrun", renderArgs, "Dock icon bundles")(rendered);
   }
 
   return yield* Effect.forEach(jobs, ({ request, outputPath }) =>
@@ -923,12 +959,7 @@ export const exportBrandIcons = Effect.fn("exportBrandIcons")(function* (checkOn
   yield* Console.log("Rendering macOS icons with actool...");
   const macIcons = yield* renderMacIcons(repositoryRoot, temporaryDirectory, MAC_ICON_REQUESTS);
   yield* Console.log("Rendering Dock icon choices...");
-  const dockIcons = yield* renderDockIcons(
-    tool.path,
-    repositoryRoot,
-    temporaryDirectory,
-    DOCK_ICON_REQUESTS,
-  );
+  const dockIcons = yield* renderDockIcons(repositoryRoot, temporaryDirectory, DOCK_ICON_REQUESTS);
   for (const { output, contents } of [...macIcons, ...dockIcons]) {
     generated.set(output, contents);
   }
