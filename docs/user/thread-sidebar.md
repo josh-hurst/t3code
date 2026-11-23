@@ -240,7 +240,7 @@ the project when nothing in it is waiting.
 A **Changes** button sits in the sidebar footer beside Pull requests, Issues, and Usage. Click it
 to pick a recently active project (showing any uncommitted files or unpushed commits from Git) and
 open its [Changes](#history-every-topic) view, or jump straight there when a single project is in
-scope. Use **Choose projects** at the bottom of the menu to hide or restore projects from that list.
+scope. Use the filter icon in the top right of the menu to hide or restore projects from that list.
 Thread rows carry no publish, commit or check label: an agent that cannot go on until you do
 something raises it as a question, which puts the thread in Needs you.
 

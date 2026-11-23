@@ -1,3 +1,4 @@
+import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { useGT } from "gt-react";
@@ -5,6 +6,7 @@ import { ArrowUpIcon, GitCommitHorizontalIcon, ListFilterIcon } from "lucide-rea
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import { Button } from "../ui/button";
 import {
   Menu,
   MenuCheckboxItem,
@@ -12,10 +14,8 @@ import {
   MenuGroupLabel,
   MenuItem,
   MenuPopup,
-  MenuSeparator,
   MenuSub,
   MenuSubPopup,
-  MenuSubTrigger,
   MenuTrigger,
 } from "../ui/menu";
 import { SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
@@ -104,7 +104,64 @@ export function SidebarChangesButton(props: {
         </Tooltip>
         <MenuPopup side="top" align="start" className="min-w-52">
           <MenuGroup>
-            <MenuGroupLabel>{label}</MenuGroupLabel>
+            <div className="flex items-center justify-between gap-2 pe-1">
+              <MenuGroupLabel>{label}</MenuGroupLabel>
+              <MenuSub>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <MenuPrimitive.SubmenuTrigger
+                        nativeButton
+                        openOnHover={false}
+                        render={
+                          <Button
+                            type="button"
+                            size="icon-micro"
+                            variant="ghost-muted"
+                            aria-label="Choose projects"
+                          >
+                            <ListFilterIcon />
+                          </Button>
+                        }
+                      />
+                    }
+                  />
+                  <TooltipPopup side="top">Choose projects</TooltipPopup>
+                </Tooltip>
+                <MenuSubPopup align="start">
+                  <MenuGroup>
+                    <MenuGroupLabel>Show changes for</MenuGroupLabel>
+                    {props.projects.map((project) => (
+                      <MenuCheckboxItem
+                        key={project.projectKey}
+                        checked={!hiddenKeys.includes(project.projectKey)}
+                        // The menu stays open, so several projects can be picked in one visit.
+                        closeOnClick={false}
+                        onCheckedChange={(checked) =>
+                          setHiddenKeys((keys) =>
+                            checked
+                              ? keys.filter((key) => key !== project.projectKey)
+                              : [
+                                  ...keys.filter((key) => key !== project.projectKey),
+                                  project.projectKey,
+                                ],
+                          )
+                        }
+                      >
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          {project.icon ? (
+                            <span className="flex shrink-0">
+                              <ProjectFavicon project={project.icon} className="size-3.5" />
+                            </span>
+                          ) : null}
+                          <span className="min-w-0 truncate">{project.name}</span>
+                        </span>
+                      </MenuCheckboxItem>
+                    ))}
+                  </MenuGroup>
+                </MenuSubPopup>
+              </MenuSub>
+            </div>
             {shown.length > 0 ? (
               shown.map((project) => (
                 <MenuItem key={project.projectKey} onClick={() => openProject(project.projectKey)}>
@@ -138,45 +195,6 @@ export function SidebarChangesButton(props: {
               <p className="px-2 py-1.5 text-xs text-muted-foreground">No projects selected</p>
             )}
           </MenuGroup>
-          <MenuSeparator />
-          <MenuSub>
-            <MenuSubTrigger>
-              <ListFilterIcon className="size-3.5" />
-              <span>Choose projects</span>
-            </MenuSubTrigger>
-            <MenuSubPopup align="end">
-              <MenuGroup>
-                <MenuGroupLabel>Show changes for</MenuGroupLabel>
-                {props.projects.map((project) => (
-                  <MenuCheckboxItem
-                    key={project.projectKey}
-                    checked={!hiddenKeys.includes(project.projectKey)}
-                    // The menu stays open, so several projects can be picked in one visit.
-                    closeOnClick={false}
-                    onCheckedChange={(checked) =>
-                      setHiddenKeys((keys) =>
-                        checked
-                          ? keys.filter((key) => key !== project.projectKey)
-                          : [
-                              ...keys.filter((key) => key !== project.projectKey),
-                              project.projectKey,
-                            ],
-                      )
-                    }
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      {project.icon ? (
-                        <span className="flex shrink-0">
-                          <ProjectFavicon project={project.icon} className="size-3.5" />
-                        </span>
-                      ) : null}
-                      <span className="min-w-0 truncate">{project.name}</span>
-                    </span>
-                  </MenuCheckboxItem>
-                ))}
-              </MenuGroup>
-            </MenuSubPopup>
-          </MenuSub>
         </MenuPopup>
       </Menu>
     </SidebarMenuItem>
