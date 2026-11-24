@@ -876,6 +876,8 @@
   "4bed196a655ab14f": "{live} de {total} agentes trabajando",
   "ba1727ddc7a0a0b6": "{count, plural, one {{count} agente terminado} other {{count} agentes terminados}}",
   "4dd09c829329a994": "Mensaje en cola",
+  "f0684b2c57f4099c": "pronto",
+  "da8acffead888913": "en {when}",
   "3f0b962160edbe6d": "No se pudo sincronizar el hilo.",
   "752b4d69669b0019": "No se pudo cargar la actividad anterior.",
   "44de9731d5b8eb38": "El historial de trabajo cambió. Vuelve a cargarlo.",

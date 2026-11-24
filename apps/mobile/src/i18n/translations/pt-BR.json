@@ -876,6 +876,8 @@
   "4bed196a655ab14f": "{live} de {total} agentes trabalhando",
   "ba1727ddc7a0a0b6": "{count, plural, one {{count} agente concluído} other {{count} agentes concluídos}}",
   "4dd09c829329a994": "Mensagem na fila",
+  "f0684b2c57f4099c": "em breve",
+  "da8acffead888913": "em {when}",
   "3f0b962160edbe6d": "Não foi possível sincronizar a thread.",
   "752b4d69669b0019": "Não foi possível carregar a atividade anterior.",
   "44de9731d5b8eb38": "O histórico de trabalho mudou. Tente carregá-lo novamente.",

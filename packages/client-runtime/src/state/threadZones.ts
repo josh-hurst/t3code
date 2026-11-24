@@ -9,6 +9,8 @@ import {
 } from "@t3tools/contracts";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import * as DateTime from "effect/DateTime";
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 
 import type { EnvironmentThreadShell, ThreadRunSummary, ThreadRuntimeSummary } from "./models.ts";
 import {
@@ -410,6 +412,19 @@ export function sortSettlingThreads<T extends SortKeyInput & AutoSettleInput>(
 export function threadAutoSettleLabel(atMs: number, options: { readonly now: string }): string {
   const when = snoozeWakeLabel(DateTime.formatIso(DateTime.makeUnsafe(atMs)), options);
   return when === "now" ? "Settles soon after your next message" : `Settles in ${when}`;
+}
+
+/** A Settling row's time: "in 3h", or "soon" once only the owner being away holds the thread. */
+export function threadSettlingTimeLabel(
+  atMs: number,
+  options: { readonly now: string },
+  resolve: MFunctionType = mFallback,
+): string {
+  if (atMs <= Date.parse(options.now)) {
+    return resolve(msg("soon", { $context: "when a thread settles on its own" }));
+  }
+  const when = snoozeWakeLabel(DateTime.formatIso(DateTime.makeUnsafe(atMs)), options, resolve);
+  return resolve(msg("in {when}", { when, $context: "time until a thread settles on its own" }));
 }
 
 /** Later, soonest first; rows with no time (set aside, standing checks) last, oldest hold first. */

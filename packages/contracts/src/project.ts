@@ -41,6 +41,12 @@ export const ProjectScript = Schema.Struct({
   runOnWorktreeCreate: Schema.Boolean,
   runOnSettle: Schema.optional(Schema.Boolean),
   stopOnSettle: Schema.optional(Schema.Boolean),
+  keepRunning: Schema.optional(
+    Schema.Boolean.annotate({
+      description:
+        "Run this command in the project folder in the background while T3 is up, restarting on exit and when the server restarts. Applies only to a project's own actions, never global defaults.",
+    }),
+  ),
   async: Schema.optional(Schema.Boolean),
   previewUrl: Schema.optional(TrimmedNonEmptyString),
   autoOpenPreview: Schema.optional(Schema.Boolean),

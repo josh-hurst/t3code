@@ -129,7 +129,11 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { formatModelSlugName, resolveSelectableModel } from "@t3tools/shared/model";
-import { projectScriptCwd, resolveProjectScripts } from "@t3tools/shared/projectScripts";
+import {
+  projectScriptCwd,
+  resolveProjectScripts,
+  runnableProjectScripts,
+} from "@t3tools/shared/projectScripts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { orchestrationV2WorktreePending } from "@t3tools/shared/orchestrationV2ThreadError";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
@@ -3021,7 +3025,9 @@ export default function ChatView(props: ChatViewProps) {
     fallback: (command) => {
       const scriptId = projectScriptIdFromCommand(command);
       if (!scriptId || !activeProject || !canOperateTerminal) return undefined;
-      const script = activeProjectScripts.find((entry) => entry.id === scriptId);
+      const script = runnableProjectScripts(activeProjectScripts).find(
+        (entry) => entry.id === scriptId,
+      );
       return script ? () => void runProjectScriptStable(script) : undefined;
     },
   });

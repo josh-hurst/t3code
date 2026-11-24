@@ -206,6 +206,17 @@ on each selected environment, and reset returns to the environment's shared list
 `t3.json` actions can be imported there. When a project has several checkouts on one environment,
 choose one in the scope line at the top to see or change only that checkout's settings.
 
+### Keep running actions
+
+Turn on **Keep running** in an action's editor under **Settings → Projects → Actions** to have T3
+run that command in the project folder in the background while the server is up, for example a
+local sync server or watcher. The command starts when the server starts and restarts if it exits.
+After five quick exits in a row T3 stops retrying until you restart the action or change its
+command. It stops when you turn the switch off, delete the action, or archive or remove the
+project. The action's row in Settings shows its state and recent output. **Keep running** only
+applies to a project's own actions, not shared environment defaults, and kept actions stay out of
+thread run menus and shortcuts. Agents can add one for a project and read its state.
+
 Settings a repository can also declare in `t3.json`, such as the workspace for new threads,
 resolve in one order: a project override, then the environment setting, then `t3.json`, then the
 built-in default. Leave a setting on **Inherit** to let the next tier decide.

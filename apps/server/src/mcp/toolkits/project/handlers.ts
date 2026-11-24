@@ -7,6 +7,7 @@ import {
   ProjectId,
   type TaskFolderError,
   type Project as ProjectRecord,
+  type ProjectScript,
   type ServerProvider,
   T3_PROJECT_FILE_NAME,
 } from "@t3tools/contracts";
@@ -24,6 +25,7 @@ import * as OpenItemService from "../../../orchestration-v2/OpenItemService.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
+import * as ProjectKeepRunningService from "../../../project/ProjectKeepRunningService.ts";
 import { mutateProjectWithClone } from "../../../project/ProjectMutation.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
@@ -186,6 +188,30 @@ const launchCommandId = Effect.fn("mcp.launchCommandId")(function* (
 const access = Effect.gen(function* () {
   yield* readCaller();
   return yield* Project.ProjectService;
+});
+
+const PROJECT_READ_KEEP_RUNNING_TAIL_LINES = 20;
+
+/**
+ * Syncs an agent's project-script write into `projectSettingsOverrides` so it takes effect even
+ * when `projectSettingsFolded` is true or a per-project override already exists.
+ */
+const saveProjectScriptsOverride = Effect.fn("mcp.saveProjectScriptsOverride")(function* (
+  projectId: ProjectId,
+  scripts: ReadonlyArray<ProjectScript>,
+) {
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const current = yield* serverSettings.getSettings.pipe(Effect.mapError(unavailable));
+  yield* serverSettings
+    .updateSettings({
+      projectSettingsOverrides: {
+        [projectId]: {
+          ...current.projectSettingsOverrides[projectId],
+          defaultProjectScripts: scripts,
+        },
+      },
+    })
+    .pipe(Effect.mapError(unavailable));
 });
 
 /** Settings, not the project record, hold the default model and actions that new threads use. */
@@ -517,7 +543,39 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           code: "invalid_request",
           message: "The project was not found.",
         });
-      return (yield* withSavedProjectSettings)(result.value);
+      const hydrated = (yield* withSavedProjectSettings)(result.value);
+      const keepRunning = yield* ProjectKeepRunningService.ProjectKeepRunningService;
+      const statuses = yield* keepRunning.getStatusesForProject(hydrated.id);
+      const statusByScriptId = new Map(
+        statuses.map((status) => [status.scriptId, status] as const),
+      );
+      const scripts = yield* Effect.forEach(hydrated.scripts, (script) => {
+        if (script.keepRunning !== true) return Effect.succeed(script);
+        const status = statusByScriptId.get(script.id);
+        if (status === undefined) return Effect.succeed(script);
+        return keepRunning
+          .getOutput({
+            projectId: hydrated.id,
+            scriptId: script.id,
+            maxLines: PROJECT_READ_KEEP_RUNNING_TAIL_LINES,
+          })
+          .pipe(
+            Effect.map((output) => ({
+              ...script,
+              keepRunningStatus: {
+                state: status.state,
+                pid: status.pid,
+                startedAt: status.startedAt,
+                restartCount: status.restartCount,
+                lastExitCode: status.lastExitCode,
+                lastExitSignal: status.lastExitSignal,
+                failureMessage: status.failureMessage,
+                outputTail: output.lines,
+              },
+            })),
+          );
+      });
+      return { ...hydrated, scripts };
     }),
   ),
   t3_project_create: McpToolAccess.writesEnvironment(
@@ -570,6 +628,11 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         const created = yield* projects
           .create({ ...input, workspaceRoot, commandId, projectId: ProjectId.make(commandId) })
           .pipe(Effect.mapError(projectFailure));
+        if (input.scripts !== undefined) {
+          yield* saveProjectScriptsOverride(created.id, input.scripts);
+          const keepRunning = yield* ProjectKeepRunningService.ProjectKeepRunningService;
+          yield* keepRunning.reconcile;
+        }
         return (yield* withSavedProjectSettingsAfterCreate)(created);
       }),
     // Linked work may bring the repository it works in; an existing
@@ -578,10 +641,54 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
   ),
   t3_project_update: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
+      const { keepRunningControl, ...updateInput } = input;
       const projects = yield* Project.ProjectService;
-      const updated = yield* projects
-        .update({ ...input, commandId: yield* newCommandId() })
-        .pipe(Effect.mapError(projectFailure));
+      const keepRunning = yield* ProjectKeepRunningService.ProjectKeepRunningService;
+      const hasProjectUpdate = Object.entries(updateInput).some(
+        ([key, value]) => key !== "projectId" && value !== undefined,
+      );
+      const updated = hasProjectUpdate
+        ? yield* projects
+            .update({ ...updateInput, commandId: yield* newCommandId() })
+            .pipe(Effect.mapError(projectFailure))
+        : yield* projects.getById(updateInput.projectId).pipe(
+            Effect.mapError(projectFailure),
+            Effect.flatMap(
+              Option.match({
+                onNone: () =>
+                  Effect.fail(
+                    new OrchestratorMcpFailure({
+                      code: "invalid_request",
+                      message: "The project was not found.",
+                    }),
+                  ),
+                onSome: Effect.succeed,
+              }),
+            ),
+          );
+      if (updateInput.scripts !== undefined) {
+        yield* saveProjectScriptsOverride(updated.id, updateInput.scripts);
+      }
+      if (
+        updateInput.scripts !== undefined ||
+        updateInput.archived !== undefined ||
+        updateInput.workspaceRoot !== undefined
+      ) {
+        yield* keepRunning.reconcile;
+      }
+      if (keepRunningControl !== undefined) {
+        const result = yield* keepRunning.control({
+          projectId: updated.id,
+          scriptId: keepRunningControl.scriptId,
+          action: keepRunningControl.action,
+        });
+        if (!result.applied) {
+          return yield* new OrchestratorMcpFailure({
+            code: "invalid_request",
+            message: `No keepRunning script '${keepRunningControl.scriptId}' is active on this project.`,
+          });
+        }
+      }
       return (yield* withSavedProjectSettings)(updated);
     }),
   ),

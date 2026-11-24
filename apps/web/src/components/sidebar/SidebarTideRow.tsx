@@ -12,11 +12,13 @@ import {
   UserRoundIcon,
   type LucideIcon,
 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { MiddleTruncate } from "../ui/middle-truncate";
+import { useSidebar } from "../ui/sidebar";
 import type { TideStatusTone } from "./tideSidebar.logic";
 
 const STATUS_LOOK: Record<TideStatusTone, { icon: LucideIcon; className: string }> = {
@@ -54,11 +56,57 @@ export function TideOwedLabel(props: { children: ReactNode }) {
   );
 }
 
+/** A thread row's project name; with a project group key it opens that project's Changes. */
+function TideProjectName(props: {
+  name: string;
+  changesProjectKey: string | null;
+  className?: string | undefined;
+}) {
+  if (props.changesProjectKey === null) {
+    return <span className={cn("min-w-0 truncate", props.className)}>{props.name}</span>;
+  }
+  return (
+    <TideProjectChangesLink
+      name={props.name}
+      projectKey={props.changesProjectKey}
+      className={props.className}
+    />
+  );
+}
+
+function TideProjectChangesLink(props: {
+  name: string;
+  projectKey: string;
+  className?: string | undefined;
+}) {
+  const { isMobile, setOpenMobile } = useSidebar();
+  // Inside the row's own button: keep the click, drag and rename gestures off the row.
+  return (
+    <Link
+      to="/history"
+      search={{ project: props.projectKey, view: "changes" }}
+      className={cn(
+        "relative min-w-0 truncate underline-offset-2 hover:text-foreground hover:underline focus-visible:underline focus-visible:outline-none",
+        props.className,
+      )}
+      onPointerDown={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (isMobile) setOpenMobile(false);
+      }}
+    >
+      {props.name}
+    </Link>
+  );
+}
+
 /** The project's icon at text size, keeping its colour, then its name and any off-main branch. */
 export function TideProject(props: {
   project: ProjectFaviconProject | null;
   name: string;
   branch?: string | null;
+  changesProjectKey?: string | null;
 }) {
   const branch = props.branch ?? null;
   return (
@@ -68,7 +116,11 @@ export function TideProject(props: {
           <ProjectFavicon project={props.project} className="size-3" />
         </span>
       ) : null}
-      <span className={cn("min-w-0 truncate", branch !== null && "max-w-1/2")}>{props.name}</span>
+      <TideProjectName
+        name={props.name}
+        changesProjectKey={props.changesProjectKey ?? null}
+        className={branch !== null ? "max-w-1/2" : undefined}
+      />
       {branch !== null ? (
         <span className="ms-1 flex min-w-0 flex-1 items-center gap-1">
           <GitBranchIcon aria-hidden className="size-3 shrink-0" />
@@ -88,6 +140,7 @@ export function TideProject(props: {
 export function tideRowMeta(props: {
   project: ProjectFaviconProject | null;
   name: string | null;
+  changesProjectKey?: string | null;
   pullRequest?: ReactNode;
   branch: string | null;
 }) {
@@ -101,7 +154,7 @@ export function tideRowMeta(props: {
               <ProjectFavicon project={props.project} className="size-3" />
             </span>
           ) : null}
-          <span className="min-w-0 truncate">{props.name}</span>
+          <TideProjectName name={props.name} changesProjectKey={props.changesProjectKey ?? null} />
         </span>
       ) : null}
       {props.pullRequest}

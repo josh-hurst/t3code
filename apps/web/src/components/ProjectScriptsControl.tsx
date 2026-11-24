@@ -14,6 +14,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { projectScriptMenuLabel } from "@t3tools/shared/projectScriptsCopy";
+import { runnableProjectScripts } from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, DownloadIcon, PlusIcon, SettingsIcon, WrenchIcon } from "lucide-react";
 import React, { useState } from "react";
 import { T, useGT, useMessages, Var } from "gt-react";
@@ -111,9 +112,11 @@ export default function ProjectScriptsControl({
   const [editorRequest, setEditorRequest] = useState<ProjectScriptEditorRequest | null>(null);
   const editorRequestIdRef = React.useRef(0);
 
+  const runnableScripts = runnableProjectScripts(scripts);
   const primaryScript =
-    (preferredScriptId ? scripts.find((script) => script.id === preferredScriptId) : undefined) ??
-    primaryProjectScript(scripts);
+    (preferredScriptId
+      ? runnableScripts.find((script) => script.id === preferredScriptId)
+      : undefined) ?? primaryProjectScript(runnableScripts);
   const importableScripts = fileScripts.filter(
     (fileScript) =>
       !scripts.some(
@@ -175,7 +178,7 @@ export default function ProjectScriptsControl({
 
   const importMenuItems = importableScripts.length > 0 && (
     <>
-      {scripts.length > 0 && <MenuSeparator />}
+      {runnableScripts.length > 0 && <MenuSeparator />}
       <MenuGroup>
         <MenuGroupLabel>
           <T>
@@ -204,7 +207,7 @@ export default function ProjectScriptsControl({
 
   const scriptItems = (
     <>
-      {scripts.map((script) => {
+      {runnableScripts.map((script) => {
         const shortcutLabel = shortcutLabelForCommand(
           keybindings,
           commandForProjectScript(script.id),
@@ -283,7 +286,7 @@ export default function ProjectScriptsControl({
               </MenuShortcut>
             </MenuItem>
           )}
-          {scripts.length > 0 || importableScripts.length > 0 ? (
+          {runnableScripts.length > 0 || importableScripts.length > 0 ? (
             <MenuSub
               open={actionsMenuOpen.scripts}
               onOpenChange={(open) =>
@@ -399,7 +402,7 @@ export default function ProjectScriptsControl({
             </MenuPopup>
           </Menu>
         </ActionGroup>
-      ) : scripts.length > 0 || importableScripts.length > 0 ? (
+      ) : runnableScripts.length > 0 || importableScripts.length > 0 ? (
         isPanel ? (
           <div
             role="group"

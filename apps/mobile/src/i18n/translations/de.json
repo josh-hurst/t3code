@@ -876,6 +876,8 @@
   "4bed196a655ab14f": "{live} von {total} Agenten arbeiten",
   "ba1727ddc7a0a0b6": "{count, plural, one {{count} Agent fertig} other {{count} Agenten fertig}}",
   "4dd09c829329a994": "Eingereihte Nachricht",
+  "f0684b2c57f4099c": "bald",
+  "da8acffead888913": "in {when}",
   "3f0b962160edbe6d": "Der Thread konnte nicht synchronisiert werden.",
   "752b4d69669b0019": "Frühere Aktivitäten konnten nicht geladen werden.",
   "44de9731d5b8eb38": "Der Arbeitsverlauf hat sich geändert. Lade ihn erneut.",

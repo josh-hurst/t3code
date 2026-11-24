@@ -1094,6 +1094,14 @@ function useSidebarLookups() {
       ),
     ),
   );
+  // Scratch projects have no repository, so they have no Changes to open.
+  const projectGroupKeyByKey = new Map(
+    projectGroups.flatMap((group) =>
+      group.memberProjects
+        .filter((project) => !project.isScratch)
+        .map((project) => [`${project.environmentId}:${project.id}`, group.projectKey] as const),
+    ),
+  );
   const projectRankByKey = new Map(
     projectGroups.flatMap((group, rank) =>
       group.memberProjects.map(
@@ -1120,6 +1128,7 @@ function useSidebarLookups() {
     providerEntriesByEnvironment,
     projectByKey,
     projectDisplayNameByKey,
+    projectGroupKeyByKey,
     projectRankByKey,
     projectGroupByScopeKey,
     projectScopeItems,
@@ -1191,6 +1200,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     providerEntriesByEnvironment,
     projectByKey,
     projectDisplayNameByKey,
+    projectGroupKeyByKey,
     projectRankByKey,
     projectGroupByScopeKey,
     projectScopeItems: lookupProjectScopeItems,
@@ -4213,6 +4223,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   )
                                 : null
                             }
+                            projectChangesKey={
+                              projectGroupKeyByKey.get(
+                                `${thread.environmentId}:${thread.projectId}`,
+                              ) ?? null
+                            }
                             isSettled={settledThreadKeys.has(threadKey)}
                             thread={thread}
                             project={
@@ -4477,6 +4492,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             groupLabel={groupLabelByKey.get(threadKey)}
                             groupDivider={groupDividerKey === threadKey}
                             projectNameOnRow={projectNameOnRow(thread, threadKey)}
+                            projectChangesKey={
+                              projectGroupKeyByKey.get(
+                                `${thread.environmentId}:${thread.projectId}`,
+                              ) ?? null
+                            }
                             nestDepth={nestDepthByKey.get(threadKey) ?? 0}
                             nestedUnderTitle={nestedUnderTitleByKey.get(threadKey) ?? null}
                             isNestTarget={dragState?.nestTargetKey === threadKey}

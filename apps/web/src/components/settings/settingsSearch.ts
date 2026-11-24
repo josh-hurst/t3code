@@ -528,6 +528,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("sort projects sidebar manual created recent")],
   },
   {
+    id: "new-thread-project-order",
+    title: msg("New thread project order"),
+    to: "/settings/general",
+    searchTerms: [msg("new thread project picker most used frequent recent threads sort")],
+  },
+  {
     id: "snooze-options",
     title: msg("Snooze options"),
     to: "/settings/threads",

@@ -26,7 +26,9 @@ import {
   threadRowProjectName,
   threadLastSentAt,
   threadNeedsYou,
+  threadAutoSettleAt,
   threadSettlingChance,
+  threadSettlingTimeLabel,
   trailMoreLabel,
 } from "@t3tools/client-runtime/state/thread-zones";
 import {
@@ -788,6 +790,8 @@ export function buildThreadListV2ListItems(input: {
       canSnooze(item.thread, { now: input.snoozeLabelNow })
         ? input.snoozeLabelNow
         : undefined;
+    // A Settling row counts down to when it leaves instead of saying when it was last written in.
+    const settlesAtMs = item.compact === true ? threadAutoSettleAt(item.thread) : null;
     const move =
       item.variant === "card"
         ? input.moveAvailability?.get(`${item.thread.environmentId}:${item.thread.id}`)
@@ -797,12 +801,15 @@ export function buildThreadListV2ListItems(input: {
       key: `v2-thread:${item.thread.environmentId}:${item.thread.id}`,
       item,
       snoozeWakeLabelText,
-      timeLabel: resolveThreadListV2ItemTimeLabel(
-        item,
-        snoozeWakeLabelText !== undefined,
-        trailStart !== null && index >= trailStart && index < trailStop,
-        resolve,
-      ),
+      timeLabel:
+        settlesAtMs !== null && input.snoozeLabelNow !== undefined
+          ? threadSettlingTimeLabel(settlesAtMs, { now: input.snoozeLabelNow }, resolve)
+          : resolveThreadListV2ItemTimeLabel(
+              item,
+              snoozeWakeLabelText !== undefined,
+              trailStart !== null && index >= trailStart && index < trailStop,
+              resolve,
+            ),
       snoozePresetMinute,
       showTrailingDivider: false,
       groupStart: false,

@@ -8,6 +8,36 @@ type ProjectScriptSettings = Pick<
   | "projectSettingsFolded"
 >;
 
+export function isKeepRunningProjectScript(script: Pick<ProjectScript, "keepRunning">): boolean {
+  return script.keepRunning === true;
+}
+
+export function runnableProjectScripts(
+  scripts: readonly ProjectScript[],
+): readonly ProjectScript[] {
+  return scripts.filter((script) => !isKeepRunningProjectScript(script));
+}
+
+export function resolveKeepRunningProjectScripts(
+  settings: ProjectScriptSettings,
+  project: {
+    readonly id: ProjectId;
+    readonly scripts: readonly ProjectScript[];
+    readonly archivedAt?: string | null | undefined;
+    readonly deletedAt?: string | null | undefined;
+  },
+): readonly ProjectScript[] {
+  if (project.archivedAt != null || project.deletedAt != null) return [];
+  const override = settings.projectSettingsOverrides[project.id]?.defaultProjectScripts;
+  if (override !== undefined) return override.filter(isKeepRunningProjectScript);
+  if (settings.projectSettingsFolded) return [];
+  const legacy = settings.projectScriptOverrides[project.id];
+  if (legacy === null) return [];
+  if (legacy !== undefined) return legacy.filter(isKeepRunningProjectScript);
+  if (project.scripts.length > 0) return project.scripts.filter(isKeepRunningProjectScript);
+  return [];
+}
+
 export function resolveProjectScripts(
   settings: ProjectScriptSettings,
   project: { id: ProjectId; scripts: readonly ProjectScript[] },
@@ -53,11 +83,17 @@ export function projectScriptRuntimeEnv(
 }
 
 export function setupProjectScript(scripts: readonly ProjectScript[]): ProjectScript | null {
-  return scripts.find((script) => script.runOnWorktreeCreate) ?? null;
+  return (
+    scripts.find((script) => !isKeepRunningProjectScript(script) && script.runOnWorktreeCreate) ??
+    null
+  );
 }
 
 export function settleProjectScript(scripts: readonly ProjectScript[]): ProjectScript | null {
-  return scripts.find((script) => script.runOnSettle === true) ?? null;
+  return (
+    scripts.find((script) => !isKeepRunningProjectScript(script) && script.runOnSettle === true) ??
+    null
+  );
 }
 
 /**

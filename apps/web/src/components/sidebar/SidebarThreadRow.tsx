@@ -147,6 +147,7 @@ import {
   AUTO_SETTLE_SOON_WORD,
   threadAutoSettleAt,
   threadAutoSettleLabel,
+  threadSettlingTimeLabel,
   threadCardOpenItemLabel,
   threadLaterLabel,
   threadWorkingLine,
@@ -215,6 +216,13 @@ function StandingCheckNextRun(props: { environmentId: EnvironmentId; threadId: T
 function AutoSettleNote(props: { atMs: number }) {
   const nowMinute = useNowMinute();
   return <>{threadAutoSettleLabel(props.atMs, { now: `${nowMinute}:00.000Z` })}</>;
+}
+
+/** A Settling row counts down to when it leaves, on the minute tick. */
+function SettlingTimeLabel(props: { atMs: number }) {
+  const nowMinute = useNowMinute();
+  const m = useMessages();
+  return <>{threadSettlingTimeLabel(props.atMs, { now: `${nowMinute}:00.000Z` }, m)}</>;
 }
 
 /** A Later row's time as shown: "in 3h", or "now" and "due" as they are. */
@@ -776,6 +784,8 @@ type SidebarThreadRowProps = {
   groupDivider?: boolean;
   // The project's name as text on a slim row, or null where the list already says it.
   projectNameOnRow?: string | null;
+  // The sidebar project group the name opens Changes for.
+  projectChangesKey?: string | null;
   // How many levels this row sits under a parent drawn above it.
   nestDepth?: number;
   // The parent's title, for a nested thread drawn away from its parent.
@@ -1686,7 +1696,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         </TideStatusLabel>
       );
     const timeContent =
-      variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
+      isCompactRow && settlesAtMs !== null ? (
+        <SettlingTimeLabel atMs={settlesAtMs} />
+      ) : variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
         <span className="inline-flex items-center gap-1">
           {/* The clock tells a wake time from an age at a glance. */}
           <AlarmClockIcon aria-hidden className="size-3" />
@@ -1719,11 +1731,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               aria-label={gt("Settle thread")}
               onClick={handleSettleClick}
               onPointerDown={handleSettlePointerDown}
-              className={actionClassName}
+              className={cn(actionClassName, "gap-1 text-xs")}
             />
           }
         >
           <CheckIcon className="size-3.5" />
+          <T>Settle</T>
         </TooltipTrigger>
         <TooltipPopup side="top">
           <T>Settle thread</T>
@@ -1934,7 +1947,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 isCompactRow && projectName !== null ? (
                   <>
                     <span className="flex max-w-2/5 shrink-0 text-xs text-foreground/60">
-                      <TideProject project={props.project} name={projectName} />
+                      <TideProject
+                        project={props.project}
+                        name={projectName}
+                        changesProjectKey={props.projectChangesKey ?? null}
+                      />
                     </span>
                     {title}
                   </>
@@ -1971,6 +1988,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   : tideRowMeta({
                       project: props.project,
                       name: projectName,
+                      changesProjectKey: props.projectChangesKey ?? null,
                       pullRequest: prBadge,
                       branch: metaBranch,
                     })
@@ -2466,6 +2484,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
   now: string;
   // The project's name as text in the new layout, or null where the list already says it.
   projectNameOnRow: string | null;
+  projectChangesKey?: string | null;
   explain?: (() => SearchMatchHint | undefined) | undefined;
   onHighlight: () => void;
   onSelect: () => void;
@@ -2618,6 +2637,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               meta={tideRowMeta({
                 project: props.project,
                 name: props.projectNameOnRow,
+                changesProjectKey: props.projectChangesKey ?? null,
                 branch: nonMainlineBranchName(thread.branch),
               })}
               time={

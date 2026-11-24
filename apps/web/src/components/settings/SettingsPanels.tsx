@@ -41,6 +41,7 @@ import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import { AboutVersionTitle } from "./AboutVersionTitle";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
+import { IntervalSecondsField } from "./IntervalSecondsField";
 import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import {
   canCheckForUpdate,
@@ -561,6 +562,10 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarProjectSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder
       ? [gt("Project order")]
       : []),
+    ...(settings.newThreadProjectRankingThreads !==
+    DEFAULT_UNIFIED_SETTINGS.newThreadProjectRankingThreads
+      ? [gt("New thread project order")]
+      : []),
     ...(settings.sidebarClassicEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarClassicEnabled
       ? ["Classic sidebar"]
       : []),
@@ -775,6 +780,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
+      newThreadProjectRankingThreads: DEFAULT_UNIFIED_SETTINGS.newThreadProjectRankingThreads,
       sidebarClassicEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarClassicEnabled,
       sidebarFloatingEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarFloatingEnabled,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
@@ -1024,6 +1030,44 @@ export function GeneralSettingsPanel() {
                 ))}
               </SelectPopup>
             </Select>
+          }
+        />
+        <SettingsRow
+          {...setting("new-thread-project-order")}
+          description={
+            <T>
+              New thread pickers list projects by how many of your most recent threads each one
+              started. Pinned projects stay on top.
+            </T>
+          }
+          resetAction={
+            settings.newThreadProjectRankingThreads !==
+            DEFAULT_UNIFIED_SETTINGS.newThreadProjectRankingThreads ? (
+              <SettingResetButton
+                ariaLabel={gt("Reset new thread project order to default")}
+                onClick={() =>
+                  updateSettings({
+                    newThreadProjectRankingThreads:
+                      DEFAULT_UNIFIED_SETTINGS.newThreadProjectRankingThreads,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <IntervalSecondsField
+              labels={{
+                decrease: gt("Rank by fewer recent threads"),
+                input: gt("Recent threads that rank new thread projects"),
+                increase: gt("Rank by more recent threads"),
+              }}
+              value={settings.newThreadProjectRankingThreads}
+              min={1}
+              step={10}
+              onCommit={(count, options) =>
+                updateSettings({ newThreadProjectRankingThreads: count }, options)
+              }
+            />
           }
         />
         <SettingsRow

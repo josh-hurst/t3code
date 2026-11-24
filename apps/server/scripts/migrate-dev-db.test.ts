@@ -44,6 +44,14 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
           runOnWorktreeCreate: false,
           runOnSettle: true,
         },
+        {
+          id: "sync",
+          name: "Sync",
+          command: "./sync-server",
+          icon: "play",
+          runOnWorktreeCreate: false,
+          keepRunning: true,
+        },
       ]);
       yield* sql`INSERT INTO projection_projects
         (project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at)
@@ -252,8 +260,15 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             icon: "configure",
             runOnWorktreeCreate: false,
           },
+          {
+            id: "sync",
+            name: "Sync",
+            command: "./sync-server",
+            icon: "play",
+            runOnWorktreeCreate: false,
+          },
         ],
-        "copied project scripts stay listed but never run on settle in the original checkout",
+        "copied project scripts stay listed but never run on settle or keep running in the original checkout",
       );
       assert.deepStrictEqual(kept.leftovers, {
         auth: 0,

@@ -27,6 +27,7 @@ import {
   createEnvironmentCommand,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
+  createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 import { createProject, deleteProject, updateProject } from "../operations/commands.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
@@ -230,6 +231,20 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.projectsCreateFromThread,
       scheduler: projectScheduler,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    keepRunningStatuses: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:projects:keep-running-statuses",
+      tag: WS_METHODS.subscribeProjectKeepRunning,
+    }),
+    keepRunningOutput: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:keep-running-output",
+      tag: WS_METHODS.projectsKeepRunningOutput,
+    }),
+    keepRunningControl: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:keep-running-control",
+      tag: WS_METHODS.projectsKeepRunningControl,
+      scheduler: projectScheduler,
+      concurrency: projectConcurrency,
     }),
     writeFile: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:write-file",

@@ -141,6 +141,41 @@ export function useProjectPin() {
   };
 }
 
+/** Archives a project group from a picker row, with an Undo toast to unarchive it. */
+export function useProjectArchive() {
+  const { updateProjectGroup } = useProjectGroupUpdate();
+  const { canPinProjectGroup } = useProjectPin();
+  type ArchivableGroup = {
+    readonly memberProjects: ReadonlyArray<ProjectGroupMember>;
+    readonly displayName: string;
+  };
+  const archiveProjectGroup = async (group: ArchivableGroup) => {
+    const result = await updateProjectGroup(
+      group.memberProjects,
+      { archived: true },
+      m(msg("Failed to archive project")),
+    );
+    if (result._tag !== "Success") return;
+    const id = toastManager.add({
+      type: "success",
+      title: m(msg("Archived {name}", { name: group.displayName })),
+      actionProps: {
+        children: m(msg("Undo")),
+        onClick: () => {
+          toastManager.close(id);
+          void updateProjectGroup(
+            group.memberProjects,
+            { archived: false },
+            m(msg("Failed to unarchive project")),
+          );
+        },
+      },
+    });
+  };
+  // Archive rides on the same project-organization capability and scope as pinning.
+  return { canArchiveProjectGroup: canPinProjectGroup, archiveProjectGroup };
+}
+
 /** Reports the first member this connection cannot change, and returns that failure. */
 export function checkProjectAccess(
   members: ReadonlyArray<ProjectGroupMember>,

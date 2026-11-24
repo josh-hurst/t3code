@@ -12,6 +12,8 @@ import { useRef, useState } from "react";
 import { openCommandPalette } from "~/commandPaletteBus";
 import type { useHandleNewThread } from "~/hooks/useHandleNewThread";
 import { useOrderWhileOpen } from "~/hooks/useOrderWhileOpen";
+import { useProjectArchive } from "~/hooks/useProjectGroupUpdate";
+import { useRankedNewThreadProjectEntries } from "~/hooks/useRankedNewThreadProjectEntries";
 import { useScratchProject } from "~/hooks/useScratchProject";
 import { shortcutLabelForCommand } from "~/keybindings";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "~/lib/chatThreadActions";
@@ -21,6 +23,7 @@ import {
 } from "~/sidebarProjectGrouping";
 import { DraftProjectName } from "../chat/DraftProjectName";
 import { newThreadNoProjectIndex } from "../CommandPalette.logic";
+import { ProjectArchiveButton } from "../ProjectArchiveButton";
 import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { isProjectPinShortcut, ProjectPinButton } from "../ProjectPinButton";
@@ -89,6 +92,7 @@ export function SidebarNewThreadButton({
   const [pickerQuery, setPickerQuery] = useState("");
   const pickerFilter = useComboboxFilter();
   const highlightedPickerValueRef = useRef<string | null>(null);
+  const { canArchiveProjectGroup, archiveProjectGroup } = useProjectArchive();
 
   const contextualProjectRef = resolveThreadActionProjectRef({
     activeDraftThread: newThreadContext.activeDraftThread,
@@ -96,10 +100,12 @@ export function SidebarNewThreadButton({
     defaultProjectRef: newThreadContext.defaultProjectRef,
     handleNewThread: newThreadContext.handleNewThread,
   });
-  const projectPickerEntries = buildSidebarProjectPickerEntries({
-    groups: scopeGroups,
-    preferredProjectRef: contextualProjectRef,
-  });
+  const projectPickerEntries = useRankedNewThreadProjectEntries(
+    buildSidebarProjectPickerEntries({
+      groups: scopeGroups,
+      preferredProjectRef: contextualProjectRef,
+    }),
+  );
   const menuEntries = projectPickerEntries.filter(
     ({ targetProject }) =>
       !isScratchProject(targetProject, scratchWorkspaceRootFor(targetProject.environmentId)),
@@ -375,6 +381,12 @@ export function SidebarNewThreadButton({
                     pinned={entry.group.pinned}
                     shortcutLabel={shortcutLabelForCommand(keybindings, "thread.pin")}
                     onToggle={() => toggleProjectGroupPin(entry.group)}
+                  />
+                ) : null}
+                {entry && canArchiveProjectGroup(entry.group) ? (
+                  <ProjectArchiveButton
+                    name={entry.group.displayName}
+                    onArchive={() => void archiveProjectGroup(entry.group)}
                   />
                 ) : null}
                 {entry && showProjectEnvironments ? (

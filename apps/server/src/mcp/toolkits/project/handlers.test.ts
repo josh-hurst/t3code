@@ -40,6 +40,7 @@ import * as ServerConfig from "../../../config.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
+import * as ProjectKeepRunningService from "../../../project/ProjectKeepRunningService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as SourceControlProviderRegistry from "../../../sourceControl/SourceControlProviderRegistry.ts";
@@ -189,6 +190,13 @@ const clientLaunchHarness = (input: {
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       namedProjectsRoot: "/projects",
       isScratchProject: () => Effect.succeed(false),
+    }),
+    Layer.mock(ProjectKeepRunningService.ProjectKeepRunningService)({
+      getStatusesForProject: () => Effect.succeed([]),
+      getOutput: ({ projectId: pid, scriptId }) =>
+        Effect.succeed({ projectId: pid, scriptId, lines: [], truncated: false }),
+      control: () => Effect.succeed({ applied: false, status: null }),
+      reconcile: Effect.void,
     }),
     DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer)),
   ).pipe(
@@ -1359,5 +1367,208 @@ it.effect.each([
         expect(published).toMatchObject({ code: "capability_denied" });
         expect(marked).toEqual([]);
       }
+    }),
+);
+
+it.effect(
+  "agent updates that add or remove keepRunning sync settings, reconcile, control, and read capped output",
+  () =>
+    Effect.gen(function* () {
+      const harness = clientLaunchHarness({
+        runtimeModeCeiling: "full-access",
+        overrideModel: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-sonnet",
+        },
+        overrideScripts: [],
+        launched: [],
+      });
+      const storedScripts: Array<ReadonlyArray<ProjectScript>> = [];
+      let reconciled = 0;
+      const controls: Array<{ readonly scriptId: string; readonly action: "stop" | "restart" }> =
+        [];
+      const activeByScriptId = new Map<
+        string,
+        {
+          readonly state: "running" | "stopped";
+          readonly lines: ReadonlyArray<string>;
+        }
+      >();
+      let currentProject: ProjectRecord = {
+        id: harness.projectId,
+        title: "Client target",
+        workspaceRoot: "/projects/client-target",
+        defaultModelSelection: null,
+        scripts: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        deletedAt: null,
+      };
+      const keepRunningLayer = Layer.effect(
+        ProjectKeepRunningService.ProjectKeepRunningService,
+        Effect.gen(function* () {
+          const settingsService = yield* ServerSettings.ServerSettingsService;
+          return ProjectKeepRunningService.ProjectKeepRunningService.of({
+            listStatuses: Effect.succeed([]),
+            stream: Stream.empty,
+            reconcile: Effect.gen(function* () {
+              reconciled += 1;
+              const settings = yield* settingsService.getSettings.pipe(Effect.orDie);
+              const override =
+                settings.projectSettingsOverrides[harness.projectId]?.defaultProjectScripts;
+              const kept = (override ?? []).filter((script) => script.keepRunning === true);
+              for (const id of Array.from(activeByScriptId.keys())) {
+                if (!kept.some((script) => script.id === id)) activeByScriptId.delete(id);
+              }
+              for (const script of kept) {
+                if (!activeByScriptId.has(script.id)) {
+                  activeByScriptId.set(script.id, {
+                    state: "running",
+                    lines: Array.from({ length: 30 }, (_, index) => `out-${index + 1}`),
+                  });
+                }
+              }
+            }),
+            getStatusesForProject: (pid) =>
+              Effect.succeed(
+                pid !== harness.projectId
+                  ? []
+                  : Array.from(activeByScriptId.entries(), ([scriptId, entry], index) => ({
+                      projectId: pid,
+                      scriptId,
+                      state: entry.state,
+                      pid: entry.state === "running" ? 5000 + index : null,
+                      startedAt: entry.state === "running" ? "2026-10-01T00:00:00.000Z" : null,
+                      restartCount: 0,
+                      lastExitCode: null,
+                      lastExitSignal: null,
+                      failureMessage: null,
+                      sequence: index + 1,
+                    })),
+              ),
+            getOutput: ({ projectId: pid, scriptId, maxLines }) =>
+              Effect.sync(() => {
+                const lines = activeByScriptId.get(scriptId)?.lines ?? [];
+                const sliced =
+                  maxLines !== undefined && lines.length > maxLines
+                    ? lines.slice(-maxLines)
+                    : lines;
+                return {
+                  projectId: pid,
+                  scriptId,
+                  lines: sliced,
+                  truncated: sliced.length < lines.length,
+                };
+              }),
+            control: ({ projectId: pid, scriptId, action }) =>
+              Effect.sync(() => {
+                controls.push({ scriptId, action });
+                const existing = activeByScriptId.get(scriptId);
+                if (!existing) return { applied: false, status: null };
+                const nextState = action === "stop" ? ("stopped" as const) : ("running" as const);
+                activeByScriptId.set(scriptId, { ...existing, state: nextState });
+                return {
+                  applied: true,
+                  status: {
+                    projectId: pid,
+                    scriptId,
+                    state: nextState,
+                    pid: nextState === "running" ? 5001 : null,
+                    startedAt: nextState === "running" ? "2026-10-01T00:00:00.000Z" : null,
+                    restartCount: 0,
+                    lastExitCode: null,
+                    lastExitSignal: null,
+                    failureMessage: null,
+                    sequence: 2,
+                  },
+                };
+              }),
+          });
+        }),
+      );
+      const dependencies = Layer.merge(
+        harness.dependencies,
+        Layer.mergeAll(
+          Layer.mock(Project.ProjectService)({
+            getById: (id) =>
+              Effect.succeed(
+                id === harness.projectId ? Option.some(currentProject) : Option.none(),
+              ),
+            update: (input) =>
+              Effect.sync(() => {
+                if (input.scripts !== undefined) {
+                  storedScripts.push(input.scripts);
+                  currentProject = { ...currentProject, scripts: [...input.scripts] };
+                }
+                return currentProject;
+              }),
+          }),
+          keepRunningLayer.pipe(Layer.provide(harness.dependencies)),
+        ),
+      );
+      const fullDependencies = Layer.merge(
+        dependencies,
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
+      );
+
+      yield* Effect.gen(function* () {
+        const toolkit = yield* ProjectToolkit;
+
+        // 1. Adding a keepRunning script updates projectSettingsOverrides and starts it.
+        const syncScript = {
+          id: "sync",
+          name: "Sync",
+          command: "pnpm sync",
+          icon: "play" as const,
+          runOnWorktreeCreate: false,
+          keepRunning: true,
+        };
+        const updated = yield* toolkit
+          .handle("t3_project_update", {
+            projectId: harness.projectId,
+            scripts: [syncScript],
+          })
+          .pipe(Stream.unwrap, Stream.runCollect);
+        expect(updated.at(-1)?.result).toMatchObject({ scripts: [syncScript] });
+        expect(reconciled).toBe(1);
+        expect(activeByScriptId.get("sync")?.state).toBe("running");
+
+        // 2. t3_project_read includes state and last 20 lines of output.
+        const read = yield* toolkit
+          .handle("t3_project_read", { projectId: harness.projectId })
+          .pipe(Stream.unwrap, Stream.runCollect);
+        expect(read.at(-1)?.result).toMatchObject({
+          scripts: [
+            {
+              id: "sync",
+              keepRunning: true,
+              keepRunningStatus: {
+                state: "running",
+                pid: 5000,
+                outputTail: Array.from({ length: 20 }, (_, index) => `out-${index + 11}`),
+              },
+            },
+          ],
+        });
+
+        // 3. keepRunningControl stops and restarts the kept action.
+        yield* toolkit
+          .handle("t3_project_update", {
+            projectId: harness.projectId,
+            keepRunningControl: { scriptId: "sync", action: "stop" },
+          })
+          .pipe(Stream.unwrap, Stream.runCollect);
+        expect(controls).toEqual([{ scriptId: "sync", action: "stop" }]);
+        expect(activeByScriptId.get("sync")?.state).toBe("stopped");
+
+        // 4. Removing keepRunning stops and removes it.
+        yield* toolkit
+          .handle("t3_project_update", {
+            projectId: harness.projectId,
+            scripts: [{ ...syncScript, keepRunning: false }],
+          })
+          .pipe(Stream.unwrap, Stream.runCollect);
+        expect(activeByScriptId.has("sync")).toBe(false);
+      }).pipe(Effect.provide(fullDependencies));
     }),
 );

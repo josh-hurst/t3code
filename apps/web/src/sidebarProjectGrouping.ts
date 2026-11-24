@@ -256,3 +256,51 @@ export function buildSidebarProjectPickerEntries(input: {
   if (!preferred) return entries;
   return [preferred, ...entries.filter((entry) => entry !== preferred)];
 }
+
+interface RecentThreadInput {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: string;
+  readonly createdAt: string;
+  readonly lineage: { readonly parentThreadId: string | null };
+}
+
+/**
+ * Orders new-thread picker entries by how many of the latest `recentThreadCount` top-level
+ * threads each project started. Pinned projects stay first; ties keep the incoming order.
+ */
+export function rankNewThreadProjectEntries<
+  TEntry extends {
+    readonly group: Pick<SidebarProjectSnapshot, "projectKey" | "memberProjectRefs" | "pinned">;
+  },
+>(
+  entries: ReadonlyArray<TEntry>,
+  threads: ReadonlyArray<RecentThreadInput>,
+  recentThreadCount: number,
+): TEntry[] {
+  const groupKeyByProjectRef = new Map<string, string>();
+  for (const { group } of entries) {
+    for (const ref of group.memberProjectRefs) {
+      groupKeyByProjectRef.set(`${ref.environmentId}\0${ref.projectId}`, group.projectKey);
+    }
+  }
+  const recent = threads
+    .filter((thread) => thread.lineage.parentThreadId === null)
+    .toSorted((left, right) =>
+      left.createdAt === right.createdAt ? 0 : left.createdAt < right.createdAt ? 1 : -1,
+    )
+    .slice(0, Math.max(0, recentThreadCount));
+  const useCount = new Map<string, number>();
+  for (const thread of recent) {
+    const key = groupKeyByProjectRef.get(`${thread.environmentId}\0${thread.projectId}`);
+    if (key !== undefined) useCount.set(key, (useCount.get(key) ?? 0) + 1);
+  }
+  return entries
+    .map((entry, index) => ({ entry, index, uses: useCount.get(entry.group.projectKey) ?? 0 }))
+    .toSorted(
+      (left, right) =>
+        Number(right.entry.group.pinned) - Number(left.entry.group.pinned) ||
+        right.uses - left.uses ||
+        left.index - right.index,
+    )
+    .map(({ entry }) => entry);
+}

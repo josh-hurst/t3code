@@ -76,6 +76,10 @@ export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_a
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
 export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "updated_at";
 
+// How many recent threads rank the projects in new-thread pickers.
+export const NewThreadProjectRankingThreads = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
+const DEFAULT_NEW_THREAD_PROJECT_RANKING_THREADS = 50;
+
 export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at"]);
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
@@ -615,6 +619,9 @@ export const ClientSettingsSchema = Schema.Struct({
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
+  ),
+  newThreadProjectRankingThreads: NewThreadProjectRankingThreads.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_NEW_THREAD_PROJECT_RANKING_THREADS)),
   ),
   sidebarThreadSortOrder: SidebarThreadSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
@@ -2233,6 +2240,7 @@ export const ClientSettingsPatch = Schema.Struct({
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
   ),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
+  newThreadProjectRankingThreads: Schema.optionalKey(NewThreadProjectRankingThreads),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarRowDetail: Schema.optionalKey(SidebarRowDetail),
   sidebarNeedsYouPlacement: Schema.optionalKey(SidebarNeedsYouPlacement),

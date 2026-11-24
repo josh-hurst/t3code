@@ -4,6 +4,7 @@ import {
   type KeybindingCommand,
   type ProjectScript,
 } from "@t3tools/contracts";
+import { runnableProjectScripts } from "@t3tools/shared/projectScripts";
 import * as Schema from "effect/Schema";
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
@@ -15,11 +16,22 @@ export interface ProjectScriptInput {
   readonly waitForSetup: boolean;
   readonly runOnSettle: boolean;
   readonly stopOnSettle?: boolean;
+  readonly keepRunning?: boolean;
   readonly previewUrl: Exclude<ProjectScript["previewUrl"], undefined> | null;
   readonly autoOpenPreview: boolean;
 }
 
 export function buildProjectScript(id: string, input: ProjectScriptInput): ProjectScript {
+  if (input.keepRunning) {
+    return {
+      id,
+      name: input.name,
+      command: input.command,
+      icon: input.icon,
+      runOnWorktreeCreate: false,
+      keepRunning: true,
+    };
+  }
   return {
     id,
     name: input.name,
@@ -103,6 +115,7 @@ export function nextProjectScriptId(name: string, existingIds: Iterable<string>)
 }
 
 export function primaryProjectScript(scripts: ReadonlyArray<ProjectScript>): ProjectScript | null {
-  const regular = scripts.find((script) => !script.runOnWorktreeCreate && !script.runOnSettle);
-  return regular ?? scripts.find((script) => !script.runOnSettle) ?? null;
+  const runnable = runnableProjectScripts(scripts);
+  const regular = runnable.find((script) => !script.runOnWorktreeCreate && !script.runOnSettle);
+  return regular ?? runnable.find((script) => !script.runOnSettle) ?? null;
 }

@@ -876,6 +876,8 @@
   "4bed196a655ab14f": "{live} agents sur {total} en cours",
   "ba1727ddc7a0a0b6": "{count, plural, one {{count} agent terminé} other {{count} agents terminés}}",
   "4dd09c829329a994": "Message en file d’attente",
+  "f0684b2c57f4099c": "bientôt",
+  "da8acffead888913": "dans {when}",
   "3f0b962160edbe6d": "Impossible de synchroniser le fil.",
   "752b4d69669b0019": "Impossible de charger l’activité antérieure.",
   "44de9731d5b8eb38": "L’historique de travail a changé. Réessayez de le charger.",

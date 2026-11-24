@@ -36,10 +36,12 @@ import {
   type ProjectScript,
 } from "@t3tools/contracts";
 import {
+  isKeepRunningProjectScript,
   projectScriptCwd,
   projectScriptRuntimeEnv,
   projectScriptTerminalInput,
   resolveProjectScripts,
+  runnableProjectScripts,
 } from "@t3tools/shared/projectScripts";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useConnectionsReady } from "../../state/workspace";
@@ -769,6 +771,7 @@ function ThreadRouteContent(
   };
 
   const handleRunProjectScript = async (script: ProjectScript) => {
+    if (isKeepRunningProjectScript(script)) return;
     if (
       !selectedThread ||
       !selectedThreadProject?.workspaceRoot ||
@@ -838,9 +841,11 @@ function ThreadRouteContent(
     canOperateTerminal,
     canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
     projectScripts: selectedThreadProject
-      ? resolveProjectScripts(
-          routeEnvironmentRuntime?.serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS,
-          selectedThreadProject,
+      ? runnableProjectScripts(
+          resolveProjectScripts(
+            routeEnvironmentRuntime?.serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS,
+            selectedThreadProject,
+          ),
         )
       : [],
     terminalSessions: terminalMenuSessions,

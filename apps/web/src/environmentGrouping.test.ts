@@ -8,6 +8,7 @@ import {
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
+  rankNewThreadProjectEntries,
   resolveSidebarProjectScopeKey,
   getSidebarProjectSettingsKey,
 } from "./sidebarProjectGrouping";
@@ -340,5 +341,57 @@ describe("environment grouping", () => {
       preferredProjectRef: { environmentId: current.environmentId, projectId: current.id },
     });
     expect(entries.map((entry) => entry.group.displayName)).toEqual(["current", "pinned", "other"]);
+  });
+
+  it("ranks new thread projects by use in the latest threads, pinned first", () => {
+    const project = (title: string, pinnedAt: string | null = null) =>
+      makeProject({
+        id: ProjectId.make(title),
+        title,
+        workspaceRoot: `/tmp/${title}`,
+        repositoryIdentity: null,
+        pinnedAt,
+      });
+    const groups = buildSidebarProjectSnapshots({
+      projects: [
+        project("current"),
+        project("pinned", "2026-01-01T00:00:00.000Z"),
+        project("busy"),
+        project("old"),
+      ],
+      settings: defaultGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+    });
+    const entries = buildSidebarProjectPickerEntries({
+      groups: pickableProjectGroups(groups),
+      preferredProjectRef: {
+        environmentId: primaryEnvironmentId,
+        projectId: ProjectId.make("current"),
+      },
+    });
+    let day = 0;
+    const thread = (projectId: string, parentThreadId: string | null = null) => ({
+      environmentId: primaryEnvironmentId,
+      projectId,
+      createdAt: `2026-02-${String(++day).padStart(2, "0")}T00:00:00.000Z`,
+      lineage: { parentThreadId },
+    });
+    const threads = [
+      // Outside the latest three top-level threads.
+      thread("old"),
+      thread("old"),
+      thread("old"),
+      thread("current"),
+      thread("busy"),
+      thread("busy"),
+      // Delegated children do not count.
+      thread("current", "parent"),
+      thread("current", "parent"),
+    ];
+
+    expect(
+      rankNewThreadProjectEntries(entries, threads, 3).map((entry) => entry.group.displayName),
+    ).toEqual(["pinned", "busy", "current", "old"]);
   });
 });

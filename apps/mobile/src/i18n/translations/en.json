@@ -876,6 +876,8 @@
   "4bed196a655ab14f": "{live} of {total} agents working",
   "ba1727ddc7a0a0b6": "{count, plural, one {{count} agent done} other {{count} agents done}}",
   "4dd09c829329a994": "Queued message",
+  "f0684b2c57f4099c": "soon",
+  "da8acffead888913": "in {when}",
   "3f0b962160edbe6d": "Could not synchronize the thread.",
   "752b4d69669b0019": "Could not load earlier activity.",
   "44de9731d5b8eb38": "Work history changed. Retry loading it.",

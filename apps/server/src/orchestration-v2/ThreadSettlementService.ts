@@ -54,11 +54,10 @@ import {
   SETTLE_OUTLOOK_LIST_AFTER_MS,
   SETTLE_OUTLOOK_LIST_BELOW,
   SETTLE_OUTLOOK_LOOKBACK_MS,
-  SETTLE_OUTLOOK_SETTLE_AFTER_MS,
-  SETTLE_OUTLOOK_SETTLE_BELOW,
   type SettleOutlookActivity,
   type SettleOutlookSignals,
   settleOutlookReturnChance,
+  settleOutlookSettleAfterMs,
   settleOutlookSignals,
   ThreadSettleOutlookStore,
 } from "./ThreadSettleOutlook.ts";
@@ -368,6 +367,7 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
   const presence = input.presence ?? null;
   let atMs = windowAtMs;
   let outlook: SettleOutlook | null = null;
+  let afterMs: number | null = null;
   // Seen as the clients mark it, so a reply that lands overnight does not settle early unread.
   // A summary's checks, commits and releases do not hold it: most replies that change code list
   // one, and the history the score was fitted to settled them all the same. A question holds it
@@ -379,25 +379,30 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
     visitedAtMs !== null &&
     visitedAtMs >= completedAtMs
   ) {
-    const signals = settleOutlookSignals(input.activity, {
+    const context = {
       id: thread.id,
       projectId: thread.projectId,
       quietAtMs: inactivityAtMs,
       ageMs: activityAtMs - DateTime.toEpochMillis(thread.createdAt),
       nowMs: input.nowMs,
-    });
+    };
+    const signals = settleOutlookSignals(input.activity, context);
     if (signals !== null) outlook = { chance: settleOutlookReturnChance(signals), signals };
+    afterMs = settleOutlookSettleAfterMs(input.activity, context);
   }
-  if (outlook !== null && outlook.chance <= SETTLE_OUTLOOK_SETTLE_BELOW) {
+  // Settles on the score's schedule (first look at 3h, tighter bar until 24h, late bar from 24h),
+  // even before the thread is listed as settling, held behind opens, return from away and window.
+  if (afterMs !== null) {
     atMs = Math.min(
       windowAtMs,
       Math.max(
-        inactivityAtMs + SETTLE_OUTLOOK_SETTLE_AFTER_MS,
+        inactivityAtMs + afterMs,
         (thread.opens?.openedAt ?? 0) + BACK_FOR_MS,
         presence === null ? 0 : presence.sinceAtMs + BACK_FOR_MS,
       ),
     );
   }
+  const low = outlook !== null && outlook.chance <= SETTLE_OUTLOOK_LIST_BELOW ? outlook : null;
   const away = presence === null || input.nowMs - presence.lastAtMs > AWAY_AFTER_MS;
   // The window is the owner's own setting, so it settles whether or not they are around.
   if (input.nowMs > (away ? windowAtMs : atMs)) {
@@ -408,19 +413,15 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
     };
   }
   const listed =
-    outlook !== null &&
-    outlook.chance <= SETTLE_OUTLOOK_LIST_BELOW &&
-    input.nowMs - inactivityAtMs >= SETTLE_OUTLOOK_LIST_AFTER_MS;
+    low !== null && input.nowMs - inactivityAtMs >= SETTLE_OUTLOOK_LIST_AFTER_MS ? low : null;
   return {
     settledAt: null,
     plan: {
       at: atMs,
       basisAt: activityAtMs,
-      ...(listed && outlook !== null
-        ? { returnChance: Math.round(outlook.chance * 100) / 100 }
-        : {}),
+      ...(listed === null ? {} : { returnChance: Math.round(listed.chance * 100) / 100 }),
     },
-    outlook: listed ? outlook : null,
+    outlook: listed,
   };
 }
 

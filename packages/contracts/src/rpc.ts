@@ -449,6 +449,14 @@ import {
   ProjectCloneSubscribeInput,
 } from "./projectClone.ts";
 import {
+  ProjectKeepRunningControlInput,
+  ProjectKeepRunningControlResult,
+  ProjectKeepRunningListEvent,
+  ProjectKeepRunningOutputInput,
+  ProjectKeepRunningOutputResult,
+  ProjectKeepRunningSubscribeInput,
+} from "./projectKeepRunning.ts";
+import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
   SourceControlDiscoveryResult,
@@ -479,6 +487,9 @@ export const WS_METHODS = {
   projectsEnsureScratch: "projects.ensureScratch",
   projectsCreateNew: "projects.createNew",
   projectsCreateFromThread: "projects.createFromThread",
+  projectsKeepRunningOutput: "projects.keepRunningOutput",
+  projectsKeepRunningControl: "projects.keepRunningControl",
+  subscribeProjectKeepRunning: "subscribeProjectKeepRunning",
 
   shellOpenInEditor: "shell.openInEditor",
 
@@ -2486,6 +2497,25 @@ const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTel
   stream: true,
 });
 
+const WsSubscribeProjectKeepRunningRpc = Rpc.make(WS_METHODS.subscribeProjectKeepRunning, {
+  payload: ProjectKeepRunningSubscribeInput,
+  success: ProjectKeepRunningListEvent,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsProjectsKeepRunningOutputRpc = Rpc.make(WS_METHODS.projectsKeepRunningOutput, {
+  payload: ProjectKeepRunningOutputInput,
+  success: ProjectKeepRunningOutputResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsProjectsKeepRunningControlRpc = Rpc.make(WS_METHODS.projectsKeepRunningControl, {
+  payload: ProjectKeepRunningControlInput,
+  success: ProjectKeepRunningControlResult,
+  error: EnvironmentAuthorizationError,
+});
+
 export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
   "t3/contracts/RpcScopeAuthorization",
   { error: EnvironmentAuthorizationError },
@@ -2717,6 +2747,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
   WsSubscribeResourceTelemetryRpc,
+  WsSubscribeProjectKeepRunningRpc,
+  WsProjectsKeepRunningOutputRpc,
+  WsProjectsKeepRunningControlRpc,
   WsOrchestrationV2DispatchCommandRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,
   WsOrchestrationV2GetNativeChildWorkRpc,

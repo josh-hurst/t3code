@@ -17,8 +17,12 @@ import {
   ProviderInteractionMode,
   Project,
   ProjectCreatePayload,
+  ProjectKeepRunningControlAction,
+  ProjectKeepRunningState,
+  ProjectScript,
   ProjectUpdatePayload,
   ProjectId,
+  PositiveInt,
   OrchestratorMcpClientRequestId,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
@@ -37,6 +41,7 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
+import * as ProjectKeepRunningService from "../../../project/ProjectKeepRunningService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as OpenItemService from "../../../orchestration-v2/OpenItemService.ts";
@@ -71,13 +76,37 @@ const ProjectListTool = Tool.make("t3_project_list", {
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);
+const ProjectReadScript = Schema.Struct({
+  ...ProjectScript.fields,
+  keepRunningStatus: Schema.optional(
+    Schema.Struct({
+      state: ProjectKeepRunningState,
+      pid: Schema.NullOr(PositiveInt),
+      startedAt: Schema.NullOr(IsoDateTime),
+      restartCount: NonNegativeInt,
+      lastExitCode: Schema.NullOr(Schema.Int),
+      lastExitSignal: Schema.NullOr(TrimmedNonEmptyString),
+      failureMessage: Schema.NullOr(Schema.String),
+      outputTail: Schema.Array(Schema.String),
+    }),
+  ),
+});
+
+const ProjectReadResult = Schema.Struct({
+  ...Project.fields,
+  scripts: Schema.Array(ProjectReadScript),
+});
+
 const ProjectReadTool = Tool.make("t3_project_read", {
   ...shared,
-  description: "Read one project: workspace and saved scripts.",
+  description:
+    "Read one project: workspace, saved scripts, and status/recent output for keepRunning scripts.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     projectId: ProjectId,
   }),
+  success: ProjectReadResult,
+  dependencies: [...shared.dependencies, ProjectKeepRunningService.ProjectKeepRunningService],
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);
@@ -91,16 +120,30 @@ const ProjectCreateTool = Tool.make("t3_project_create", {
     workspaceRoot: Schema.optional(ProjectCreatePayload.fields.workspaceRoot),
   }),
   success: Schema.Struct({ ...Project.fields, commitError: Schema.optional(Schema.String) }),
-  dependencies: [...shared.dependencies, ManagedProjectFolders.ManagedProjectFolders],
+  dependencies: [
+    ...shared.dependencies,
+    ManagedProjectFolders.ManagedProjectFolders,
+    ProjectKeepRunningService.ProjectKeepRunningService,
+  ],
 }).annotate(Tool.Destructive, true);
 const ProjectUpdateTool = Tool.make("t3_project_update", {
   ...shared,
-  description: "Update one project's settings. Omitted fields are unchanged.",
+  description:
+    "Update one project's settings or scripts (set `keepRunning: true` on a script to run it in the background and restart on exit or server restart; pass `keepRunningControl` to stop or restart one). Omitted fields are unchanged.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     projectId: ProjectId,
     ...ProjectUpdatePayload.fields,
+    keepRunningControl: Schema.optional(
+      Schema.Struct({
+        scriptId: TrimmedNonEmptyString,
+        action: ProjectKeepRunningControlAction,
+      }).annotate({
+        description: "Stop or restart an active keepRunning script on this project.",
+      }),
+    ),
   }),
+  dependencies: [...shared.dependencies, ProjectKeepRunningService.ProjectKeepRunningService],
 }).annotate(Tool.Destructive, true);
 const ProjectDeleteTool = Tool.make("t3_project_delete", {
   ...shared,

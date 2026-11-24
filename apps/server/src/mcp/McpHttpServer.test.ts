@@ -31,6 +31,7 @@ import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 import { HttpBody, HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
 
+import * as ProjectKeepRunningService from "../project/ProjectKeepRunningService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
@@ -338,6 +339,7 @@ const layerRecordingTools = (calls: Array<unknown>) => {
         McpToolAccessTestkit.liveThreadsLayer,
         Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({}),
         Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(ProjectKeepRunningService.ProjectKeepRunningService)({}),
         Layer.mock(PreviewManager.PreviewManager)({}),
         Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
         Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
@@ -1891,6 +1893,7 @@ it.effect(
             Layer.mergeAll(
               McpToolAccessTestkit.liveThreadsLayer,
               Layer.mock(ProjectService.ProjectService)({}),
+              Layer.mock(ProjectKeepRunningService.ProjectKeepRunningService)({}),
               Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
               Layer.mock(PullRequestService.PullRequestService)({
                 servesProject: (projectId) => Effect.succeed(projectId !== "project-noForgeToken"),

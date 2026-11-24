@@ -303,6 +303,7 @@ import {
   pickableProjectGroups,
 } from "@t3tools/client-runtime/state/project-grouping";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
+import { useRankedNewThreadProjectEntries } from "../hooks/useRankedNewThreadProjectEntries";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 import { readIssueListPreferences } from "~/components/issue/issueListPreferences";
@@ -616,6 +617,7 @@ function OpenCommandPaletteDialog(props: {
     ...targetProject,
     displayName: group.displayName,
   }));
+  const newThreadPickerEntries = useRankedNewThreadProjectEntries(projectPickerEntries);
   const projectGroupByTargetKey = new Map(
     projectPickerEntries.map(({ group, targetProject }) => [
       `${targetProject.environmentId}:${targetProject.id}`,
@@ -917,7 +919,9 @@ function OpenCommandPaletteDialog(props: {
           ? undefined
           : projectPickerEntries.find((entry) => entry.isPreferred);
       const projectItems = buildNewThreadInProjectItems({
-        projects: pickerProjects.filter((project) => !isScratch(project)),
+        projects: newThreadPickerEntries
+          .map(({ group, targetProject }) => ({ ...targetProject, displayName: group.displayName }))
+          .filter((project) => !isScratch(project)),
         currentProjectKey: currentEntry
           ? `${currentEntry.targetProject.environmentId}:${currentEntry.targetProject.id}`
           : null,
@@ -944,7 +948,7 @@ function OpenCommandPaletteDialog(props: {
       if (scratchTargetEnvironmentId === null) return projectItems;
 
       const noProjectIndex = newThreadNoProjectIndex(
-        projectPickerEntries.map(({ group, targetProject, isPreferred }) => ({
+        newThreadPickerEntries.map(({ group, targetProject, isPreferred }) => ({
           isScratch: isScratchProject(
             targetProject,
             scratchWorkspaceRootFor(targetProject.environmentId),

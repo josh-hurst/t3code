@@ -57,6 +57,7 @@ import * as ProviderReplayHarness from "../orchestration-v2/testkit/ProviderRepl
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
+import * as ProjectKeepRunningService from "../project/ProjectKeepRunningService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
@@ -620,7 +621,12 @@ const boxToolkitLayer = (thread: BoxThread) => {
           }),
       }),
     ),
-    Layer.provide(Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({})),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
+        Layer.mock(ProjectKeepRunningService.ProjectKeepRunningService)({}),
+      ),
+    ),
     Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
     Layer.provide(ServerSettings.layerTest()),
     Layer.provide(NodeServices.layer),
@@ -756,8 +762,13 @@ const makeLaptop = (
           Layer.mock(OpenItemService.OpenItemService)({}),
         ),
       ),
-      Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
-      Layer.provide(Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({})),
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(ProjectService.ProjectService)({}),
+          Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
+          Layer.mock(ProjectKeepRunningService.ProjectKeepRunningService)({}),
+        ),
+      ),
       Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
       Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
       Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),

@@ -13,7 +13,8 @@ import { shortcutLabelForCommand } from "~/keybindings";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useOrderWhileOpen } from "~/hooks/useOrderWhileOpen";
-import { useProjectPin } from "~/hooks/useProjectGroupUpdate";
+import { useProjectArchive, useProjectPin } from "~/hooks/useProjectGroupUpdate";
+import { useRankedNewThreadProjectEntries } from "~/hooks/useRankedNewThreadProjectEntries";
 import { useScratchProject } from "~/hooks/useScratchProject";
 import { isTriagePrompt } from "@t3tools/shared/triagePrompt";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -31,6 +32,7 @@ import { useProjects } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { ProjectArchiveButton } from "../ProjectArchiveButton";
 import { isProjectPinShortcut, ProjectPinButton } from "../ProjectPinButton";
 import { useSortedProjectGroups } from "../CommandPaletteLookups";
 import {
@@ -89,6 +91,7 @@ export function DraftHeroHeadline({
   const pickerFilter = useComboboxFilter();
   const highlightedPickerValueRef = useRef<string | null>(null);
   const { canPinProjectGroup, toggleProjectGroupPin } = useProjectPin();
+  const { canArchiveProjectGroup, archiveProjectGroup } = useProjectArchive();
 
   const environmentLabelById = new Map(
     environments.map((environment) => [environment.environmentId, environment.label] as const),
@@ -104,10 +107,12 @@ export function DraftHeroHeadline({
         ] as const,
     ),
   );
-  const projectPickerEntries = buildSidebarProjectPickerEntries({
-    groups: pickableProjectGroups(projectGroups),
-    preferredProjectRef: activeProjectRef,
-  });
+  const projectPickerEntries = useRankedNewThreadProjectEntries(
+    buildSidebarProjectPickerEntries({
+      groups: pickableProjectGroups(projectGroups),
+      preferredProjectRef: activeProjectRef,
+    }),
+  );
   const projectEntryByKey = new Map(
     projectPickerEntries.map((entry) => [entry.group.projectKey, entry] as const),
   );
@@ -295,6 +300,14 @@ export function DraftHeroHeadline({
                     pinned={entry.group.pinned}
                     shortcutLabel={shortcutLabelForCommand(keybindings, "thread.pin")}
                     onToggle={() => toggleProjectGroupPin(entry.group)}
+                  />
+                ) : null}
+                {entry &&
+                canArchiveProjectGroup(entry.group) &&
+                entry.group.projectKey !== activeProjectKey ? (
+                  <ProjectArchiveButton
+                    name={entry.group.displayName}
+                    onArchive={() => void archiveProjectGroup(entry.group)}
                   />
                 ) : null}
                 {entry && showProjectEnvironments ? (

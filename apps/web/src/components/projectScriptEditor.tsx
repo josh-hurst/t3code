@@ -88,6 +88,7 @@ export interface NewProjectScriptInput {
   waitForSetup: boolean;
   runOnSettle: boolean;
   stopOnSettle?: boolean;
+  keepRunning?: boolean;
   /** Omit to preserve the current shortcut when the form did not edit it. */
   keybinding?: string | null;
   previewUrl: string | null;
@@ -104,6 +105,7 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
   waitForSetup: false,
   runOnSettle: false,
   stopOnSettle: false,
+  keepRunning: false,
   keybinding: null,
   previewUrl: null,
   autoOpenPreview: false,
@@ -129,6 +131,7 @@ export function editorRequestForScript(
       waitForSetup: script.runOnWorktreeCreate && script.async === false,
       runOnSettle: script.runOnSettle ?? false,
       stopOnSettle: script.stopOnSettle ?? false,
+      keepRunning: script.keepRunning ?? false,
       keybinding: keybindingValueForCommand(keybindings, commandForProjectScript(script.id)),
       previewUrl: script.previewUrl ?? null,
       autoOpenPreview: script.autoOpenPreview ?? false,
@@ -139,6 +142,7 @@ export function editorRequestForScript(
 export function ProjectScriptEditorDialog({
   environmentId,
   editScope = AuthOrchestrationOperateScope,
+  allowKeepRunning = false,
   request,
   scripts,
   onSubmit,
@@ -147,6 +151,7 @@ export function ProjectScriptEditorDialog({
 }: {
   environmentId: EnvironmentId;
   editScope?: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
+  allowKeepRunning?: boolean;
   request: ProjectScriptEditorRequest | null;
   scripts: ReadonlyArray<ProjectScript>;
   onSubmit: (
@@ -201,6 +206,7 @@ export function ProjectScriptEditorDialog({
               key={shown.key}
               environmentId={environmentId}
               editScope={editScope}
+              allowKeepRunning={allowKeepRunning}
               request={shown.request}
               scripts={scripts}
               validationError={validationError}
@@ -258,6 +264,7 @@ export function ProjectScriptEditorDialog({
 function ProjectScriptEditorForm({
   environmentId,
   editScope,
+  allowKeepRunning,
   request,
   scripts,
   validationError,
@@ -268,6 +275,7 @@ function ProjectScriptEditorForm({
 }: {
   environmentId: EnvironmentId;
   editScope: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
+  allowKeepRunning: boolean;
   request: ProjectScriptEditorRequest;
   scripts: ReadonlyArray<ProjectScript>;
   validationError: string | null;
@@ -294,6 +302,9 @@ function ProjectScriptEditorForm({
   const [waitForSetup, setWaitForSetup] = useState(request.initial.waitForSetup);
   const [runOnSettle, setRunOnSettle] = useState(request.initial.runOnSettle);
   const [stopOnSettle, setStopOnSettle] = useState(request.initial.stopOnSettle ?? false);
+  const [keepRunning, setKeepRunning] = useState(
+    allowKeepRunning && (request.initial.keepRunning ?? false),
+  );
   const [keybinding, setKeybinding] = useState(request.initial.keybinding ?? "");
   const [previewUrl, setPreviewUrl] = useState(request.initial.previewUrl ?? "");
   const [autoOpenPreview, setAutoOpenPreview] = useState(request.initial.autoOpenPreview);
@@ -339,10 +350,12 @@ function ProjectScriptEditorForm({
       setValidationError(gt("This connection cannot change project actions."));
       return;
     }
+    const effectiveKeepRunning = allowKeepRunning && keepRunning;
+    const effectiveKeybinding = effectiveKeepRunning ? "" : keybinding;
     const changesKeybinding =
-      (keybinding.trim() || null) !== (request.initial.keybinding?.trim() || null);
+      (effectiveKeybinding.trim() || null) !== (request.initial.keybinding?.trim() || null);
     const canChangeKeybinding = readEnvironmentScope(environmentId, AuthSettingsWriteScope);
-    if (changesKeybinding && !canChangeKeybinding) {
+    if (changesKeybinding && !canChangeKeybinding && !effectiveKeepRunning) {
       setValidationError(gt("This connection cannot change keyboard shortcuts."));
       return;
     }
@@ -367,24 +380,39 @@ function ProjectScriptEditorForm({
           scripts.map((script) => script.id),
         );
       const keybindingRule = decodeProjectScriptKeybindingRule({
-        keybinding,
+        keybinding: effectiveKeybinding,
         command: commandForProjectScript(scriptIdForValidation),
       });
       const trimmedPreviewUrl = previewUrl.trim();
-      payload = {
-        name: trimmedName,
-        command: trimmedCommand,
-        icon,
-        runOnWorktreeCreate,
-        waitForSetup: runOnWorktreeCreate && waitForSetup,
-        runOnSettle,
-        stopOnSettle,
-        ...((request.scriptId === null && canChangeKeybinding) || changesKeybinding
-          ? { keybinding: keybindingRule?.key ?? null }
-          : {}),
-        previewUrl: trimmedPreviewUrl.length > 0 ? trimmedPreviewUrl : null,
-        autoOpenPreview: trimmedPreviewUrl.length > 0 ? autoOpenPreview : false,
-      } satisfies NewProjectScriptInput;
+      payload = effectiveKeepRunning
+        ? {
+            name: trimmedName,
+            command: trimmedCommand,
+            icon,
+            runOnWorktreeCreate: false,
+            waitForSetup: false,
+            runOnSettle: false,
+            stopOnSettle: false,
+            keepRunning: true,
+            ...(canChangeKeybinding && changesKeybinding ? { keybinding: null } : {}),
+            previewUrl: null,
+            autoOpenPreview: false,
+          }
+        : ({
+            name: trimmedName,
+            command: trimmedCommand,
+            icon,
+            runOnWorktreeCreate,
+            waitForSetup: runOnWorktreeCreate && waitForSetup,
+            runOnSettle,
+            stopOnSettle,
+            keepRunning: false,
+            ...((request.scriptId === null && canChangeKeybinding) || changesKeybinding
+              ? { keybinding: keybindingRule?.key ?? null }
+              : {}),
+            previewUrl: trimmedPreviewUrl.length > 0 ? trimmedPreviewUrl : null,
+            autoOpenPreview: trimmedPreviewUrl.length > 0 ? autoOpenPreview : false,
+          } satisfies NewProjectScriptInput);
     } catch (error) {
       setValidationError(thrownErrorMessage(error, m) ?? gt("Failed to save action."));
       return;
@@ -481,25 +509,27 @@ function ProjectScriptEditorForm({
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="script-keybinding">
-                <T>Keybinding</T>
-              </Label>
-              <Input
-                disabled={!canWriteSettings}
-                id="script-keybinding"
-                placeholder={gt("Press shortcut")}
-                value={keybinding}
-                readOnly
-                onKeyDown={captureKeybinding}
-              />
-              <p className="text-xs text-muted-foreground">
-                <T>
-                  Press a shortcut. Use <code>Backspace</code> to clear. Shortcuts are
-                  environment-wide. Projects using the same action share its shortcut.
-                </T>
-              </p>
-            </div>
+            {!(allowKeepRunning && keepRunning) && (
+              <div className="space-y-1.5">
+                <Label htmlFor="script-keybinding">
+                  <T>Keybinding</T>
+                </Label>
+                <Input
+                  disabled={!canWriteSettings}
+                  id="script-keybinding"
+                  placeholder={gt("Press shortcut")}
+                  value={keybinding}
+                  readOnly
+                  onKeyDown={captureKeybinding}
+                />
+                <p className="text-xs text-muted-foreground">
+                  <T>
+                    Press a shortcut. Use <code>Backspace</code> to clear. Shortcuts are
+                    environment-wide. Projects using the same action share its shortcut.
+                  </T>
+                </p>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="script-command">
                 <T>Command</T>
@@ -512,75 +542,95 @@ function ProjectScriptEditorForm({
                 onChange={(event) => setCommand(event.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="script-preview-url">
-                <T>Preview URL (optional)</T>
-              </Label>
-              <Input
-                id="script-preview-url"
-                placeholder="http://localhost:5173"
-                value={previewUrl}
-                onChange={(event) => setPreviewUrl(event.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                <T>Open this URL in the in-app preview when this action runs.</T>
-              </p>
-            </div>
-            <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
-              <span>
-                <T>Run automatically on worktree creation</T>
-              </span>
-              <Switch
-                checked={runOnWorktreeCreate}
-                onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
-              />
-            </label>
-            <label
-              className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
-                runOnWorktreeCreate ? "" : "opacity-60"
-              }`}
-            >
-              <span>
-                <T>Wait for it to finish before the agent starts</T>
-              </span>
-              <Switch
-                checked={waitForSetup}
-                disabled={!runOnWorktreeCreate}
-                onCheckedChange={(checked) => setWaitForSetup(Boolean(checked))}
-              />
-            </label>
-            <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
-              <span>
-                <T>Run in the thread's worktree when the thread settles</T>
-              </span>
-              <Switch
-                checked={runOnSettle}
-                onCheckedChange={(checked) => setRunOnSettle(Boolean(checked))}
-              />
-            </label>
-            <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
-              <span>
-                <T>Stop this action when the thread settles</T>
-              </span>
-              <Switch
-                checked={stopOnSettle}
-                onCheckedChange={(checked) => setStopOnSettle(Boolean(checked))}
-              />
-            </label>
-            <label
-              className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
-                previewUrl.trim().length === 0 ? "opacity-60" : ""
-              }`}
-            >
-              <span>
-                <T>Open preview automatically when this action runs</T>
-              </span>
-              <Switch
-                checked={autoOpenPreview}
-                disabled={previewUrl.trim().length === 0}
-                onCheckedChange={(checked) => setAutoOpenPreview(Boolean(checked))}
-              />
-            </label>
+            {allowKeepRunning && (
+              <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
+                <span className="space-y-0.5">
+                  <span className="block">
+                    <T>Keep running</T>
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    <T>Runs in the project folder while T3 is up and restarts automatically.</T>
+                  </span>
+                </span>
+                <Switch
+                  checked={keepRunning}
+                  onCheckedChange={(checked) => setKeepRunning(Boolean(checked))}
+                />
+              </label>
+            )}
+            {!(allowKeepRunning && keepRunning) && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="script-preview-url">
+                    <T>Preview URL (optional)</T>
+                  </Label>
+                  <Input
+                    id="script-preview-url"
+                    placeholder="http://localhost:5173"
+                    value={previewUrl}
+                    onChange={(event) => setPreviewUrl(event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    <T>Open this URL in the in-app preview when this action runs.</T>
+                  </p>
+                </div>
+                <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
+                  <span>
+                    <T>Run automatically on worktree creation</T>
+                  </span>
+                  <Switch
+                    checked={runOnWorktreeCreate}
+                    onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
+                  />
+                </label>
+                <label
+                  className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
+                    runOnWorktreeCreate ? "" : "opacity-60"
+                  }`}
+                >
+                  <span>
+                    <T>Wait for it to finish before the agent starts</T>
+                  </span>
+                  <Switch
+                    checked={waitForSetup}
+                    disabled={!runOnWorktreeCreate}
+                    onCheckedChange={(checked) => setWaitForSetup(Boolean(checked))}
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
+                  <span>
+                    <T>Run in the thread's worktree when the thread settles</T>
+                  </span>
+                  <Switch
+                    checked={runOnSettle}
+                    onCheckedChange={(checked) => setRunOnSettle(Boolean(checked))}
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
+                  <span>
+                    <T>Stop this action when the thread settles</T>
+                  </span>
+                  <Switch
+                    checked={stopOnSettle}
+                    onCheckedChange={(checked) => setStopOnSettle(Boolean(checked))}
+                  />
+                </label>
+                <label
+                  className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
+                    previewUrl.trim().length === 0 ? "opacity-60" : ""
+                  }`}
+                >
+                  <span>
+                    <T>Open preview automatically when this action runs</T>
+                  </span>
+                  <Switch
+                    checked={autoOpenPreview}
+                    disabled={previewUrl.trim().length === 0}
+                    onCheckedChange={(checked) => setAutoOpenPreview(Boolean(checked))}
+                  />
+                </label>
+              </>
+            )}
             {validationError && <p className="text-sm text-destructive">{validationError}</p>}
           </fieldset>
         </form>

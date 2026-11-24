@@ -54,6 +54,18 @@ describe("RPC authorization scopes", () => {
     }
   });
 
+  it("requires settings write to control kept project actions, while status and output stay readable", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.projectsKeepRunningControl)).toBe(
+      AuthSettingsWriteScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.subscribeProjectKeepRunning)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.projectsKeepRunningOutput)).toBe(
+      AuthOrchestrationReadScope,
+    );
+  });
+
   it("lets only a session that operates threads approve sending a feedback report", () => {
     // Guest links have no RPC session, and read-only sessions lack this scope.
     expect(requiredScopeForRpcMethod(WS_METHODS.agentFeedbackAnswerRequest)).toBe(

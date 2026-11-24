@@ -876,6 +876,8 @@
   "4bed196a655ab14f": "{live} av {total} agenter arbetar",
   "ba1727ddc7a0a0b6": "{count, plural, one {{count} agent klar} other {{count} agenter klara}}",
   "4dd09c829329a994": "Köat meddelande",
+  "f0684b2c57f4099c": "snart",
+  "da8acffead888913": "om {when}",
   "3f0b962160edbe6d": "Kunde inte synkronisera tråden.",
   "752b4d69669b0019": "Kunde inte läsa in tidigare aktivitet.",
   "44de9731d5b8eb38": "Arbetshistoriken ändrades. Försök läsa in den igen.",

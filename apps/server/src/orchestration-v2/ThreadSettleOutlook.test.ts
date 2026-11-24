@@ -47,7 +47,6 @@ describe("ThreadSettleOutlook", () => {
       ageHours: number,
       turns: number,
       elsewhere: number,
-      started: number,
       published = false,
     ) =>
       Number(
@@ -56,15 +55,152 @@ describe("ThreadSettleOutlook", () => {
           ageHours,
           turns,
           elsewhere,
-          started,
           published,
         }).toFixed(3),
       );
     // A quick question half an hour on: the owner busy elsewhere, then not.
-    assert.equal(chance(0.5, 0.1, 1, 6, 2), 0.103);
-    assert.equal(chance(0.5, 0.1, 1, 0, 0), 0.271);
+    assert.equal(chance(0.5, 0.1, 1, 6), 0.108);
+    assert.equal(chance(0.5, 0.1, 1, 0), 0.239);
     // A long thread stays likelier to be written in again, even after a publish.
-    assert.equal(chance(4, 3, 12, 12, 4, true), 0.073);
+    assert.equal(chance(4, 3, 12, 12, true), 0.073);
+    // Quiet for the projected wait, the thread is exactly at the requested cutoff.
+    const signals = {
+      waitHours: 0.5,
+      ageHours: 0.1,
+      turns: 1,
+      elsewhere: 6,
+      published: false,
+    };
+    const waitHours =
+      ThreadSettleOutlook.settleOutlookSettleWaitMs(
+        signals,
+        ThreadSettleOutlook.SETTLE_OUTLOOK_LATE_BELOW,
+      ) / 3_600_000;
+    assert.closeTo(waitHours, 2.06, 0.05);
+    assert.closeTo(
+      ThreadSettleOutlook.settleOutlookReturnChance({ ...signals, waitHours }),
+      ThreadSettleOutlook.SETTLE_OUTLOOK_LATE_BELOW,
+      1e-6,
+    );
+  });
+
+  const HOUR_MS = 60 * 60 * 1_000;
+  const messages = (count: number, atMs: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      threadId: `other-${index}`,
+      projectId: projectA,
+      atMs,
+    }));
+
+  it.each([
+    {
+      name: "passes the 3h first look when busy in the project before 3h",
+      // 10 messages at 1h -> 8.8% at 3h (<= 9.5%), settles at 3h.
+      activity: { messages: messages(10, HOUR_MS), publishes: [], turns: new Map([[quiet, 1]]) },
+      ageMs: 0.5 * HOUR_MS,
+      nowMs: 6 * HOUR_MS,
+      expected: 3 * HOUR_MS,
+    },
+    {
+      name: "misses the first look with no project work since even when chance is low",
+      // 0m old, no project work: 6.5% at 3h (<= 9.5%) but requires work in the project; 1% wait is
+      // 70.3h (>= 24h) and 7% wait is 2.5h -> clamped to 24h.
+      activity: { messages: [], publishes: [], turns: new Map([[quiet, 1]]) },
+      ageMs: 0,
+      nowMs: 6 * HOUR_MS,
+      expected: 24 * HOUR_MS,
+    },
+    {
+      name: "misses the first look past 10 turns even when chance is low",
+      // 11 turns with 10 messages + publish at 1h: 8.2% at 3h (<= 9.5%) but > 10 turns; 1% wait is
+      // 103.4h (>= 24h) and 7% wait is 4.2h -> clamped to 24h.
+      activity: {
+        messages: messages(10, HOUR_MS),
+        publishes: [{ projectId: projectA, atMs: HOUR_MS }],
+        turns: new Map([[quiet, 11]]),
+      },
+      ageMs: 0.5 * HOUR_MS,
+      nowMs: 6 * HOUR_MS,
+      expected: 24 * HOUR_MS,
+    },
+    {
+      name: "ignores messages written after 3h when judging the first look",
+      // 10 messages at 4h: no project work and 23.8% at 3h (fails first look); 1% wait is 116.5h
+      // (>= 24h) and 7% wait is 4.8h -> clamped to 24h.
+      activity: {
+        messages: messages(10, 4 * HOUR_MS),
+        publishes: [],
+        turns: new Map([[quiet, 1]]),
+      },
+      ageMs: 0.5 * HOUR_MS,
+      nowMs: 6 * HOUR_MS,
+      expected: 24 * HOUR_MS,
+    },
+    {
+      name: "reaches the 1% between-bar before 24h when heavy activity arrives after 3h",
+      // Fails first look at 3h (no project work, 23.8%); 30 messages + publish at 4h bring the 1%
+      // wait to 18.86h (< 24h).
+      activity: {
+        messages: messages(30, 4 * HOUR_MS),
+        publishes: [{ projectId: projectA, atMs: 4 * HOUR_MS }],
+        turns: new Map([[quiet, 1]]),
+      },
+      ageMs: 0.5 * HOUR_MS,
+      nowMs: 6 * HOUR_MS,
+      expected: ThreadSettleOutlook.settleOutlookSettleWaitMs(
+        { waitHours: 6, ageHours: 0.5, turns: 1, elsewhere: 30, published: true },
+        ThreadSettleOutlook.SETTLE_OUTLOOK_BETWEEN_BELOW,
+      ),
+    },
+    {
+      name: "waits past 24h when the 7% late bar is reached after a day",
+      // 3h old, 12 turns, no activity: 38.7% at 3h, 7% wait is 95.0h (> 24h).
+      activity: { messages: [], publishes: [], turns: new Map([[quiet, 12]]) },
+      ageMs: 3 * HOUR_MS,
+      nowMs: 6 * HOUR_MS,
+      expected: ThreadSettleOutlook.settleOutlookSettleWaitMs(
+        { waitHours: 6, ageHours: 3, turns: 12, elsewhere: 0, published: false },
+        ThreadSettleOutlook.SETTLE_OUTLOOK_LATE_BELOW,
+      ),
+    },
+    {
+      name: "leaves threads past 16 turns to the window when nothing published since",
+      activity: { messages: messages(20, HOUR_MS), publishes: [], turns: new Map([[quiet, 17]]) },
+      ageMs: 0.5 * HOUR_MS,
+      nowMs: 6 * HOUR_MS,
+      expected: null,
+    },
+    {
+      name: "still scores threads past 16 turns after a publish",
+      // Misses first look (17 > 10); published unlocks scoring, 1% wait is 117.3h, 7% wait is 4.9h
+      // -> clamped to 24h.
+      activity: {
+        messages: messages(20, HOUR_MS),
+        publishes: [{ projectId: projectA, atMs: HOUR_MS }],
+        turns: new Map([[quiet, 17]]),
+      },
+      ageMs: 0.5 * HOUR_MS,
+      nowMs: 6 * HOUR_MS,
+      expected: 24 * HOUR_MS,
+    },
+    {
+      name: "returns null when the thread is missing from activity.turns",
+      activity: { messages: messages(10, HOUR_MS), publishes: [], turns: new Map() },
+      ageMs: 0.5 * HOUR_MS,
+      nowMs: 6 * HOUR_MS,
+      expected: null,
+    },
+  ])("settleOutlookSettleAfterMs: $name", ({ activity, ageMs, nowMs, expected }) => {
+    assert.strictEqual(
+      ThreadSettleOutlook.settleOutlookSettleAfterMs(activity, {
+        id: quiet,
+        projectId: projectA,
+        quietAtMs: 0,
+        ageMs,
+        nowMs,
+      }),
+      expected,
+    );
   });
 
   it.layer(layer)("reads the owner's activity and keeps one record per quiet stretch", (it) => {
@@ -99,12 +235,12 @@ describe("ThreadSettleOutlook", () => {
         });
         assert.deepEqual(
           activity.messages
-            .map((message) => `${message.threadId} ${message.atMs} ${message.startsThread}`)
+            .map((message) => `${message.threadId} ${message.projectId} ${message.atMs}`)
             .sort(),
           [
-            `older ${Date.parse(at(22))} false`,
-            `started-since ${Date.parse(at(20))} true`,
-            `started-since ${Date.parse(at(21))} false`,
+            `older ${projectB} ${Date.parse(at(22))}`,
+            `started-since ${projectA} ${Date.parse(at(20))}`,
+            `started-since ${projectA} ${Date.parse(at(21))}`,
           ],
         );
         assert.deepEqual([...activity.turns], [[quiet, 2]]);
@@ -120,7 +256,6 @@ describe("ThreadSettleOutlook", () => {
           ageHours: 10 / 60,
           turns: 2,
           elsewhere: 2,
-          started: 1,
           published: true,
         });
         assert.isNull(

@@ -33,6 +33,7 @@ import {
   threadRowLineText,
   threadRowProjectName,
   threadSettlingChance,
+  threadSettlingTimeLabel,
   threadStatusKind,
   threadStatusWord,
   threadWorkingLine,
@@ -451,6 +452,8 @@ describe("threadLaterLead", () => {
       ]).map((thread) => thread.id),
     ).toEqual(["unsure", "newer", "older", "sure"]);
     expect(threadAutoSettleLabel(Date.parse(T3), { now: T1 })).toBe("Settles in 2h");
+    expect(threadSettlingTimeLabel(Date.parse(T3), { now: T1 })).toBe("in 2h");
+    expect(threadSettlingTimeLabel(Date.parse(T1), { now: T2 })).toBe("soon");
     expect(threadAutoSettleLabel(Date.parse(T1), { now: T2 })).toBe(
       "Settles soon after your next message",
     );

@@ -23,7 +23,10 @@ then press Space to drop it or Escape to cancel.
 ## Start a thread
 
 On web and desktop, **New thread** opens the project picker when you have more than one
-open project in the default or project-grouped sidebar. Archived projects don't count. **Shift-click** to start in
+open project in the default or project-grouped sidebar. Archived projects don't count. The picker
+lists pinned projects first, then the projects you started the most of your last 50 threads in.
+Change how many threads count in **Settings → General → New thread project order**. Hover a project to pin it
+or archive it; archiving hides it from pickers and keeps its threads, and the toast offers **Undo**. Later, unarchive it from the project's settings. **Shift-click** to start in
 the current project, or use a project's own new-thread action. A new thread carries
 your model and mode selections, unless the destination project has its own model default.
 Its branch and workspace mode come from your configured defaults. To continue in
@@ -345,16 +348,20 @@ finished background work or a pull request watch starts on its own does not.
 
 A thread you are unlikely to write in again settles sooner than that setting. Once you have
 read its latest reply, T3 Code estimates the chance you come back to it from how long it has
-been quiet, how long it ran and how many messages you sent it, and what you have done since:
-messages in the project's other threads, new threads you started, and a publish in the
-project. A short thread you left for other work scores low within the hour; a long one you
-wrote in often stays in Recent for much longer.
+been quiet, how long it ran and how many messages you sent it, and what you have done in its
+project since: messages in the project's other threads and a publish. Work in other projects
+does not count, so a project you leave for another keeps its threads longer. A short thread
+you left for other work in the project scores low within the hour; a long one you wrote in
+often stays in Recent for much longer.
 
 When the chance is low, the thread moves from Recent to **Settling**, below Working. Its rows
-are one line each: project, title, and time. The thread you are likeliest to come back to is
-at the top and the surest to leave is at the bottom. Once a thread there has been quiet for
-two hours and the chance is very low, it settles, and never later than the setting. Write in
-a thread to take it back to Recent. The classic sidebar has no Settling section, and its
+are one line each: project, title, and how long until the thread settles if you do nothing
+more. Work in other threads brings that time forward. The thread you are likeliest to come
+back to is at the top and the surest to leave is at the bottom. Nothing settles this way in
+its first three hours. At three hours quiet, a thread whose chance is low settles if you have
+worked in its project since and it is not a long one. One that misses that settles once its
+chance is close to none, or after a day if it is still low, and never later than the setting.
+A thread you wrote in more than 16 times waits for the setting unless its project published. Write in a thread to take it back to Recent. The classic sidebar has no Settling section, and its
 threads settle by the same rule.
 
 A thread with a pull request keeps the full wait and is not listed in Settling. Something its

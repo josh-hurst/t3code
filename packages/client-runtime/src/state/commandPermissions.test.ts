@@ -565,6 +565,28 @@ it.effect("requires thread operation to answer a feedback card", () =>
   }),
 );
 
+it.effect("requires settings write to stop or restart kept project actions", () =>
+  Effect.gen(function* () {
+    const registry = yield* setup;
+    registry.set(sessions(env), AsyncResult.success(grant(true)));
+    const control = createCommandPermissions(runtime, WS_METHODS.projectsKeepRunningControl);
+    expect(registry.get(control.permissionAtom(env))).toBe(false);
+    expect((yield* control.authorize(registry, env).pipe(Effect.flip)).requiredPermission).toBe(
+      AuthSettingsWriteScope,
+    );
+    registry.set(
+      sessions(env),
+      AsyncResult.success({
+        ...grant(false),
+        scopes: [AuthSettingsWriteScope],
+        permissions: [AuthSettingsWriteScope],
+      }),
+    );
+    expect(registry.get(control.permissionAtom(env))).toBe(true);
+    yield* control.authorize(registry, env);
+  }),
+);
+
 it.effect("honors exact empty permissions and preserves legacy parent grants", () =>
   Effect.gen(function* () {
     const registry = yield* setup;

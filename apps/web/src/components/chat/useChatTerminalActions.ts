@@ -19,7 +19,10 @@ import {
   type ScopedThreadRef,
   type ThreadId,
 } from "@t3tools/contracts";
-import { projectScriptTerminalInput } from "@t3tools/shared/projectScripts";
+import {
+  isKeepRunningProjectScript,
+  projectScriptTerminalInput,
+} from "@t3tools/shared/projectScripts";
 import { type SetStateAction } from "react";
 import {
   isAtomCommandInterrupted,
@@ -216,6 +219,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     },
   ) => {
     if (!hasTerminalWriteAccess() || !activeThreadId || !activeProject || !activeThread) return;
+    if (isKeepRunningProjectScript(script)) return;
     if (options?.rememberAsLastInvoked !== false) {
       setLastInvokedScriptByProjectId((current) => {
         if (current[activeProject.id] === script.id) return current;

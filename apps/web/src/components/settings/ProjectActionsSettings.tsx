@@ -13,6 +13,7 @@ import { T, useGT } from "gt-react";
 import { useState } from "react";
 import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
 import { useEnvironments } from "../../state/environments";
+import { useProjectKeepRunningStatuses } from "../../state/projectKeepRunning";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -75,6 +76,11 @@ export function ProjectActionsSettings() {
   );
 
   const representativeMember = target?.projectId ? memberById.get(target.projectId) : undefined;
+  const keepRunningTarget =
+    isProjectScope && !mixed && targets.length === 1 && target?.projectId != null
+      ? { environmentId: target.environmentId, projectId: target.projectId }
+      : null;
+  const keepRunningStatuses = useProjectKeepRunningStatuses(keepRunningTarget);
   const t3File = useT3ProjectFileState(
     representativeMember?.environmentId ?? EnvironmentId.make("none"),
     representativeMember?.workspaceRoot ?? null,
@@ -194,6 +200,15 @@ export function ProjectActionsSettings() {
           scripts={scripts}
           keybindings={keybindings}
           disabled={saving || !canWriteSettings}
+          {...(keepRunningTarget
+            ? {
+                keepRunning: {
+                  environmentId: keepRunningTarget.environmentId,
+                  projectId: keepRunningTarget.projectId,
+                  statuses: keepRunningStatuses,
+                },
+              }
+            : {})}
           onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
         />
       )}
@@ -210,6 +225,7 @@ export function ProjectActionsSettings() {
         <ProjectScriptEditorDialog
           environmentId={target.environmentId}
           editScope={AuthSettingsWriteScope}
+          allowKeepRunning={isProjectScope}
           request={request}
           scripts={scripts}
           onSubmit={submit}

@@ -12,25 +12,41 @@ const HOUR_MS = 60 * 60 * 1_000;
 /** At or below this chance of the owner writing again, clients list the thread as settling. */
 export const SETTLE_OUTLOOK_LIST_BELOW = 0.15;
 export const SETTLE_OUTLOOK_LIST_AFTER_MS = 15 * 60 * 1_000;
-/** At or below this chance the thread settles; about 1 such close in 30 was written in again. */
-export const SETTLE_OUTLOOK_SETTLE_BELOW = 0.04;
-export const SETTLE_OUTLOOK_SETTLE_AFTER_MS = 2 * HOUR_MS;
+// A thread settled the moment its chance drifts under one bar carries about that bar's risk; the
+// batch already under the bar at one first look, and threads still quiet after a day, are much safer.
+/** When the score first evaluates a quiet thread. */
+const SETTLE_OUTLOOK_FIRST_LOOK_MS = 3 * HOUR_MS;
+/** At or below this chance at the first look, the thread settles. */
+const SETTLE_OUTLOOK_FIRST_LOOK_BELOW = 0.095;
+/** Threads longer than this wait past the first look. */
+const SETTLE_OUTLOOK_FIRST_LOOK_MAX_TURNS = 10;
+/** At or below this chance between the first look and a day quiet, the thread settles. */
+export const SETTLE_OUTLOOK_BETWEEN_BELOW = 0.01;
+/** When the score switches to the late bar. */
+const SETTLE_OUTLOOK_LATE_MS = 24 * HOUR_MS;
+/** At or below this chance after a day quiet, the thread settles. */
+export const SETTLE_OUTLOOK_LATE_BELOW = 0.07;
+/** Threads longer than this keep the owner's window unless the project published since. */
+const SETTLE_OUTLOOK_LONG_THREAD_TURNS = 16;
 /** Older activity is not read; a thread quiet for longer only looks a little likelier to return. */
 export const SETTLE_OUTLOOK_LOOKBACK_MS = 72 * HOUR_MS;
 
+const AGE_CAP_MINUTES = 30;
+const TURNS_FREE = 8;
+
 /**
- * A logistic score fitted to a month of one owner's threads (1,777 quiet points). What the owner
- * did elsewhere since the reply predicts a return better than the wait alone; the reply's text, a
- * model's reading of it and message embeddings added nothing. Inputs are log1p of hours or counts.
+ * A logistic score fitted to a month of one owner's threads, checked every 15 minutes up to a day.
+ * Return risk changes over a thread's first half hour and is flat up to about eight messages, then
+ * climbs. Only work in the thread's own project counts: the owner leaves a project and comes back.
+ * The reply's text, a model's reading of it and embeddings added nothing.
  */
 const WEIGHTS = {
-  intercept: -1.1623,
-  waitHours: -0.3804,
-  ageHours: 0.312,
-  turns: 0.4296,
-  elsewhere: -0.3622,
-  started: -0.4251,
-  published: -0.6915,
+  intercept: -1.7408,
+  waitHours: -0.669,
+  ageHours: 0.4387,
+  turns: 0.4358,
+  elsewhere: -0.4888,
+  published: -0.683,
 } as const;
 
 const SettleOutlookSignals = Schema.Struct({
@@ -42,8 +58,6 @@ const SettleOutlookSignals = Schema.Struct({
   turns: Schema.Finite,
   /** Messages the owner wrote in the project's other threads since. */
   elsewhere: Schema.Finite,
-  /** Threads the owner started since, in any project. */
-  started: Schema.Finite,
   /** A publish in the project since. */
   published: Schema.Boolean,
 });
@@ -57,7 +71,6 @@ export interface SettleOutlookActivity {
     readonly threadId: string;
     readonly projectId: string;
     readonly atMs: number;
-    readonly startsThread: boolean;
   }>;
   readonly publishes: ReadonlyArray<{ readonly projectId: string; readonly atMs: number }>;
   readonly turns: ReadonlyMap<string, number>;
@@ -76,36 +89,95 @@ export function settleOutlookSignals(
 ): SettleOutlookSignals | null {
   const turns = activity.turns.get(thread.id);
   if (turns === undefined) return null;
-  let elsewhere = 0;
-  let started = 0;
-  for (const message of activity.messages) {
-    if (message.atMs <= thread.quietAtMs || message.threadId === thread.id) continue;
-    if (message.projectId === thread.projectId) elsewhere += 1;
-    if (message.startsThread) started += 1;
-  }
+  const elsewhere = activity.messages.filter(
+    (message) =>
+      message.projectId === thread.projectId &&
+      message.threadId !== thread.id &&
+      message.atMs > thread.quietAtMs &&
+      message.atMs <= thread.nowMs,
+  ).length;
   return {
     waitHours: Math.max(0, thread.nowMs - thread.quietAtMs) / HOUR_MS,
     ageHours: Math.max(0, thread.ageMs) / HOUR_MS,
     turns,
     elsewhere,
-    started,
     published: activity.publishes.some(
-      (publish) => publish.projectId === thread.projectId && publish.atMs > thread.quietAtMs,
+      (publish) =>
+        publish.projectId === thread.projectId &&
+        publish.atMs > thread.quietAtMs &&
+        publish.atMs <= thread.nowMs,
     ),
   };
 }
 
+const score = (signals: SettleOutlookSignals) =>
+  WEIGHTS.intercept +
+  WEIGHTS.waitHours * Math.log1p(signals.waitHours) +
+  WEIGHTS.ageHours * Math.log1p(Math.min(signals.ageHours * 60, AGE_CAP_MINUTES)) +
+  WEIGHTS.turns * Math.log1p(Math.max(signals.turns - TURNS_FREE, 0)) +
+  WEIGHTS.elsewhere * Math.log1p(signals.elsewhere) +
+  (signals.published ? WEIGHTS.published : 0);
+
 /** The chance, 0 to 1, that the owner writes in the thread again. */
 export function settleOutlookReturnChance(signals: SettleOutlookSignals): number {
-  const score =
-    WEIGHTS.intercept +
-    WEIGHTS.waitHours * Math.log1p(signals.waitHours) +
-    WEIGHTS.ageHours * Math.log1p(signals.ageHours) +
-    WEIGHTS.turns * Math.log1p(signals.turns) +
-    WEIGHTS.elsewhere * Math.log1p(signals.elsewhere) +
-    WEIGHTS.started * Math.log1p(signals.started) +
-    (signals.published ? WEIGHTS.published : 0);
-  return 1 / (1 + Math.exp(-score));
+  return 1 / (1 + Math.exp(-score(signals)));
+}
+
+/**
+ * How long the thread must be quiet for its chance to reach `below` if the owner does nothing more
+ * elsewhere. What they do elsewhere only shortens it.
+ */
+export function settleOutlookSettleWaitMs(signals: SettleOutlookSignals, below: number): number {
+  const cutoff = Math.log(below / (1 - below));
+  const hours = Math.expm1(
+    Math.max(0, (cutoff - score({ ...signals, waitHours: 0 })) / WEIGHTS.waitHours),
+  );
+  return Math.round(hours * HOUR_MS);
+}
+
+/**
+ * How long after going quiet the score settles the thread if nothing more happens, or null when
+ * the activity was not read for it or the score leaves it to the owner's window.
+ */
+export function settleOutlookSettleAfterMs(
+  activity: SettleOutlookActivity,
+  thread: {
+    readonly id: string;
+    readonly projectId: string;
+    readonly quietAtMs: number;
+    readonly ageMs: number;
+    readonly nowMs: number;
+  },
+): number | null {
+  const firstLookSignals = settleOutlookSignals(activity, {
+    ...thread,
+    nowMs: Math.min(thread.nowMs, thread.quietAtMs + SETTLE_OUTLOOK_FIRST_LOOK_MS),
+  });
+  if (firstLookSignals === null) return null;
+  const atFirstLook = {
+    ...firstLookSignals,
+    waitHours: SETTLE_OUTLOOK_FIRST_LOOK_MS / HOUR_MS,
+  };
+  // A thread with no work in its project since, or a long one, waits: the owner may just be away.
+  if (
+    (atFirstLook.elsewhere >= 1 || atFirstLook.published) &&
+    atFirstLook.turns <= SETTLE_OUTLOOK_FIRST_LOOK_MAX_TURNS &&
+    settleOutlookReturnChance(atFirstLook) <= SETTLE_OUTLOOK_FIRST_LOOK_BELOW
+  ) {
+    return SETTLE_OUTLOOK_FIRST_LOOK_MS;
+  }
+  const current = settleOutlookSignals(activity, thread);
+  if (current === null) return null;
+  if (current.turns > SETTLE_OUTLOOK_LONG_THREAD_TURNS && !current.published) return null;
+  const between = Math.max(
+    SETTLE_OUTLOOK_FIRST_LOOK_MS,
+    settleOutlookSettleWaitMs(current, SETTLE_OUTLOOK_BETWEEN_BELOW),
+  );
+  if (between < SETTLE_OUTLOOK_LATE_MS) return between;
+  return Math.max(
+    SETTLE_OUTLOOK_LATE_MS,
+    settleOutlookSettleWaitMs(current, SETTLE_OUTLOOK_LATE_BELOW),
+  );
 }
 
 export class ThreadSettleOutlookError extends Schema.TaggedError<ThreadSettleOutlookError>()(
@@ -165,16 +237,9 @@ const make = Effect.gen(function* () {
         readonly threadId: string;
         readonly projectId: ProjectId;
         readonly at: string;
-        readonly startsThread: number;
       }>`
         SELECT message.thread_id AS "threadId", thread.project_id AS "projectId",
-          message.updated_at AS "at",
-          NOT EXISTS (
-            SELECT 1 FROM orchestration_v2_projection_messages earlier
-            WHERE earlier.thread_id = message.thread_id
-              AND earlier.updated_at < message.updated_at
-              AND ${ownerWrote("earlier")}
-          ) AS "startsThread"
+          message.updated_at AS "at"
         FROM orchestration_v2_projection_messages message
         JOIN orchestration_v2_projection_threads thread ON thread.thread_id = message.thread_id
         WHERE message.updated_at > ${since} AND ${ownerWrote("message")}
@@ -196,7 +261,6 @@ const make = Effect.gen(function* () {
           threadId: row.threadId,
           projectId: row.projectId,
           atMs: Date.parse(row.at),
-          startsThread: row.startsThread === 1,
         })),
         publishes: publishes.map((row) => ({ projectId: row.projectId, atMs: Date.parse(row.at) })),
         turns: new Map(turns.map((row) => [row.threadId, row.turns])),
