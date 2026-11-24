@@ -6,7 +6,7 @@ import * as NodePath from "node:path";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { type Project, ProjectId, RunId, ThreadId } from "@t3tools/contracts";
+import { type Project, ProjectId, RunId, ThreadEntryId, ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -209,6 +209,79 @@ describe("ProjectChangesService", () => {
             { projectId: remoteId, uncommittedFiles: 0, unpushedCommits: 1 },
           );
         }).pipe(Effect.provide(layer));
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live(
+    "credits a run only with files it edited, and keeps that once its turn items are gone",
+    () =>
+      Effect.gen(function* () {
+        const fsService = yield* FileSystem.FileSystem;
+        const repo = yield* fsService.makeTempDirectoryScoped({ prefix: "t3-project-changes-" });
+        const now = yield* DateTime.now;
+        const at = (seconds: number) => DateTime.formatIso(DateTime.add(now, { seconds }));
+        initRepo(repo);
+        commitFile(repo, "README.md", "v1", "Base", at(-600));
+        NodeFS.writeFileSync(NodePath.join(repo, "Shop.luau"), "v2");
+        // Another session's output, which the run's checkpoint also lists.
+        NodeFS.writeFileSync(NodePath.join(repo, "Thumb.png"), "png");
+
+        const projectId = ProjectId.make("project:shop");
+        const threadId = ThreadId.make("thread:shop");
+        const runId = RunId.make("run:shop");
+        const entryId = ThreadEntryId.make("thread:shop:e1");
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const service = yield* ProjectChangesService.ProjectChangesService;
+          yield* sql`
+          INSERT INTO orchestration_v2_projection_threads (
+            thread_id, project_id, title, default_provider, runtime_mode, interaction_mode,
+            payload_json, created_at, updated_at, deleted_at
+          ) VALUES (
+            ${threadId}, ${projectId}, 'Thread', 'claudeAgent', 'full-access', 'default',
+            '{}', ${at(-300)}, ${at(-200)}, NULL
+          )`;
+          yield* sql`
+          INSERT INTO orchestration_v2_projection_runs (
+            run_id, thread_id, ordinal, provider, status, requested_at, completed_at, payload_json
+          ) VALUES (
+            ${runId}, ${threadId}, 1, 'claudeAgent', 'completed', ${at(-300)}, ${at(-200)}, '{}'
+          )`;
+          yield* sql`
+          INSERT INTO orchestration_v2_projection_checkpoints (
+            checkpoint_id, thread_id, scope_id, run_id, node_id, parent_checkpoint_id,
+            ordinal_within_scope, app_run_ordinal, status, captured_at, payload_json
+          ) VALUES (
+            'checkpoint:shop', ${threadId}, 'scope:shop', ${runId}, 'node:root', NULL, 1, 1,
+            'ready', ${at(-200)}, '{"files":[{"path":"Shop.luau"},{"path":"Thumb.png"}]}'
+          )`;
+          yield* sql`
+          INSERT INTO orchestration_v2_projection_turn_items (
+            turn_item_id, thread_id, run_id, node_id, provider_thread_id, provider_turn_id,
+            parent_item_id, ordinal, type, status, updated_at, payload_json
+          ) VALUES (
+            'item:edit', ${threadId}, ${runId}, 'node:edit', NULL, NULL, NULL, 1, 'file_change',
+            'completed', ${at(-250)},
+            ${`{"type":"file_change","fileName":${JSON.stringify(NodePath.join(repo, "Shop.luau"))}}`}
+          )`;
+          yield* sql`
+          INSERT INTO tide_thread_entries (
+            entry_id, thread_id, title, title_source, outcome, open_json, open_count, runs_json,
+            start_message_id, end_message_id, started_at, ended_at, status, merged_into
+          ) VALUES (
+            ${entryId}, ${threadId}, 'Shop', 'model', '', '[]', 0,
+            ${`[{"runId":"${runId}","source":"online"}]`}, 'message:start', 'message:end',
+            ${at(-300)}, ${at(-200)}, 'active', NULL
+          )`;
+          const expected = [
+            { entryId, files: 1 },
+            { entryId: null, files: 1 },
+          ];
+          assert.deepEqual((yield* service.read({ projectId })).uncommitted.topics, expected);
+          // Turn items are read once per finished run; later views use what was kept.
+          yield* sql`DELETE FROM orchestration_v2_projection_turn_items`;
+          assert.deepEqual((yield* service.read({ projectId })).uncommitted.topics, expected);
+        }).pipe(Effect.provide(makeLayer(new Map([[projectId, repo]]))));
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

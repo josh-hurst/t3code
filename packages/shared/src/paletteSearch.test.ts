@@ -116,6 +116,18 @@ describe("scoreThreadSearch", () => {
         }),
       ]),
     ).toEqual(["Goldbug notes", "Goldbug processes"]);
+    expect(
+      rankTitles("goldbug", [
+        thread("Goldbug launch", {
+          activityAt: NOW - 13 * DAY,
+          opens: { openedAt: NOW - 13 * DAY, score: 7, picks: [] },
+        }),
+        thread("Goldbug review", {
+          activityAt: NOW,
+          opens: { openedAt: NOW, score: 3, picks: [] },
+        }),
+      ]),
+    ).toEqual(["Goldbug review", "Goldbug launch"]);
   });
 
   it("puts the thread picked for a query first when that query is typed again", () => {

@@ -20,6 +20,7 @@ import {
   sortNeedsYouThreads,
   sortSettlingThreads,
   sortTrailThreads,
+  threadRecentAt,
   splitTrail,
   threadAutoSettleAt,
   threadAutoSettleLabel,
@@ -588,22 +589,26 @@ describe("sortNeedsYouThreads", () => {
 });
 
 describe("sortTrailThreads", () => {
-  it("orders by the last message you sent, never by opening it or agent activity", () => {
+  it("orders by the last message you sent or run that finished, never by opening it", () => {
     const sent = shell("sent", {}, { latestUserAuthoredMessageAt: T2 });
     const older = shell("older", {}, { latestUserAuthoredMessageAt: T1 });
     const order = (threads: EnvironmentThreadShell[]) =>
       sortTrailThreads(threads).map(({ id }) => id);
     expect(order([older, sent])).toEqual(["sent", "older"]);
 
-    // Opening and reading it, a finished run you have not opened, and un-settling leave it put.
-    const touched = {
+    // Opening and reading it and un-settling leave it put.
+    const opened = {
       ...older,
       lastVisitedAt: T3,
       opens: { openedAt: Date.parse(T3), score: 1, picks: [] },
-      latestRun: run("completed", T3),
       unsettledAt: T3,
     };
-    expect(order([sent, touched])).toEqual(["sent", "older"]);
+    expect(order([sent, opened])).toEqual(["sent", "older"]);
+
+    // A run finishing moves it up, and the row shows that time.
+    const finished = { ...older, latestRun: run("completed", T3) };
+    expect(order([sent, finished])).toEqual(["older", "sent"]);
+    expect(threadRecentAt(finished)).toBe(Date.parse(T3));
 
     // Older servers send only latestUserMessageAt.
     const legacy = shell("legacy", {}, { latestUserMessageAt: T3 });
@@ -625,22 +630,13 @@ describe("splitTrail", () => {
     );
     const afterMidnight = touched("after-midnight", new Date(2026, 10, 15, 0, 0));
     const beforeMidnight = touched("before-midnight", new Date(2026, 10, 14, 23, 59));
-    // Written to two days ago, finished just now and not yet opened: it stays in view.
-    const unseenFinish = {
-      ...touched("unseen-finish", new Date(2026, 10, 13, 9, 0)),
-      lastVisitedAt: new Date(2026, 10, 13, 9, 0).toISOString(),
-      latestRun: run("completed", new Date(2026, 10, 15, 9, 55).toISOString()),
-    };
-    const trail = sortTrailThreads([beforeMidnight, ...recent, unseenFinish, afterMidnight]);
+    const trail = sortTrailThreads([beforeMidnight, ...recent, afterMidnight]);
 
     const split = splitTrail(trail, { now });
-    expect(split.head.map(({ id }) => id)).toEqual([
-      ...recent.map(({ id }) => id),
-      "unseen-finish",
-    ]);
+    expect(split.head.map(({ id }) => id)).toEqual(recent.map(({ id }) => id));
     expect(split.moreToday.map(({ id }) => id)).toEqual(["after-midnight"]);
     expect(split.earlier.map(({ id }) => id)).toEqual(["before-midnight"]);
-    expect(splitTrail(trail, { now, visibleCount: 20 }).head).toHaveLength(11);
+    expect(splitTrail(trail, { now, visibleCount: 20 }).head).toHaveLength(10);
   });
 });
 

@@ -828,16 +828,17 @@ export interface ThreadSearchSubject {
 
 // Use reorders matches of about the same quality but never turns a mid-word
 // hit on a busy thread into a better result than a whole word on a quiet one.
-const USE_BOOST_LIMIT = 2.5;
+// Only opens are capped: a cap over recency too tied every busy thread, whatever its age.
+const OPENS_BOOST_LIMIT = 1;
 
 /**
  * How much use lifts a thread: 1 for a stale, never-opened thread, about 2 for
- * one active today, and up to 2.5 for threads opened often.
+ * one active today, and up to 3 for one active today and opened often.
  */
 function threadUsageBoost(thread: ThreadSearchSubject, now: number): number {
   const recency = thread.activityAt === null ? 0 : decay(now - thread.activityAt);
   const opens = thread.opens ? thread.opens.score * decay(now - thread.opens.openedAt) : 0;
-  return Math.min(USE_BOOST_LIMIT, 1 + recency + 0.5 * Math.log2(1 + opens));
+  return 1 + recency + Math.min(OPENS_BOOST_LIMIT, 0.5 * Math.log2(1 + opens));
 }
 
 const REFERENCE_PREFIX_MIN = 8;

@@ -480,16 +480,16 @@ export function threadWaitingSince(thread: WaitingSinceInput): number {
   );
 }
 
-type LastSentInput = Pick<
+type RecentInput = Pick<
   EnvironmentThreadShell,
-  "createdAt" | "latestUserMessageAt" | "latestUserAuthoredMessageAt"
+  "createdAt" | "latestUserMessageAt" | "latestUserAuthoredMessageAt" | "latestRun"
 >;
 
 /**
- * When you last wrote to the thread, or its creation before that. Opening a thread and its runs
- * finishing never move it, so a row stays where it was while you read.
+ * When you last wrote to the thread or its latest run finished, or its creation before either.
+ * Opening a thread never moves it, so a row stays where it was while you read.
  */
-export function threadLastSentAt(thread: LastSentInput): number {
+export function threadRecentAt(thread: RecentInput): number {
   const sentAt =
     thread.latestUserAuthoredMessageAt === undefined
       ? thread.latestUserMessageAt
@@ -497,6 +497,7 @@ export function threadLastSentAt(thread: LastSentInput): number {
   return Math.max(
     toSortableTimestamp(thread.createdAt) ?? 0,
     toSortableTimestamp(sentAt ?? undefined) ?? 0,
+    toSortableTimestamp(thread.latestRun?.completedAt ?? undefined) ?? 0,
   );
 }
 
@@ -524,11 +525,9 @@ export function sortNeedsYouThreads<T extends SortKeyInput & WaitingSinceInput>(
   return sortByTimestamp(threads, threadWaitingSince, 1);
 }
 
-/** Latest message you sent first. */
-export function sortTrailThreads<T extends SortKeyInput & LastSentInput>(
-  threads: readonly T[],
-): T[] {
-  return sortByTimestamp(threads, threadLastSentAt, -1);
+/** Latest message you sent or run that finished first. */
+export function sortTrailThreads<T extends SortKeyInput & RecentInput>(threads: readonly T[]): T[] {
+  return sortByTimestamp(threads, threadRecentAt, -1);
 }
 
 const TRAIL_VISIBLE_COUNT = 8;
@@ -541,12 +540,10 @@ function startOfLocalDay(timestampMs: number, dayOffset = 0): number {
 }
 
 /**
- * The first rows, then the rest split at local midnight. A finish you haven't opened stays in
- * the first rows, so its Done shows. `trail` must already be sorted by `sortTrailThreads`.
+ * The first rows, then the rest split at local midnight. `trail` must already be sorted by
+ * `sortTrailThreads`.
  */
-export function splitTrail<
-  T extends LastSentInput & Pick<ThreadStatusInput, "latestRun" | "lastVisitedAt">,
->(
+export function splitTrail<T extends RecentInput>(
   trail: readonly T[],
   options: { readonly now: number; readonly visibleCount?: number },
 ): { readonly head: T[]; readonly moreToday: T[]; readonly earlier: T[] } {
@@ -556,8 +553,7 @@ export function splitTrail<
   const moreToday: T[] = [];
   const earlier: T[] = [];
   for (const thread of trail.slice(visibleCount)) {
-    if (hasUnseenCompletion(thread)) head.push(thread);
-    else (threadLastSentAt(thread) >= todayStart ? moreToday : earlier).push(thread);
+    (threadRecentAt(thread) >= todayStart ? moreToday : earlier).push(thread);
   }
   return { head, moreToday, earlier };
 }

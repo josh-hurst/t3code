@@ -2355,8 +2355,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             {unreadDot}
             <Text
               className={cn(
-                "min-w-0 flex-1",
-                props.compact === true ? "text-sm" : "text-base",
+                "min-w-0 flex-1 text-base",
                 showsDone ? "font-t3-semibold" : "font-t3-medium",
                 selected
                   ? selectedThreadRowColors.foregroundClassName

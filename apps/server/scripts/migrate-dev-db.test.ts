@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { forkMigrationManifest } from "../src/persistence/ForkMigrations.ts";
 import { runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { runMigrateDevDb } from "./migrate-dev-db.ts";
@@ -284,7 +285,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       );
       assert.deepStrictEqual(
         kept.forkLedger.map((row) => row.migration_id),
-        [1, 2, 3, 4, 5],
+        forkMigrationManifest.map(([id]) => id),
       );
     }),
   );
@@ -378,7 +379,11 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           return yield* sql<{ migration_id: number }>`SELECT migration_id FROM t3_fork_migrations`;
         }),
       );
-      assert.lengthOf(forkLedger, 5, "a source without the fork ledger gets it on the snapshot");
+      assert.lengthOf(
+        forkLedger,
+        forkMigrationManifest.length,
+        "a source without the fork ledger gets it on the snapshot",
+      );
     }),
   );
 

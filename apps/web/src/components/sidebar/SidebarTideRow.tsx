@@ -211,7 +211,7 @@ export function TideRowBody(props: {
       <div
         className={cn(
           "flex min-w-0 items-center gap-1.5",
-          props.dense ? "h-4" : "h-5",
+          "h-5",
           props.project !== null && !props.dense && "mt-0.5",
         )}
       >

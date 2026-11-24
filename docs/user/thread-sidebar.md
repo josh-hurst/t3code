@@ -217,13 +217,13 @@ Needs you rows hold their place.
 wake time, a re-check and its reason, **Set aside**, or **Standing check**. Threads with a
 time come first, soonest first.
 
-**Recent** holds every other unsettled thread, ordered by when you last sent it a message,
-most recent first. Opening a thread or an agent working in it never reorders it. It shows the
-eight most recent threads, plus any finished run you haven't opened, marked **Done**. Click the
+**Recent** holds every other unsettled thread, ordered by when you last sent it a message or
+its latest run finished, most recent first. Opening a thread never reorders it. It shows the
+eight most recent threads; a finished run you haven't opened is marked **Done**. Click the
 row below them, such as **5 more today, 3 earlier**, to see the rest grouped by day.
 While those rows or History are open, use **By day** in the Recent header to switch
 between day and project groups. The first eight keep their order. Hover a time in
-Recent to see exactly when you last wrote to the thread, or in Needs you to see how long it has waited.
+Recent to see exactly when you last wrote to the thread or its run finished, or in Needs you to see how long it has waited.
 
 **Clear** in the Recent header, or `thread.clearTrail` (`mod+alt+s`), moves every thread
 in Recent except the open one to History, including those under **more**. One **Undo**

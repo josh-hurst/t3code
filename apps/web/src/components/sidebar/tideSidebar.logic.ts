@@ -10,7 +10,7 @@ import {
   splitTrail,
   threadCardQuestionLabel,
   threadCardRowLine,
-  threadLastSentAt,
+  threadRecentAt,
   threadLaterLead,
   threadNeedsYou,
   threadRowLineText,
@@ -78,8 +78,8 @@ export function splitTideSettling(
 }
 
 /**
- * Splits the active bucket into Needs you (longest wait first) and the Trail
- * (latest message you sent first). The Trail shows its first rows; expanded, it adds the
+ * Splits the active bucket into Needs you (longest wait first) and the Trail (latest message
+ * you sent or run that finished first). The Trail shows its first rows; expanded, it adds the
  * rest under day labels, or under project labels when `projectOf` is set.
  */
 export function arrangeTideActive(input: {
@@ -96,7 +96,7 @@ export function arrangeTideActive(input: {
   // The time each row shows is the one it is sorted by, so the column reads in order.
   const timeAtByKey = new Map<string, number>([
     ...needsYou.map((thread) => [keyOf(thread), threadWaitingSince(thread)] as const),
-    ...trail.map((thread) => [keyOf(thread), threadLastSentAt(thread)] as const),
+    ...trail.map((thread) => [keyOf(thread), threadRecentAt(thread)] as const),
   ]);
   const rest = [...moreToday, ...earlier];
   if (!input.trailExpanded) {
@@ -123,7 +123,7 @@ export function arrangeTideActive(input: {
       ? {
           threads: rest,
           groupLabelByKey: groupLabels(rest, (thread) =>
-            today.has(thread) ? null : trailDayLabel(threadLastSentAt(thread), input.nowMs),
+            today.has(thread) ? null : trailDayLabel(threadRecentAt(thread), input.nowMs),
           ),
           projectLabelledKeys: NO_KEYS,
         }
@@ -267,7 +267,7 @@ export function resolveTideRowTime(input: {
   }
   if (input.tideTimeAt === null) return null;
   return {
-    label: input.needsYou ? "Waiting on you since" : "Started or last messaged",
+    label: input.needsYou ? "Waiting on you since" : "Last messaged or finished",
     at: new Date(input.tideTimeAt).toISOString(),
   };
 }

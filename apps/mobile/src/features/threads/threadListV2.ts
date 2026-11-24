@@ -24,7 +24,7 @@ import {
   threadLaterLead,
   threadRowLineText,
   threadRowProjectName,
-  threadLastSentAt,
+  threadRecentAt,
   threadNeedsYou,
   threadAutoSettleAt,
   threadSettlingChance,
@@ -710,9 +710,9 @@ function resolveThreadListV2ItemTimeLabel(
   const { thread, variant, snoozed } = item;
   // A held row with no wake label is set aside or a standing check: it has no time to show.
   if (showSnoozeWakeLabel || snoozed) return "";
-  // The Trail is ordered by your last touch, so its rows show that time and read in order.
+  // The Trail is ordered by your last message or finish, so its rows show that time in order.
   if (inTrail)
-    return relativeTime(new Date(threadLastSentAt(thread)).toISOString(), undefined, resolve);
+    return relativeTime(new Date(threadRecentAt(thread)).toISOString(), undefined, resolve);
   if (
     variant === "card" &&
     (resolveThreadListV2Status(thread) !== "ready" ||

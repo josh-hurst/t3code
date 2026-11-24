@@ -37,6 +37,7 @@ import {
   buildProjectChanges,
   changePeriods,
   collectRunWork,
+  type RunWork,
   earlierChangelog,
   parseGitLogWithFiles,
   parseGitStatusPaths,
@@ -108,6 +109,28 @@ const decodeRunWork = Schema.decodeUnknownEffect(
     }),
   ),
 );
+const decodeKeptRunWork = Schema.decodeUnknownEffect(
+  Schema.Array(
+    Schema.Struct({
+      runId: RunId,
+      edited: Schema.fromJsonString(Schema.Array(Schema.String)),
+      named: Schema.fromJsonString(Schema.Array(Schema.String)),
+    }),
+  ),
+);
+const encodeJsonStrings = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(Schema.String)));
+const encodeJsonPairs = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Array(Schema.Tuple([Schema.String, Schema.String]))),
+);
+const KeptRunWork = Schema.Array(
+  Schema.Struct({
+    runId: Schema.String,
+    capturedAt: Schema.String,
+    edited: Schema.Array(Schema.String),
+    named: Schema.Array(Schema.String),
+  }),
+);
+const encodeKeptRunWork = Schema.encodeEffect(Schema.fromJsonString(KeptRunWork));
 const decodeProjectIds = Schema.decodeUnknownEffect(
   Schema.Array(Schema.Struct({ projectId: ProjectId })),
 );
@@ -289,66 +312,115 @@ const make = Effect.gen(function* () {
         WHERE t.project_id = ${projectId} AND r.requested_at >= ${since}
       `,
     );
-    // File edits and agent commands of each run that changed the checkout, its native
-    // subagents' included. The joins are pinned: a free planner scans every turn item for the subagent half.
-    const work = yield* decodeRunWork(
-      yield* sql`
-        WITH changed AS MATERIALIZED (
-          SELECT DISTINCT c.run_id, c.thread_id
-          FROM orchestration_v2_projection_checkpoints c
-          JOIN orchestration_v2_projection_threads t ON t.thread_id = c.thread_id
-          WHERE t.project_id = ${projectId}
-            AND c.run_id IS NOT NULL
-            AND c.captured_at >= ${since}
-            AND json_array_length(c.payload_json, '$.files') > 0
-        ), own AS MATERIALIZED (
-          SELECT
-            changed.run_id,
-            i.type,
-            CASE WHEN i.type = 'file_change' THEN i.payload_json END AS edit,
-            -- T3's own "Preparing workspace" step is a command no agent ran.
-            CASE
-              WHEN i.type = 'command_execution'
-                AND json_extract(i.payload_json, '$.nativeItemRef') IS NOT NULL
-              THEN json_extract(i.payload_json, '$.input')
-            END AS command
-          FROM changed
-          CROSS JOIN orchestration_v2_projection_turn_items i
-          WHERE i.run_id = changed.run_id AND i.type IN ('file_change', 'command_execution')
-          UNION ALL
-          SELECT
-            changed.run_id,
-            i.type,
-            CASE WHEN i.type = 'file_change' THEN i.payload_json END,
-            CASE
-              WHEN i.type = 'command_execution'
-                AND json_extract(i.payload_json, '$.nativeItemRef') IS NOT NULL
-              THEN json_extract(i.payload_json, '$.input')
-            END
-          FROM changed
-          CROSS JOIN orchestration_v2_projection_subagents s
-          CROSS JOIN orchestration_v2_projection_turn_items i
-          WHERE s.thread_id = changed.thread_id
-            AND s.run_id = changed.run_id
-            AND i.thread_id = s.child_thread_id
-            AND i.type IN ('file_change', 'command_execution')
-        )
-        SELECT run_id AS "runId", NULL AS edited, command FROM own WHERE command IS NOT NULL
-        UNION
-        SELECT run_id, json_extract(edit, '$.fileName'), NULL FROM own WHERE edit IS NOT NULL
-        UNION
-        SELECT own.run_id, json_extract(change.value, '$.path'), NULL
-        FROM own, json_each(own.edit, '$.changes') change
-        WHERE json_extract(change.value, '$.path') IS NOT NULL
-      `,
+    const changedRuns = new Map<
+      RunId,
+      { threadId: ThreadId; capturedAt: string; paths: string[] }
+    >();
+    for (const checkpoint of checkpoints) {
+      const run = changedRuns.get(checkpoint.runId);
+      if (run === undefined) {
+        changedRuns.set(checkpoint.runId, {
+          threadId: checkpoint.threadId,
+          capturedAt: checkpoint.capturedAt,
+          paths: [...checkpoint.paths],
+        });
+      } else {
+        run.paths.push(...checkpoint.paths);
+        if (checkpoint.capturedAt > run.capturedAt) run.capturedAt = checkpoint.capturedAt;
+      }
+    }
+    const runWork = new Map(
+      (yield* decodeKeptRunWork(
+        yield* sql`
+          SELECT run_id AS "runId", edited_json AS edited, named_json AS named
+          FROM tide_run_work
+          WHERE run_id IN (SELECT value FROM json_each(${yield* encodeJsonStrings([...changedRuns.keys()])}))
+        `,
+      )).map((row) => [
+        row.runId,
+        { editedPaths: new Set(row.edited), commandFileNames: new Set(row.named) },
+      ]),
     );
+    const missing = [...changedRuns].filter(([runId]) => !runWork.has(runId));
+    // File edits and agent commands of each run not yet read, its native subagents' included.
+    // The joins are pinned: a free planner scans every turn item for the subagent half.
+    const fresh =
+      missing.length === 0
+        ? new Map<RunId, RunWork>()
+        : collectRunWork(
+            yield* decodeRunWork(
+              yield* sql`
+                WITH changed AS MATERIALIZED (
+                  SELECT json_extract(value, '$[0]') AS run_id, json_extract(value, '$[1]') AS thread_id
+                  FROM json_each(${yield* encodeJsonPairs(missing.map(([runId, run]) => [runId, run.threadId]))})
+                ), own AS MATERIALIZED (
+                  SELECT
+                    changed.run_id,
+                    i.type,
+                    CASE WHEN i.type = 'file_change' THEN i.payload_json END AS edit,
+                    -- T3's own "Preparing workspace" step is a command no agent ran.
+                    CASE
+                      WHEN i.type = 'command_execution'
+                        AND json_extract(i.payload_json, '$.nativeItemRef') IS NOT NULL
+                      THEN json_extract(i.payload_json, '$.input')
+                    END AS command
+                  FROM changed
+                  CROSS JOIN orchestration_v2_projection_turn_items i
+                  WHERE i.run_id = changed.run_id AND i.type IN ('file_change', 'command_execution')
+                  UNION ALL
+                  SELECT
+                    changed.run_id,
+                    i.type,
+                    CASE WHEN i.type = 'file_change' THEN i.payload_json END,
+                    CASE
+                      WHEN i.type = 'command_execution'
+                        AND json_extract(i.payload_json, '$.nativeItemRef') IS NOT NULL
+                      THEN json_extract(i.payload_json, '$.input')
+                    END
+                  FROM changed
+                  CROSS JOIN orchestration_v2_projection_subagents s
+                  CROSS JOIN orchestration_v2_projection_turn_items i
+                  WHERE s.thread_id = changed.thread_id
+                    AND s.run_id = changed.run_id
+                    AND i.thread_id = s.child_thread_id
+                    AND i.type IN ('file_change', 'command_execution')
+                )
+                SELECT run_id AS "runId", NULL AS edited, command FROM own WHERE command IS NOT NULL
+                UNION
+                SELECT run_id, json_extract(edit, '$.fileName'), NULL FROM own WHERE edit IS NOT NULL
+                UNION
+                SELECT own.run_id, json_extract(change.value, '$.path'), NULL
+                FROM own, json_each(own.edit, '$.changes') change
+                WHERE json_extract(change.value, '$.path') IS NOT NULL
+              `,
+            ),
+            workspaceRoot,
+          );
+    // A run with a checkpoint has finished, so what it did is kept; only names its files use matter.
+    const toKeep = missing.map(([runId, run]) => {
+      const work = fresh.get(runId);
+      const names = new Set(run.paths.map((path) => path.slice(path.lastIndexOf("/") + 1)));
+      const kept = {
+        editedPaths: new Set(work?.editedPaths),
+        commandFileNames: new Set(
+          [...(work?.commandFileNames ?? [])].filter((name) => names.has(name)),
+        ),
+      };
+      runWork.set(runId, kept);
+      return {
+        runId,
+        capturedAt: run.capturedAt,
+        edited: [...kept.editedPaths],
+        named: [...kept.commandFileNames],
+      };
+    });
     const publishes = yield* readPublishes(projectId, since, nowIso);
     return {
       touches: assembleTouches({
         threads,
         entries,
         runStartedAtMs: new Map(runs.map((row) => [row.runId, Date.parse(row.requestedAt)])),
-        runWork: collectRunWork(work, workspaceRoot),
+        runWork,
         checkpoints: checkpoints.map((checkpoint) => ({
           threadId: checkpoint.threadId,
           runId: checkpoint.runId,
@@ -358,8 +430,25 @@ const make = Effect.gen(function* () {
       }),
       entries,
       publishes,
+      toKeep,
     };
   }, NodeSqliteClient.readOnly);
+
+  const keepRunWork = Effect.fn("ProjectChangesService.keepRunWork")(function* (
+    rows: typeof KeptRunWork.Type,
+    since: string,
+  ) {
+    yield* sql`
+      INSERT OR REPLACE INTO tide_run_work (run_id, captured_at, edited_json, named_json)
+      SELECT
+        json_extract(value, '$.runId'),
+        json_extract(value, '$.capturedAt'),
+        json_extract(value, '$.edited'),
+        json_extract(value, '$.named')
+      FROM json_each(${yield* encodeKeptRunWork(rows)})
+    `;
+    yield* sql`DELETE FROM tide_run_work WHERE captured_at < ${since}`;
+  });
 
   const statusArgs = [
     // Never takes the index lock, which a commit running in the checkout needs.
@@ -534,6 +623,10 @@ const make = Effect.gen(function* () {
         ],
         { concurrency: "unbounded" },
       );
+      if (evidence.toKeep.length > 0) {
+        // Only saves the next view the work; this one already has it.
+        yield* keepRunWork(evidence.toKeep, since).pipe(Effect.ignoreCause({ log: true }));
+      }
       const changes = buildProjectChanges({
         touches: evidence.touches,
         dirtyPaths: parseGitStatusPaths(status ?? ""),

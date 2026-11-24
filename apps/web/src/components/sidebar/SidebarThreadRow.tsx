@@ -1360,7 +1360,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       ref={isRegeneratingTitle ? observeVisibleAnimation : undefined}
       className={cn(
         "min-w-0 flex-1 text-start transition-opacity motion-reduce:transition-none",
-        props.tide ? (variant === "compact" ? "text-xs" : "text-row-title") : "text-sm",
+        props.tide ? "text-row-title" : "text-sm",
         brightTitle
           ? "truncate font-medium text-foreground"
           : shouldRecede && !props.tide
@@ -1961,7 +1961,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 className={cn(
                   rowSurfaceClassName,
                   "flex min-h-9 flex-col justify-center px-3",
-                  isCompactRow ? "py-1" : "py-2",
+                  isCompactRow ? "py-1.5" : "py-2",
                 )}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}

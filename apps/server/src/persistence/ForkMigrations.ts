@@ -11,6 +11,7 @@ import ForkMigration0002 from "./ForkMigrations/002_TidePublishMarkers.ts";
 import ForkMigration0003 from "./ForkMigrations/003_TideChangeDigests.ts";
 import ForkMigration0004 from "./ForkMigrations/004_TideRegroupAgain.ts";
 import ForkMigration0005 from "./ForkMigrations/005_TideSettleOutlook.ts";
+import ForkMigration0006 from "./ForkMigrations/006_TideRunWork.ts";
 
 const FORK_MIGRATIONS_TABLE = "t3_fork_migrations";
 
@@ -20,6 +21,7 @@ const forkMigrationEntries = [
   [3, "TideChangeDigests", ForkMigration0003],
   [4, "TideRegroupAgain", ForkMigration0004],
   [5, "TideSettleOutlook", ForkMigration0005],
+  [6, "TideRunWork", ForkMigration0006],
 ] as const;
 
 export const forkMigrationManifest = forkMigrationEntries.map(([id, name]) => [id, name] as const);
