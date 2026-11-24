@@ -301,6 +301,35 @@ describe("buildThreadActionItems", () => {
     ]);
   });
 
+  it("lists semantic matches in By meaning after message matches without duplicating shown threads", () => {
+    const threads = [
+      makeThread({ id: ThreadId.make("title"), title: "Convex schema validation" }),
+      makeThread({ id: ThreadId.make("message"), title: "Database layer" }),
+      makeThread({ id: ThreadId.make("semantic"), title: "Customizable Button Layout Telemetry" }),
+    ];
+    const items = buildThreadActionItems({
+      threads,
+      projectByKey: new Map(),
+      icon: null,
+      runThread: async () => undefined,
+    });
+    const groups = filterCommandPaletteGroups({
+      activeGroups: [],
+      query: "convex",
+      isInSubmenu: false,
+      projectSearchItems: [],
+      threadSearchItems: items,
+      threadMessageItems: [items[0]!, items[1]!],
+      threadSemanticItems: [items[0]!, items[1]!, items[2]!],
+    }).map((group) => [group.value, group.label, group.items.map((item) => item.value)]);
+
+    expect(groups).toEqual([
+      ["threads-search", "Threads", ["thread:environment-local:title"]],
+      ["threads-messages", "In messages", ["thread:environment-local:message"]],
+      ["threads-semantic", "By meaning", ["thread:environment-local:semantic"]],
+    ]);
+  });
+
   it("keeps an active thread first while its title is typed, above settings and actions", () => {
     const now = Date.parse("2026-10-23T00:00:00.000Z");
     const action = (value: string, title: string, searchTerms: string[] = [title]) => ({

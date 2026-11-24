@@ -407,6 +407,28 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     onValueChange={(value) => write({ enableAgentBrowserAccess: value })}
                   />
                 </SettingsSection>
+                {!projectSelected &&
+                displayTargets.some(
+                  (target) =>
+                    target.environment.serverConfig.environment.capabilities
+                      .semanticThreadSearch === true,
+                ) ? (
+                  <SettingsSection title={gt("Search")}>
+                    <SettingsSwitchRow
+                      icon="magnifyingglass"
+                      label={gt("Search by meaning")}
+                      subtitle={managedSubtitle(
+                        "semanticSearchEnabled",
+                        gt(
+                          "Index thread summaries and messages locally with a small embedding model so thread search finds matches by meaning even when the wording differs. Turning this off stops downloads and indexing.",
+                        ),
+                      )}
+                      value={uniform("semanticSearchEnabled")}
+                      disabled={disabledFor("semanticSearchEnabled")}
+                      onValueChange={(value) => write({ semanticSearchEnabled: value })}
+                    />
+                  </SettingsSection>
+                ) : null}
                 <AutoSettleSettingsRows write={write} pending={pendingWrites > 0} />
               </>
             ) : null}

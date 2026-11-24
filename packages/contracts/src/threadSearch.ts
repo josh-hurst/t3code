@@ -9,7 +9,7 @@ import {
   TrimmedString,
 } from "./baseSchemas.ts";
 
-export const OrchestrationThreadSearchSource = Schema.Literals(["user", "assistant"]);
+export const OrchestrationThreadSearchSource = Schema.Literals(["user", "assistant", "summary"]);
 export type OrchestrationThreadSearchSource = typeof OrchestrationThreadSearchSource.Type;
 
 /** Longer queries are cut to this before they are sent. */

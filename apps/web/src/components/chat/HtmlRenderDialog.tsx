@@ -18,6 +18,7 @@ export function HtmlRenderDialog(props: {
   readonly src: string;
   readonly htmlRender: HtmlRenderReference;
   readonly threadRef?: ScopedThreadRef | undefined;
+  readonly onCompose?: ((text: string) => void) | undefined;
   readonly onClose: () => void;
 }) {
   const gt = useGT();
@@ -68,6 +69,14 @@ export function HtmlRenderDialog(props: {
                   threadRef={props.threadRef}
                   className="block size-full"
                   onContentHeight={setContentHeight}
+                  onCompose={
+                    props.onCompose
+                      ? (text) => {
+                          props.onClose();
+                          props.onCompose?.(text);
+                        }
+                      : undefined
+                  }
                 />
               </div>
             </div>

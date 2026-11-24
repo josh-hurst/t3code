@@ -419,6 +419,7 @@ export interface ThreadFeedProps {
   readonly onIsAtEndChange?: (isAtEnd: boolean) => void;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
+  readonly onComposeFromHtmlRender?: ((text: string) => void) | undefined;
   readonly onCiteAssistantText?: (citation: AssistantCitation) => void;
 }
 
@@ -1976,6 +1977,7 @@ function renderFeedEntry(
     ThreadFeedProps,
     | "environmentId"
     | "onUseArtifactTemplate"
+    | "onComposeFromHtmlRender"
     | "onCiteAssistantText"
     | "skills"
     | "dispatchingMessageId"
@@ -2127,6 +2129,7 @@ function renderFeedEntry(
         render={entry.render}
         frameWidth={props.contentWidth}
         iconColor={iconSubtleColor}
+        onCompose={props.onComposeFromHtmlRender}
       />
     );
   }
@@ -4324,6 +4327,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           onOpenSetupDetails: openSetupDetails,
           onEditPendingMessage: props.onEditPendingMessage,
           onUseArtifactTemplate: props.onUseArtifactTemplate,
+          onComposeFromHtmlRender: props.onComposeFromHtmlRender,
           onCiteAssistantText: props.onCiteAssistantText,
           threadId: props.threadId,
           copiedRowId,

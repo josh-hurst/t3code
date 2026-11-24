@@ -59,6 +59,7 @@ import {
 } from "./menuBarPopover.ts";
 import {
   getInitialWindowBackgroundColor,
+  installWindowsLegacyGlass,
   windowGlassOptions,
   windowGlassSupported,
 } from "./windowGlass.ts";
@@ -615,7 +616,10 @@ export const make = Effect.gen(function* () {
     }
 
     pendingMainReveals.set(window, Effect.void);
-    if (mainWindowGlass) glassWindows.add(window);
+    if (mainWindowGlass) {
+      glassWindows.add(window);
+      installWindowsLegacyGlass(window, environment.platform);
+    }
     yield* rendererHistory.register(window.webContents, { surface: "main" });
     if (environment.platform === "darwin") {
       window.setAutoHideCursor(false);
@@ -962,6 +966,7 @@ export const make = Effect.gen(function* () {
     window.webContents.on("did-create-window", (popup, details) => {
       if (details.frameName.startsWith(THREAD_POPOUT_FRAME_PREFIX)) {
         threadPopoutWindows.add(popup);
+        installWindowsLegacyGlass(popup, environment.platform);
         // Browser previews attach through the main window's PreviewManager only.
         popup.webContents.on("will-attach-webview", (event) => event.preventDefault());
         popup.webContents.setWindowOpenHandler(({ url }) => openExternalAndDeny(url));

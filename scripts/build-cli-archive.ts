@@ -205,11 +205,24 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
   );
 
   const platformKey = cliArchivePlatformKey(input.platform, input.arch);
+  const nodePlatform =
+    input.platform === "mac" ? "darwin" : input.platform === "win" ? "win32" : "linux";
   const prebuildsDir = path.join(input.stageDir, "node_modules/node-pty/prebuilds");
   const foreignPrebuilds = (yield* fs
     .readDirectory(prebuildsDir)
     .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []))).filter(
     (entry) => entry !== platformKey,
+  );
+  const ortBinDir = path.join(input.stageDir, "node_modules/onnxruntime-node/bin/napi-v6");
+  const foreignOrtPlatforms = (yield* fs
+    .readDirectory(ortBinDir)
+    .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []))).filter(
+    (entry) => entry !== nodePlatform,
+  );
+  const foreignOrtArchs = (yield* fs
+    .readDirectory(path.join(ortBinDir, nodePlatform))
+    .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []))).filter(
+    (entry) => entry !== input.arch,
   );
   for (const entry of [
     "package.json",
@@ -221,6 +234,10 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
     "node_modules/.pnpm-workspace-state-v1.json",
     "node_modules/.bin",
     ...foreignPrebuilds.map((entry) => `node_modules/node-pty/prebuilds/${entry}`),
+    ...foreignOrtPlatforms.map((entry) => `node_modules/onnxruntime-node/bin/napi-v6/${entry}`),
+    ...foreignOrtArchs.map(
+      (entry) => `node_modules/onnxruntime-node/bin/napi-v6/${nodePlatform}/${entry}`,
+    ),
   ]) {
     yield* fs.remove(path.join(input.stageDir, entry), { recursive: true, force: true });
   }

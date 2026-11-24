@@ -29,6 +29,8 @@ export interface CommandPaletteItem {
 export interface CommandPaletteResult extends CommandPaletteItem {
   /** Listed because its messages match; the row shows the message snippet. */
   readonly fromMessages?: boolean;
+  /** Listed because semantic search matched it by meaning. */
+  readonly fromSemantic?: boolean;
   /** Title ranges the query matched, for highlighting. */
   readonly titleRanges?: ReadonlyArray<SearchRange>;
   /** Shown in place of the detail when the match is not in the title. */
@@ -46,6 +48,7 @@ export function filterCommandPaletteItems(
   query: string,
   messageMatchKeys: ReadonlyArray<string>,
   now = Date.now(),
+  semanticMatchKeys: ReadonlyArray<string> = [],
 ): CommandPaletteResult[] {
   const actionsOnly = query.startsWith(">");
   const normalizedQuery = foldSearchQuery(actionsOnly ? query.slice(1) : query);
@@ -98,9 +101,17 @@ export function filterCommandPaletteItems(
   // `messageMatchKeys` arrive cut to what the palette shows; see `nextShownOrder`.
   const fromMessages = messageMatchKeys.flatMap((key) => {
     const item = threadByKey.get(key);
-    return item && !listed.has(key) ? [{ ...item, fromMessages: true }] : [];
+    if (!item || listed.has(key)) return [];
+    listed.add(key);
+    return [{ ...item, fromMessages: true }];
   });
-  return [...ranked, ...fromMessages];
+  const fromSemantic = semanticMatchKeys.flatMap((key) => {
+    const item = threadByKey.get(key);
+    if (!item || listed.has(key)) return [];
+    listed.add(key);
+    return [{ ...item, fromSemantic: true }];
+  });
+  return [...ranked, ...fromMessages, ...fromSemantic];
 }
 
 export function nextPaletteIndex(index: number, direction: -1 | 1, count: number) {

@@ -16,6 +16,7 @@ type Layout = Parameters<SortingStrategy>[0];
 const isShelfHeader = (item: SidebarListItem | undefined) =>
   item?.kind === "marker" &&
   (item.marker === "working-header" ||
+    item.marker === "settling-header" ||
     item.marker === "snoozed-header" ||
     item.marker === "settled-header");
 // A day or project label, or the Needs you panel's label, drawn inside a row's own node.
@@ -61,7 +62,13 @@ export function createSidebarCollisionDetection(
         if (pointer.y < previousY && pointer.y <= boundary.bottom) boundarySection = "pinned";
         else if (pointer.y > previousY && pointer.y >= boundary.top) boundarySection = "active";
         const nextHeader = (
-          ["trail-header", "working-header", "snoozed-header", "settled-header"] as const
+          [
+            "trail-header",
+            "working-header",
+            "settling-header",
+            "snoozed-header",
+            "settled-header",
+          ] as const
         )
           .map((marker) =>
             args.droppableContainers.find((container) => container.id === sidebarMarkerId(marker)),
@@ -258,6 +265,7 @@ export function createSidebarSortingStrategy(input: {
       pinned: [],
       active: [],
       working: [],
+      settling: [],
       snoozed: [],
       settled: [],
     };
@@ -365,6 +373,10 @@ export function createSidebarSortingStrategy(input: {
       if (items.some((item) => isMarker(item, "working-header"))) {
         marker("working-header");
         projected.push(...groups.working);
+      }
+      if (items.some((item) => isMarker(item, "settling-header"))) {
+        marker("settling-header");
+        projected.push(...groups.settling);
       }
       if (
         groups.snoozed.length > 0 ||

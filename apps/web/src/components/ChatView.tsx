@@ -57,6 +57,7 @@ import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { resolveWorktreeRepositorySelection } from "@t3tools/client-runtime/state/thread-repositories";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
+import { applyHtmlRenderComposeToComposer } from "./files/htmlRenderCompose.logic";
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { freshSessionBannerItem } from "./chat/ComposerFreshSession";
@@ -2012,6 +2013,14 @@ export default function ChatView(props: ChatViewProps) {
     scheduleComposerFocusStable();
   };
   const insertArtifactTemplateStable = useStableCallback(insertArtifactTemplate);
+  const composeFromHtmlRender = (text: string) => {
+    applyHtmlRenderComposeToComposer({
+      composer: composerRef.current,
+      text,
+      scheduleFocus: scheduleComposerFocusStable,
+    });
+  };
+  const composeFromHtmlRenderStable = useStableCallback(composeFromHtmlRender);
   const sendAppMessage = async (text: string) => {
     if (!isServerThread || activeThreadId === null) {
       throw new Error(gt("Messages from apps need a started thread."));
@@ -3758,6 +3767,9 @@ export default function ChatView(props: ChatViewProps) {
                   availableRevertTurnCounts={availableRevertTurnCounts}
                   onRevertToTurnCount={onRevertTimelineTurnStable}
                   onUseArtifactTemplate={insertArtifactTemplateStable}
+                  onComposeFromHtmlRender={
+                    isProviderSubagent ? undefined : composeFromHtmlRenderStable
+                  }
                   onSendAppMessage={sendAppMessageStable}
                   isRevertingCheckpoint={isRevertingCheckpoint}
                   onImageExpand={onExpandTimelineImageStable}

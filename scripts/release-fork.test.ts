@@ -9,6 +9,8 @@ import {
   forkReleaseMacArchive,
   forkReleaseVersion,
   nextForkReleaseIndex,
+  parseKeepLocalReleases,
+  pruneLocalForkReleases,
   repositoryFromRemoteUrl,
   stageForkRelease,
   publishForkRelease,
@@ -210,5 +212,51 @@ describe("release-fork", () => {
       /x64/,
     );
     assert.equal(release.calls.length, 0);
+  });
+
+  it("prunes superseded local release directories by semver while preserving kept versions", () => {
+    const releaseRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-prune-"));
+    try {
+      for (const name of [
+        "0.1.9029",
+        "0.1.11001",
+        "0.1.11009",
+        "0.1.11010",
+        "0.1.11011",
+        "notes",
+      ]) {
+        NodeFS.mkdirSync(NodePath.join(releaseRoot, name));
+        NodeFS.writeFileSync(NodePath.join(releaseRoot, name, "payload.bin"), name);
+      }
+      NodeFS.writeFileSync(NodePath.join(releaseRoot, "README.txt"), "keep");
+
+      const removed = pruneLocalForkReleases(releaseRoot, {
+        keepCount: 2,
+        keepVersions: ["0.1.11001"],
+      });
+      assert.deepEqual(removed, ["0.1.11009", "0.1.9029"]);
+      assert.deepEqual(NodeFS.readdirSync(releaseRoot).sort(), [
+        "0.1.11001",
+        "0.1.11010",
+        "0.1.11011",
+        "README.txt",
+        "notes",
+      ]);
+
+      // Disabling pruning via undefined keeps everything intact.
+      assert.deepEqual(pruneLocalForkReleases(releaseRoot, { keepCount: undefined }), []);
+    } finally {
+      NodeFS.rmSync(releaseRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("parses T3CODE_FORK_KEEP_LOCAL_RELEASES values", () => {
+    assert.equal(parseKeepLocalReleases(undefined, 2), 2);
+    assert.equal(parseKeepLocalReleases("", 2), 2);
+    assert.equal(parseKeepLocalReleases("3", 2), 3);
+    assert.isUndefined(parseKeepLocalReleases("all", 2));
+    assert.isUndefined(parseKeepLocalReleases("ALL", 2));
+    assert.throws(() => parseKeepLocalReleases("0", 2), /T3CODE_FORK_KEEP_LOCAL_RELEASES/);
+    assert.throws(() => parseKeepLocalReleases("nope", 2), /T3CODE_FORK_KEEP_LOCAL_RELEASES/);
   });
 });

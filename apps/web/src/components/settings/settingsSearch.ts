@@ -1059,6 +1059,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "search-by-meaning",
+    title: msg("Search by meaning"),
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: [msg("semantic search meaning embeddings local model find threads paraphrased")],
+  },
+  {
     id: "later-recheck-limit",
     title: msg("Unattended re-checks"),
     to: "/settings/threads",

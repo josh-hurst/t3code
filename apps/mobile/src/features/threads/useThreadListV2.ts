@@ -2,7 +2,7 @@ import type { OlderSettledScope } from "@t3tools/client-runtime/state/threads";
 import { createOpenThreadPlacementHold } from "@t3tools/client-runtime/state/thread-zones";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState } from "react";
 
 import { keepMarked } from "../../i18n/messages";
 import { scopedProjectKey } from "../../lib/scopedEntities";
@@ -32,17 +32,6 @@ function useKeySet(newlineSeparatedKeys: string): ReadonlySet<string> {
 type LayoutInput = Parameters<typeof buildThreadListV2Items>[0];
 
 /**
- * The React Compiler drops unread dependencies, so pass the expired-grace version through
- * this call to keep inbox updates tied to its subscription.
- */
-function observeInbox(
-  threads: Parameters<typeof threadListInboxReturns.observe>[0],
-  _expiredGraceVersion: number,
-) {
-  return threadListInboxReturns.observe(threads);
-}
-
-/**
  * Shelf callbacks prevent compiler caching across the whole derivation, so each stage keeps
  * its own memo boundary to preserve the list's identity during unrelated navigation renders.
  */
@@ -54,6 +43,8 @@ export function useThreadListV2(input: {
   readonly searchQuery: string;
   /** Threads that match the search by content, keyed like `threadSearchMatchKey`. */
   readonly searchMatches: ReadonlyMap<string, unknown>;
+  /** Threads that match the search by meaning, keyed like `threadSearchMatchKey`. */
+  readonly semanticMatches?: ReadonlyMap<string, unknown>;
   readonly settlementEnvironmentIds: ReadonlySet<EnvironmentId>;
   readonly snoozeEnvironmentIds: ReadonlySet<EnvironmentId>;
   readonly laterRecheckLimits: ReadonlyMap<EnvironmentId, number>;
@@ -93,14 +84,9 @@ export function useThreadListV2(input: {
     () => threadListV2LayoutTime({ threads, now: input.now, searchQuery: input.searchQuery }),
     [threads, input.now, input.searchQuery],
   );
-  // A thread can stop working when the threads change, or when its exit grace expires.
-  const inboxVersion = useSyncExternalStore(
-    threadListInboxReturns.subscribe,
-    threadListInboxReturns.getSnapshot,
-  );
-  const inbox = useMemo(
-    () => observeInbox(workingShelfEnabled ? threads : null, inboxVersion),
-    [threads, workingShelfEnabled, inboxVersion],
+  const inboxReturnAt = useMemo(
+    () => threadListInboxReturns.observe(workingShelfEnabled ? threads : null),
+    [threads, workingShelfEnabled],
   );
   // Compute move availability per section; per-row planning is quadratic.
   const moveAvailability = useMemo(() => {
@@ -177,6 +163,9 @@ export function useThreadListV2(input: {
       projectRefs: input.projectRefs,
       searchQuery: input.searchQuery,
       matchedThreadKeys: new Set(input.searchMatches.keys()),
+      ...(input.semanticMatches === undefined
+        ? {}
+        : { semanticMatchedThreadKeys: new Set(input.semanticMatches.keys()) }),
       settlementEnvironmentIds: input.settlementEnvironmentIds,
       snoozeEnvironmentIds: input.snoozeEnvironmentIds,
       laterRecheckLimits: input.laterRecheckLimits,
@@ -185,8 +174,7 @@ export function useThreadListV2(input: {
       now: layoutTime,
       workingShelfEnabled,
       workingShelfExpanded: input.workingShelfExpanded,
-      inboxReturnAt: inbox.returnedAt,
-      isWorking: inbox.isWorking,
+      inboxReturnAt,
       snoozedShelfExpanded: input.snoozedShelfExpanded,
       settledShelfExpanded: input.settledShelfExpanded,
       projectFolders: input.projectFolders,
@@ -214,6 +202,7 @@ export function useThreadListV2(input: {
     input.projectRefs,
     input.searchQuery,
     input.searchMatches,
+    input.semanticMatches,
     input.settlementEnvironmentIds,
     input.snoozeEnvironmentIds,
     input.laterRecheckLimits,
@@ -222,8 +211,7 @@ export function useThreadListV2(input: {
     layoutTime,
     workingShelfEnabled,
     input.workingShelfExpanded,
-    inbox.returnedAt,
-    inbox.isWorking,
+    inboxReturnAt,
     input.snoozedShelfExpanded,
     input.settledShelfExpanded,
     input.projectFolders,
@@ -239,6 +227,7 @@ export function useThreadListV2(input: {
   ]);
   useOlderSettledShelfGrowth(olderSettledShelf, layout.listedSettledThreads);
   const contentOnlyThreadKeys = useKeySet([...layout.contentOnlyThreadKeys].sort().join("\n"));
+  const semanticOnlyThreadKeys = useKeySet([...layout.semanticOnlyThreadKeys].sort().join("\n"));
   const pendingTasks = useMemo(() => {
     const scopedProjectKeys =
       input.projectRefs == null
@@ -272,6 +261,8 @@ export function useThreadListV2(input: {
         settledCount: layout.settledCount,
         settledShelfExpanded: input.settledShelfExpanded,
         settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
+        semanticCount: layout.semanticCount,
+        semanticHeaderIndex: layout.semanticHeaderIndex,
         ...(input.tide ? { tide: { ...layout, trailExpanded: input.trailExpanded } } : {}),
         snoozeLabelNow: `${input.now.slice(0, 16)}:00.000Z`,
         snoozeEnvironmentIds: input.snoozeEnvironmentIds,
@@ -297,7 +288,7 @@ export function useThreadListV2(input: {
       input.historyAll,
     ],
   );
-  return { layout, items, contentOnlyThreadKeys, olderSettledShelf };
+  return { layout, items, contentOnlyThreadKeys, semanticOnlyThreadKeys, olderSettledShelf };
 }
 
 /** The list's scope per environment: its projects there, or every project. */

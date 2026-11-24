@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  appendHtmlRenderComposeText,
+  htmlRenderComposeAppendText,
   injectHtmlRenderBootstrap,
+  readHtmlRenderComposeRequest,
   readHtmlRenderImageRequest,
   readHtmlRenderLinkRequest,
 } from "./htmlRender.ts";
@@ -155,6 +158,54 @@ describe("readHtmlRenderImageRequest", () => {
     // An index that does not point at the clicked image falls back to that image alone.
     expect(request({ index: 0 })).toEqual({ images: [b], index: 0 });
     expect(request({ index: -1 })).toEqual({ images: [b], index: 0 });
+  });
+});
+
+describe("readHtmlRenderComposeRequest", () => {
+  it("accepts, trims, and caps non-empty text in a compose notification", () => {
+    const compose = (params: unknown) => ({
+      jsonrpc: "2.0",
+      method: "t3/notifications/compose",
+      params,
+    });
+    expect(
+      readHtmlRenderComposeRequest(
+        compose({ text: "  [pick] Shop.Buy (TextButton) — too close to the edge  " }),
+      ),
+    ).toEqual({ text: "[pick] Shop.Buy (TextButton) — too close to the edge" });
+    expect(readHtmlRenderComposeRequest(compose({ text: "a".repeat(4_500) }))).toEqual({
+      text: "a".repeat(4_000),
+    });
+    const boundary = readHtmlRenderComposeRequest(compose({ text: `${"a".repeat(3_999)}😀` }));
+    expect(boundary?.text.isWellFormed()).toBe(true);
+    expect(boundary?.text).toBe("a".repeat(3_999));
+
+    for (const invalid of [
+      null,
+      "compose",
+      { jsonrpc: "1.0", method: "t3/notifications/compose", params: { text: "hi" } },
+      { jsonrpc: "2.0", method: "t3/notifications/other", params: { text: "hi" } },
+      compose(null),
+      compose({}),
+      compose({ text: 42 }),
+      compose({ text: "" }),
+      compose({ text: "   \n\t  " }),
+    ]) {
+      expect(readHtmlRenderComposeRequest(invalid)).toBeUndefined();
+    }
+  });
+});
+
+describe("appendHtmlRenderComposeText", () => {
+  it("puts the composed text on its own line when the draft is non-empty", () => {
+    expect(htmlRenderComposeAppendText("", "[pick] A")).toBe("[pick] A");
+    expect(htmlRenderComposeAppendText("Check these:", "[pick] A")).toBe("\n[pick] A");
+    expect(htmlRenderComposeAppendText("Check these:\n", "[pick] A")).toBe("[pick] A");
+    expect(appendHtmlRenderComposeText("", "[pick] A")).toBe("[pick] A");
+    expect(appendHtmlRenderComposeText("Check these:", "[pick] A")).toBe("Check these:\n[pick] A");
+    expect(appendHtmlRenderComposeText("Check these:\n", "[pick] A")).toBe(
+      "Check these:\n[pick] A",
+    );
   });
 });
 

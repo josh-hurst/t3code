@@ -50,6 +50,18 @@ import { makeNoPullRequestRechecks } from "./noPullRequestRechecks.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { QUIET_AFTER_MS, QUIET_SYNC_INTERVAL_MS } from "./PullRequestSyncReactor.ts";
+import {
+  SETTLE_OUTLOOK_LIST_AFTER_MS,
+  SETTLE_OUTLOOK_LIST_BELOW,
+  SETTLE_OUTLOOK_LOOKBACK_MS,
+  SETTLE_OUTLOOK_SETTLE_AFTER_MS,
+  SETTLE_OUTLOOK_SETTLE_BELOW,
+  type SettleOutlookActivity,
+  type SettleOutlookSignals,
+  settleOutlookReturnChance,
+  settleOutlookSignals,
+  ThreadSettleOutlookStore,
+} from "./ThreadSettleOutlook.ts";
 
 export interface SettlementPullRequest {
   readonly state: "open" | "closed" | "merged";
@@ -59,13 +71,6 @@ export interface SettlementPullRequest {
 
 const HOUR_MS = 60 * 60 * 1_000;
 const DAY_MS = 24 * HOUR_MS;
-/**
- * Fitted to a month of one owner's threads: past this wait about 1 thread in 40 was written in
- * again, and a model reading the reply predicted that no better than the elapsed time alone.
- * A thread that ran for hours is returned to far more often than a quick one, so its age adds on.
- */
-const EARLY_SETTLE_BASE_MS = 12 * HOUR_MS;
-const EARLY_SETTLE_PER_AGE = 12;
 /** The owner counts as away once they have written nowhere for this long. */
 const AWAY_AFTER_MS = 2 * HOUR_MS;
 /** A thread settles early only this long after the owner came back, and after they last opened it. */
@@ -297,13 +302,22 @@ interface AutoSettlementInput {
   readonly autoSettleKeepPullRequests?: boolean;
   /** Absent or null: the owner counts as away, so only the full window settles. */
   readonly presence?: OwnerPresence | null;
+  /** Absent or null: nothing settles early or is listed as settling. */
+  readonly activity?: SettleOutlookActivity | null;
 }
 
-const NO_SETTLEMENT = { settledAt: null, plan: null } as const;
+interface SettleOutlook {
+  readonly chance: number;
+  readonly signals: SettleOutlookSignals;
+}
+
+const NO_SETTLEMENT = { settledAt: null, plan: null, outlook: null } as const;
 
 function resolveAutoSettlement(input: AutoSettlementInput): {
   readonly settledAt: DateTime.Utc | null;
   readonly plan: OrchestrationV2AutoSettlePlan | null;
+  /** The score that settled the thread early or lists it as settling; null otherwise. */
+  readonly outlook: SettleOutlook | null;
 } {
   const { thread } = input;
   let pullRequest = input.pullRequest;
@@ -330,7 +344,7 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
   if (!isAutoSettlementCandidate(thread, input.nowMs)) return NO_SETTLEMENT;
   const activityAtMs = threadActivityAtMs(thread);
   if (pullRequest !== null && pullRequestSettles(thread, pullRequest, input.autoSettleOnMerge)) {
-    return { settledAt: DateTime.makeUnsafe(activityAtMs), plan: null };
+    return { settledAt: DateTime.makeUnsafe(activityAtMs), plan: null, outlook: null };
   }
   const hasPullRequest =
     hasOpenLink ||
@@ -353,21 +367,32 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
   const visitedAtMs = toMillis(thread.lastVisitedAt);
   const presence = input.presence ?? null;
   let atMs = windowAtMs;
+  let outlook: SettleOutlook | null = null;
   // Seen as the clients mark it, so a reply that lands overnight does not settle early unread.
   // A summary's checks, commits and releases do not hold it: most replies that change code list
-  // one, and the history the timing was fitted to settled them all the same. A question holds it
+  // one, and the history the score was fitted to settled them all the same. A question holds it
   // only until it is read, which `isAutoSettlementCandidate` checks.
   if (
     !hasPullRequest &&
+    input.activity != null &&
     completedAtMs !== null &&
     visitedAtMs !== null &&
     visitedAtMs >= completedAtMs
   ) {
-    const ageMs = Math.max(0, activityAtMs - DateTime.toEpochMillis(thread.createdAt));
+    const signals = settleOutlookSignals(input.activity, {
+      id: thread.id,
+      projectId: thread.projectId,
+      quietAtMs: inactivityAtMs,
+      ageMs: activityAtMs - DateTime.toEpochMillis(thread.createdAt),
+      nowMs: input.nowMs,
+    });
+    if (signals !== null) outlook = { chance: settleOutlookReturnChance(signals), signals };
+  }
+  if (outlook !== null && outlook.chance <= SETTLE_OUTLOOK_SETTLE_BELOW) {
     atMs = Math.min(
       windowAtMs,
       Math.max(
-        inactivityAtMs + EARLY_SETTLE_BASE_MS + EARLY_SETTLE_PER_AGE * ageMs,
+        inactivityAtMs + SETTLE_OUTLOOK_SETTLE_AFTER_MS,
         (thread.opens?.openedAt ?? 0) + BACK_FOR_MS,
         presence === null ? 0 : presence.sinceAtMs + BACK_FOR_MS,
       ),
@@ -375,9 +400,28 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
   }
   const away = presence === null || input.nowMs - presence.lastAtMs > AWAY_AFTER_MS;
   // The window is the owner's own setting, so it settles whether or not they are around.
-  return input.nowMs > (away ? windowAtMs : atMs)
-    ? { settledAt: DateTime.makeUnsafe(inactivityAtMs), plan: null }
-    : { settledAt: null, plan: { at: atMs, basisAt: activityAtMs } };
+  if (input.nowMs > (away ? windowAtMs : atMs)) {
+    return {
+      settledAt: DateTime.makeUnsafe(inactivityAtMs),
+      plan: null,
+      outlook: input.nowMs > windowAtMs ? null : outlook,
+    };
+  }
+  const listed =
+    outlook !== null &&
+    outlook.chance <= SETTLE_OUTLOOK_LIST_BELOW &&
+    input.nowMs - inactivityAtMs >= SETTLE_OUTLOOK_LIST_AFTER_MS;
+  return {
+    settledAt: null,
+    plan: {
+      at: atMs,
+      basisAt: activityAtMs,
+      ...(listed && outlook !== null
+        ? { returnChance: Math.round(outlook.chance * 100) / 100 }
+        : {}),
+    },
+    outlook: listed ? outlook : null,
+  };
 }
 
 export function resolveAutoSettlementAt(input: AutoSettlementInput): DateTime.Utc | null {
@@ -473,6 +517,28 @@ export const make = Effect.gen(function* () {
   const noPullRequestRechecks = makeNoPullRequestRechecks();
   // Unknown until the first sweep reads it, which only delays early settling.
   let presence: OwnerPresence | null = null;
+  const outlooks = yield* ThreadSettleOutlookStore;
+  // Read by full sweeps only; a single thread's sweep counts from the last one.
+  let activity: SettleOutlookActivity | null = null;
+  // The record is for later analysis, so losing a row must not stop a settle.
+  const recordOutlook = (
+    thread: Pick<ProjectionStore.ProjectionSettlementCandidate, "id">,
+    quietAtMs: number,
+    outlook: SettleOutlook,
+    settled: boolean,
+  ) =>
+    DateTime.now.pipe(
+      Effect.flatMap((now) =>
+        outlooks.record({
+          threadId: thread.id,
+          quietAtMs,
+          atMs: DateTime.toEpochMillis(now),
+          settled,
+          ...outlook,
+        }),
+      ),
+      Effect.catch((cause) => Effect.logWarning("settle outlook record skipped", { cause })),
+    );
 
   const sweep = Effect.fn("ThreadSettlementServiceV2.sweep")(function* (
     mergedPullRequest: PullRequestService.PullRequestMergeEvent | null,
@@ -501,6 +567,27 @@ export const make = Effect.gen(function* () {
         (automaticSettlementEnabled || thread.lineage.relationshipToParent === "subagent") &&
         isAutoSettlementCandidate(thread, nowMs),
     );
+    if (threadId === undefined) {
+      const owned = candidates.filter(
+        (thread) => thread.lineage.relationshipToParent !== "subagent",
+      );
+      activity =
+        owned.length === 0
+          ? null
+          : yield* outlooks
+              .activity({
+                threadIds: owned.map((thread) => thread.id),
+                sinceMs: Math.max(
+                  nowMs - SETTLE_OUTLOOK_LOOKBACK_MS,
+                  Math.min(...owned.map(threadActivityAtMs)),
+                ),
+              })
+              .pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("settle outlook read failed", { cause }).pipe(Effect.as(null)),
+                ),
+              );
+    }
 
     // Runs per candidate thread, thousands per sweep on busy servers; the sweep owns the span.
     const settleThread = Effect.fnUntraced(
@@ -524,7 +611,7 @@ export const make = Effect.gen(function* () {
           thread.projectId,
         ).settings;
         const decisionNow = yield* DateTime.now;
-        const settledAt = resolveAutoSettlementAt({
+        const { settledAt, outlook } = resolveAutoSettlement({
           thread,
           pullRequest,
           nowMs: DateTime.toEpochMillis(decisionNow),
@@ -532,6 +619,7 @@ export const make = Effect.gen(function* () {
           autoSettleOnMerge: currentSettings.sidebarAutoSettleOnMerge,
           autoSettleKeepPullRequests: currentSettings.sidebarAutoSettleKeepPullRequests,
           presence,
+          activity,
         });
         if (settledAt === null) return thread;
         // A terminal still running a program keeps its thread open; a later sweep settles it.
@@ -544,6 +632,9 @@ export const make = Effect.gen(function* () {
           snapshotAt: thread.updatedAt,
           settledAt,
         });
+        if (outlook !== null) {
+          yield* recordOutlook(thread, threadActivityAtMs(thread), outlook, true);
+        }
         return null;
       },
       (effect, thread) =>
@@ -563,9 +654,20 @@ export const make = Effect.gen(function* () {
     const planThread = (
       thread: (typeof threads)[number],
       plan: OrchestrationV2AutoSettlePlan | null,
+      outlook: SettleOutlook | null = null,
     ) => {
       const stored = thread.autoSettlePlan ?? null;
-      if (stored?.at === plan?.at && stored?.basisAt === plan?.basisAt) return Effect.void;
+      if (
+        stored?.at === plan?.at &&
+        stored?.basisAt === plan?.basisAt &&
+        stored?.returnChance === plan?.returnChance
+      ) {
+        return Effect.void;
+      }
+      const listedNow =
+        plan !== null &&
+        outlook !== null &&
+        (stored?.returnChance === undefined || stored.basisAt !== plan.basisAt);
       return random.uuidV4().pipe(
         Effect.flatMap((uuid) =>
           orchestrator.dispatch({
@@ -574,6 +676,9 @@ export const make = Effect.gen(function* () {
             threadId: thread.id,
             plan,
           }),
+        ),
+        Effect.andThen(
+          listedNow ? recordOutlook(thread, plan.basisAt, outlook, false) : Effect.void,
         ),
         Effect.catchCauseIf(
           (cause) => !Cause.hasInterruptsOnly(cause),
@@ -607,9 +712,10 @@ export const make = Effect.gen(function* () {
           autoSettleOnMerge: projectSettings.sidebarAutoSettleOnMerge,
           autoSettleKeepPullRequests: projectSettings.sidebarAutoSettleKeepPullRequests,
           presence,
+          activity,
         });
         return decision.settledAt === null
-          ? planThread(thread, decision.plan).pipe(Effect.as(thread))
+          ? planThread(thread, decision.plan, decision.outlook).pipe(Effect.as(thread))
           : settleThread(thread, null);
       },
       { concurrency: 8 },
@@ -705,6 +811,7 @@ export const make = Effect.gen(function* () {
             autoSettleOnMerge: settings.sidebarAutoSettleOnMerge,
             autoSettleKeepPullRequests: settings.sidebarAutoSettleKeepPullRequests,
             presence,
+            activity,
           }) !== null
         );
       });

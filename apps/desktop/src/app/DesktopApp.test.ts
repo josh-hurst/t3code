@@ -35,6 +35,7 @@ import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
 import * as DesktopAppIcon from "./DesktopAppIcon.ts";
 import * as DesktopMacIconCache from "./DesktopMacIconCache.ts";
+import * as DesktopRobloxStudioIcon from "./DesktopRobloxStudioIcon.ts";
 import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as DesktopState from "./DesktopState.ts";
@@ -205,6 +206,10 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
         } as unknown as DesktopAppActivation.DesktopAppActivation["Service"]),
         Effect.provideService(DesktopMacIconCache.DesktopMacIconCache, {
           refreshAfterInstall: Effect.void,
+        }),
+        Effect.provideService(DesktopRobloxStudioIcon.DesktopRobloxStudioIcon, {
+          sync: Effect.void,
+          register: Effect.void,
         }),
         Effect.provideService(DesktopAppIcon.DesktopAppIcon, {
           get: Effect.succeed("copper" as const),

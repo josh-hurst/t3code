@@ -118,6 +118,9 @@ const SETTINGS_SEARCH_TERMS = {
     msg("auto-resume", { $context: "settings search keyword" }),
     msg("re-check", { $context: "settings search keyword" }),
     msg("later", { $context: "settings search keyword" }),
+    msg("search by meaning", { $context: "settings search keyword" }),
+    msg("semantic search", { $context: "settings search keyword" }),
+    msg("embeddings", { $context: "settings search keyword" }),
     msg("thread behavior", { $context: "settings search keyword" }),
   ],
   SettingsFollowUp: [

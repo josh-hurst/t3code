@@ -13,6 +13,7 @@ export const HTML_RENDER_MAX_HEIGHT = 2000;
 // page that grows with its frame, since vh units are rejected at publish.
 export const HTML_RENDER_MAX_FIT_HEIGHT = 20_000;
 export const HTML_RENDER_MAX_TITLE_LENGTH = 200;
+const HTML_RENDER_MAX_COMPOSE_LENGTH = 4_000;
 
 export interface HtmlRenderReference {
   readonly attachmentId: string;
@@ -244,6 +245,7 @@ const SIZE_CHANGED_METHOD = "ui/notifications/size-changed";
 const SHORTCUTS_METHOD = "t3/notifications/shortcuts";
 const KEY_DOWN_METHOD = "t3/notifications/keydown";
 const OPEN_IMAGE_METHOD = "t3/notifications/open-image";
+export const HTML_RENDER_COMPOSE_METHOD = "t3/notifications/compose";
 
 export function readHtmlRenderContentHeight(data: unknown): number | undefined {
   if (typeof data !== "object" || data === null) return undefined;
@@ -321,6 +323,30 @@ export function readHtmlRenderImageRequest(
   return at >= 0 && gallery[at]?.src === clicked.src
     ? { images: gallery, index: at }
     : { images: [clicked], index: 0 };
+}
+
+export function readHtmlRenderComposeRequest(data: unknown): { readonly text: string } | undefined {
+  if (typeof data !== "object" || data === null) return undefined;
+  const { jsonrpc, method, params } = data as Record<string, unknown>;
+  if (jsonrpc !== "2.0" || method !== HTML_RENDER_COMPOSE_METHOD) return undefined;
+  if (typeof params !== "object" || params === null) return undefined;
+  const { text } = params as Record<string, unknown>;
+  if (typeof text !== "string") return undefined;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.length <= HTML_RENDER_MAX_COMPOSE_LENGTH) return { text: trimmed };
+  // Never end the capped text on half a UTF-16 surrogate pair.
+  const last = trimmed.charCodeAt(HTML_RENDER_MAX_COMPOSE_LENGTH - 1);
+  const end = HTML_RENDER_MAX_COMPOSE_LENGTH - (last >= 0xd800 && last <= 0xdbff ? 1 : 0);
+  return { text: trimmed.slice(0, end) };
+}
+
+export function htmlRenderComposeAppendText(draft: string, text: string): string {
+  return draft.length === 0 || draft.endsWith("\n") ? text : `\n${text}`;
+}
+
+export function appendHtmlRenderComposeText(draft: string, text: string): string {
+  return `${draft}${htmlRenderComposeAppendText(draft, text)}`;
 }
 
 export function readHtmlRenderKeyDown(data: unknown):

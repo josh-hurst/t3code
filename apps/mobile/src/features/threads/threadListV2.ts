@@ -17,6 +17,7 @@ import {
   hasUnseenCompletion as threadHasUnseenCompletion,
   sortLaterThreads,
   sortNeedsYouThreads,
+  sortSettlingThreads,
   sortTrailThreads,
   splitTrail,
   threadCardRowLine,
@@ -25,9 +26,11 @@ import {
   threadRowProjectName,
   threadLastSentAt,
   threadNeedsYou,
+  threadSettlingChance,
   trailMoreLabel,
 } from "@t3tools/client-runtime/state/thread-zones";
 import {
+  SEMANTIC_SEARCH_DISPLAY_LIMIT,
   threadSearchMatchKey,
   threadSearchSubject,
 } from "@t3tools/client-runtime/state/thread-search";
@@ -268,6 +271,8 @@ const EMPTY_TIDE_LAYOUT = {
   trailCount: 0,
   trailMore: null,
   trailClearThreads: [],
+  settlingHeaderIndex: null,
+  settlingCount: 0,
 } satisfies Partial<ThreadListV2Layout>;
 
 export const THREAD_LIST_V2_SETTLED_INITIAL_COUNT = 10;
@@ -427,6 +432,8 @@ export interface ThreadListV2Item {
   readonly projectLine: string | null;
   /** A row in the self-filing list's Needs you, which tints its card as on web. */
   readonly needsYou?: boolean;
+  /** A Settling row: its project, title and time on one line. */
+  readonly compact?: boolean;
   readonly isLast: boolean;
 }
 
@@ -460,10 +467,17 @@ export interface ThreadListV2Layout {
   readonly trailMore: { readonly moreToday: number; readonly earlier: number } | null;
   /** Every Trail thread, folded or not, except the open one. */
   readonly trailClearThreads: ReadonlyArray<EnvironmentThreadShell>;
+  /** Quiet threads the server expects not to be written in again, drawn below Working. */
+  readonly settlingHeaderIndex: number | null;
+  readonly settlingCount: number;
   /** Arm a timeout here to repartition at snooze expiry rather than the next minute tick. */
   readonly nextSnoozeWakeAt: string | null;
   /** Threads listed only because their messages match the search. */
   readonly contentOnlyThreadKeys: ReadonlySet<string>;
+  /** Threads listed only because they matched the search by meaning. */
+  readonly semanticOnlyThreadKeys: ReadonlySet<string>;
+  readonly semanticHeaderIndex: number | null;
+  readonly semanticCount: number;
 }
 
 export interface ThreadListV2ThreadListItem {
@@ -536,8 +550,12 @@ export interface ThreadListV2SettledShelfListItem {
 
 export interface ThreadListV2SectionHeaderListItem {
   readonly type: "v2-section-header";
-  readonly key: "v2-needs-you-header" | "v2-trail-header";
-  readonly title: "Needs you" | "Recent";
+  readonly key:
+    | "v2-needs-you-header"
+    | "v2-trail-header"
+    | "v2-settling-header"
+    | "v2-semantic-header";
+  readonly title: "Needs you" | "Recent" | "Settling" | "By meaning";
   readonly count: number;
   /** What the header's Clear settles; on the item so a recycled cell never settles an old set. */
   readonly clearThreads: ReadonlyArray<EnvironmentThreadShell> | null;
@@ -595,6 +613,7 @@ export function threadListV2ListItemsAreEqual(
         previous.item.cardLine === item.item.cardLine &&
         previous.item.projectLine === item.item.projectLine &&
         previous.item.needsYou === item.item.needsYou &&
+        previous.item.compact === item.item.compact &&
         previous.snoozeWakeLabelText === item.snoozeWakeLabelText &&
         previous.timeLabel === item.timeLabel &&
         previous.snoozePresetMinute === item.snoozePresetMinute &&
@@ -723,6 +742,8 @@ export function buildThreadListV2ListItems(input: {
   readonly settledCount?: number;
   readonly settledShelfExpanded?: boolean;
   readonly settledShelfHeaderIndex?: number | null;
+  readonly semanticCount?: number;
+  readonly semanticHeaderIndex?: number | null;
   /** The self-filing list's sections, from `buildThreadListV2Items` with `tide` set. */
   readonly tide?: Pick<
     ThreadListV2Layout,
@@ -732,6 +753,8 @@ export function buildThreadListV2ListItems(input: {
     | "trailCount"
     | "trailMore"
     | "trailClearThreads"
+    | "settlingHeaderIndex"
+    | "settlingCount"
   > & { readonly trailExpanded: boolean };
   readonly snoozeLabelNow?: string;
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
@@ -748,6 +771,7 @@ export function buildThreadListV2ListItems(input: {
   // The self-filing list draws Working, then Later, after the Trail, so the Trail stops at the first.
   const trailStop =
     input.workingShelfHeaderIndex ??
+    input.tide?.settlingHeaderIndex ??
     input.snoozedShelfHeaderIndex ??
     input.settledShelfHeaderIndex ??
     input.items.length;
@@ -802,12 +826,16 @@ export function buildThreadListV2ListItems(input: {
   const snoozedShelfHeaderIndex = input.snoozedShelfHeaderIndex ?? null;
   const settledCount = input.settledCount ?? 0;
   const settledShelfHeaderIndex = input.settledShelfHeaderIndex ?? null;
+  const semanticCount = input.semanticCount ?? 0;
+  const semanticHeaderIndex = input.semanticHeaderIndex ?? null;
   const tide = input.tide ?? null;
   const trailHeaderIndex = tide?.trailHeaderIndex ?? null;
-  const listEnd = settledShelfHeaderIndex ?? threadItems.length;
+  const listEnd = settledShelfHeaderIndex ?? semanticHeaderIndex ?? threadItems.length;
   // Classic: active, Working, Snoozed. Self-filing: Needs you, Trail, Working, Later.
   const snoozedEnd = tide === null ? (trailHeaderIndex ?? listEnd) : listEnd;
-  const workingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
+  const settlingHeaderIndex = tide?.settlingHeaderIndex ?? null;
+  const settlingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
+  const workingEnd = settlingHeaderIndex ?? settlingEnd;
   const trailEnd = workingShelfHeaderIndex ?? workingEnd;
   const activeEnd =
     (tide === null ? workingShelfHeaderIndex : trailHeaderIndex) ??
@@ -900,6 +928,17 @@ export function buildThreadListV2ListItems(input: {
   }
   if (tide !== null) {
     pushWorking();
+    if (settlingHeaderIndex !== null && tide.settlingCount > 0) {
+      result.push({
+        type: "v2-section-header",
+        key: "v2-settling-header",
+        title: "Settling",
+        count: tide.settlingCount,
+        clearThreads: null,
+        disabled: shelfDisabled,
+      });
+      result.push(...threadItems.slice(settlingHeaderIndex, settlingEnd));
+    }
     pushLater();
   }
   if (settledShelfHeaderIndex !== null && settledCount > 0) {
@@ -912,7 +951,20 @@ export function buildThreadListV2ListItems(input: {
       disabled: shelfDisabled,
       showsAll: tide !== null && input.historyAll === true,
     });
-    result.push(...threadItems.slice(settledShelfHeaderIndex));
+    result.push(
+      ...threadItems.slice(settledShelfHeaderIndex, semanticHeaderIndex ?? threadItems.length),
+    );
+  }
+  if (semanticHeaderIndex !== null && semanticCount > 0) {
+    result.push({
+      type: "v2-section-header",
+      key: "v2-semantic-header",
+      title: "By meaning",
+      count: semanticCount,
+      clearThreads: null,
+      disabled: shelfDisabled,
+    });
+    result.push(...threadItems.slice(semanticHeaderIndex));
   }
   return result.map((entry, index) => {
     if (entry.type !== "v2-thread" && entry.type !== "v2-pending") return entry;
@@ -947,7 +999,10 @@ type ThreadListV2TideInput = {
   ) => boolean;
 };
 
-/** Splits the active threads into Needs you (longest wait first) and the Trail (latest message you sent first). */
+/**
+ * Splits the active threads into Needs you (longest wait first), the Trail (latest message you
+ * sent first) and Settling (the surest last).
+ */
 function arrangeThreadListV2Tide(
   active: ReadonlyArray<EnvironmentThreadShell>,
   tide: ThreadListV2TideInput,
@@ -955,6 +1010,7 @@ function arrangeThreadListV2Tide(
 ) {
   const keyOf = (thread: EnvironmentThreadShell) => `${thread.environmentId}:${thread.id}`;
   const needsYou: EnvironmentThreadShell[] = [];
+  const settling: EnvironmentThreadShell[] = [];
   const rest: EnvironmentThreadShell[] = [];
   for (const thread of active) {
     const needs = threadNeedsYou(thread, { includeCompleted: false });
@@ -963,13 +1019,14 @@ function arrangeThreadListV2Tide(
         ? thread.latestRun?.requestedAt
         : thread.latestUserAuthoredMessageAt) ?? null;
     const placed = tide.holdNeedsYou?.(keyOf(thread), needs, sentAt, thread.card) ?? needs;
-    (placed ? needsYou : rest).push(thread);
+    (placed ? needsYou : threadSettlingChance(thread) !== null ? settling : rest).push(thread);
   }
   const trail = sortTrailThreads(rest);
   const split = splitTrail(trail, { now: tide.day });
   const folded = [...split.moreToday, ...split.earlier];
   return {
     needsYou: sortNeedsYouThreads(needsYou),
+    settling: sortSettlingThreads(settling),
     trail,
     // The open thread stays listed, as it does in a collapsed shelf.
     visibleTrail:
@@ -1039,6 +1096,7 @@ export function buildThreadListV2Items(input: {
   }> | null;
   readonly searchQuery: string;
   readonly matchedThreadKeys?: ReadonlySet<string>;
+  readonly semanticMatchedThreadKeys?: ReadonlySet<string>;
   readonly settlementEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
   /** Each environment's `laterRecheckLimit`, for "Re-check 2 of 3" on Later rows. */
@@ -1047,7 +1105,6 @@ export function buildThreadListV2Items(input: {
   readonly now: string;
   readonly workingShelfEnabled?: boolean;
   readonly workingShelfExpanded?: boolean;
-  readonly isWorking?: (thread: EnvironmentThreadShell) => boolean;
   readonly inboxReturnAt?: (thread: EnvironmentThreadShell) => number | undefined;
   readonly snoozedShelfExpanded?: boolean;
   readonly settledShelfExpanded?: boolean;
@@ -1124,17 +1181,23 @@ export function buildThreadListV2Items(input: {
         ).map(({ item }) => item)
       : null;
   const matchingThreads = rankedMatches === null ? null : new Set(rankedMatches);
-  // Threads listed only because their messages match; only their rows show
-  // the message and open at it.
+  // Threads listed only because their messages or semantic meaning match; only
+  // their rows show the match excerpt and open at it.
   const contentOnlyThreadKeys = new Set<string>();
+  const semanticOnlyThreadKeys = new Set<string>();
   for (const thread of listedThreads) {
     if (matchingThreads !== null && !matchingThreads.has(thread)) {
       const key = threadSearchMatchKey({
         environmentId: thread.environmentId,
         threadId: thread.id,
       });
-      if (input.matchedThreadKeys?.has(key) !== true) continue;
-      contentOnlyThreadKeys.add(key);
+      if (input.matchedThreadKeys?.has(key) === true) {
+        contentOnlyThreadKeys.add(key);
+      } else if (input.semanticMatchedThreadKeys?.has(key) === true) {
+        semanticOnlyThreadKeys.add(key);
+      } else {
+        continue;
+      }
     }
     const supportsSettlement = input.settlementEnvironmentIds?.has(thread.environmentId) ?? true;
     const supportsSnooze = input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true;
@@ -1156,7 +1219,7 @@ export function buildThreadListV2Items(input: {
       settled.push(thread);
     } else if (thread.pinnedAt != null) {
       pinned.push(thread);
-    } else if (workingShelfEnabled && (input.isWorking ?? isThreadWorking)(thread)) {
+    } else if (workingShelfEnabled && isThreadWorking(thread)) {
       working.push(thread);
     } else {
       active.push(thread);
@@ -1166,7 +1229,8 @@ export function buildThreadListV2Items(input: {
   if (rankedMatches !== null) {
     // Searching lists every match by rank across shelves, as the palette and
     // the web sidebar do, then threads listed for their messages in the
-    // server's order. Each row keeps its shelf's look.
+    // server's order, then semantic matches not already shown. Each row keeps
+    // its shelf's look.
     const slim = new Set([...snoozed, ...settled]);
     const snoozedThreads = new Set(snoozed);
     const pinnedThreads = new Set(pinned);
@@ -1180,7 +1244,15 @@ export function buildThreadListV2Items(input: {
       const thread = contentOnlyThreadKeys.has(key) ? threadByKey.get(key) : undefined;
       return thread ? [thread] : [];
     });
-    const results = [...rankedMatches, ...contentOnly];
+    const semanticOnly = [...(input.semanticMatchedThreadKeys ?? [])]
+      .flatMap((key) => {
+        const thread = semanticOnlyThreadKeys.has(key) ? threadByKey.get(key) : undefined;
+        return thread ? [thread] : [];
+      })
+      .slice(0, SEMANTIC_SEARCH_DISPLAY_LIMIT);
+    const exactResults = [...rankedMatches, ...contentOnly];
+    const semanticHeaderIndex = semanticOnly.length > 0 ? exactResults.length : null;
+    const results = [...exactResults, ...semanticOnly];
     return {
       items: results.map((thread, index) => ({
         thread,
@@ -1210,6 +1282,13 @@ export function buildThreadListV2Items(input: {
       ...EMPTY_TIDE_LAYOUT,
       nextSnoozeWakeAt,
       contentOnlyThreadKeys,
+      semanticOnlyThreadKeys: new Set(
+        semanticOnly.map((thread) =>
+          threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id }),
+        ),
+      ),
+      semanticHeaderIndex,
+      semanticCount: semanticOnly.length,
     };
   }
 
@@ -1387,8 +1466,23 @@ export function buildThreadListV2Items(input: {
       isLast: false,
     });
   }
+  let settlingHeaderIndex: number | null = null;
   if (tideZones !== null) {
     pushWorking();
+    settlingHeaderIndex = tideZones.settling.length > 0 ? items.length : null;
+    for (const thread of tideZones.settling) {
+      items.push({
+        thread,
+        variant: "slim",
+        snoozed: false,
+        pinned: false,
+        wokeAt: null,
+        cardLine: null,
+        projectLine: slimProjectOf(thread),
+        compact: true,
+        isLast: false,
+      });
+    }
     pushLater();
   }
   const settledShelfHeaderIndex = settledTotal > 0 ? items.length : null;
@@ -1428,7 +1522,12 @@ export function buildThreadListV2Items(input: {
       tideZones?.trail.filter(
         (thread) => `${thread.environmentId}:${thread.id}` !== selectedThreadKey,
       ) ?? [],
+    settlingHeaderIndex,
+    settlingCount: tideZones?.settling.length ?? 0,
     nextSnoozeWakeAt,
     contentOnlyThreadKeys,
+    semanticOnlyThreadKeys,
+    semanticHeaderIndex: null,
+    semanticCount: 0,
   };
 }

@@ -41,6 +41,7 @@ import {
 } from "./messageSearchIndex.ts";
 import { loadOlderSettledThreadsPage } from "./ShellStream.ts";
 import * as ThreadEntryStore from "./ThreadEntryStore.ts";
+import * as SemanticSearchService from "../semanticSearch/SemanticSearchService.ts";
 
 // When the user last wrote in the thread aliased `threads`, as the clients
 // rank recency; agent notices in the user role do not count.
@@ -335,8 +336,8 @@ export interface ThreadSearchHit {
   readonly threadId: ThreadId;
   readonly projectId: ProjectId;
   readonly title: string;
-  /** "topic": a topic of the thread whose title or outcome holds every word. */
-  readonly source: "title" | "topic" | OrchestrationThreadSearchSource;
+  /** "topic": a topic of the thread whose title or outcome holds every word. "semantic": matched by meaning. */
+  readonly source: "title" | "topic" | "semantic" | OrchestrationThreadSearchSource;
   readonly snippet?: string;
   readonly messageCreatedAt?: string | null;
 }
@@ -347,6 +348,12 @@ export class ThreadSearch extends Context.Service<
     /** Message text matches, for clients that rank their own thread list. */
     readonly search: (
       input: OrchestrationSearchThreadsInput,
+    ) => Effect.Effect<OrchestrationSearchThreadsResult, ThreadSearchError>;
+    /** Embedding-based semantic matches, for parallel client search. */
+    readonly searchSemantic: (
+      input: OrchestrationSearchThreadsInput & {
+        readonly projectIds?: ReadonlyArray<ProjectId> | undefined;
+      },
     ) => Effect.Effect<OrchestrationSearchThreadsResult, ThreadSearchError>;
     /**
      * Title, branch, pull request, and project matches ranked as the command
@@ -367,6 +374,8 @@ export class ThreadSearch extends Context.Service<
       /** The caller's name for this environment, which its palette also matches. */
       readonly environmentLabel?: string | undefined;
       readonly messageThreadIds: ReadonlyArray<ThreadId>;
+      /** When true, skips title scoring and returns every older settled id among `messageThreadIds`. */
+      readonly skipTitles?: boolean | undefined;
     }) => Effect.Effect<ReadonlyArray<ThreadId>, ThreadSearchError>;
   }
 >()("t3/orchestration-v2/ThreadSearch") {}
@@ -398,6 +407,7 @@ const OlderSettledTitleRow = Schema.Struct({
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const entries = yield* ThreadEntryStore.ThreadEntryStore;
+  const semantic = yield* Effect.serviceOption(SemanticSearchService.SemanticSearchService);
 
   const searchRows = SqlSchema.findAll({
     Request: SearchRequest,
@@ -616,6 +626,28 @@ export const make = Effect.gen(function* () {
   const search: ThreadSearch["Service"]["search"] = (input) =>
     searchMessages({ ...input, projectId: null });
 
+  const searchSemantic: ThreadSearch["Service"]["searchSemantic"] = Effect.fn(
+    "ThreadSearch.searchSemantic",
+  )(function* (input) {
+    if (Option.isNone(semantic)) return { matches: [] };
+    const hits = yield* semantic.value.search({
+      query: input.query,
+      limit: input.limit,
+      projectIds: input.projectIds,
+    });
+    return {
+      matches: hits.map((hit) => ({
+        threadId: hit.threadId,
+        projectId: hit.projectId,
+        source: hit.source,
+        snippet: hit.snippet,
+        messageCreatedAt: hit.messageCreatedAt,
+        quality: hit.score,
+        ...(hit.messageId === null ? {} : { messageId: hit.messageId }),
+      })),
+    };
+  });
+
   /**
    * Topics whose title and outcome hold every word, newest first, of listed threads. A thread's
    * only topic is dropped when the thread already matched by title: it would be the same row twice.
@@ -718,46 +750,83 @@ export const make = Effect.gen(function* () {
     // as the palette keeps its "In messages" section.
     const topicSlots = Math.min(topicHits.length, Math.floor(limit / 5));
     const messageSlots = Math.min(messageHits.length, Math.floor(limit / 5));
+    const exactMatches: ThreadSearchHit[] = [
+      ...titleHits.slice(0, limit - topicSlots - messageSlots),
+      ...topicHits.slice(0, topicSlots),
+      ...messageHits,
+    ].slice(0, limit);
+    if (Option.isNone(semantic)) {
+      return { matches: exactMatches };
+    }
+    const exactThreadIds = new Set(exactMatches.map((hit) => hit.threadId));
+    const semanticRows = yield* semantic.value.search({
+      query: input.query,
+      limit: Math.min(8, limit),
+      ...(input.projectId === undefined ? {} : { projectIds: [input.projectId] }),
+      excludedThreadIds: exactThreadIds,
+    });
+    const semanticHits: ThreadSearchHit[] = semanticRows
+      .filter((row) => subjectById.has(row.threadId) && !exactThreadIds.has(row.threadId))
+      .map((row) => ({
+        threadId: row.threadId,
+        projectId: row.projectId,
+        title: subjectById.get(row.threadId)!.title,
+        source: "semantic",
+        snippet: row.snippet,
+        messageCreatedAt: row.messageCreatedAt,
+      }));
+    if (semanticHits.length === 0) {
+      return { matches: exactMatches };
+    }
+    const remaining = Math.max(0, limit - exactMatches.length);
+    const semanticSlots =
+      remaining > 0
+        ? Math.min(semanticHits.length, remaining)
+        : Math.min(semanticHits.length, Math.floor(limit / 5));
     return {
       matches: [
-        ...titleHits.slice(0, limit - topicSlots - messageSlots),
-        ...topicHits.slice(0, topicSlots),
-        ...messageHits,
-      ].slice(0, limit),
+        ...exactMatches.slice(0, limit - semanticSlots),
+        ...semanticHits.slice(0, semanticSlots),
+      ],
     };
   });
 
   const searchOlderSettled: ThreadSearch["Service"]["searchOlderSettled"] = Effect.fn(
     "ThreadSearch.searchOlderSettled",
-  )(function* ({ query, before, projectIds, environmentLabel, messageThreadIds }) {
-    const normalizedQuery = foldSearchQuery(query);
-    const now = DateTime.toEpochMillis(yield* DateTime.now);
-    const candidates = yield* read(
-      olderSettledTitleCandidates({ before, projectIds: projectIds ?? null }),
-    );
-    const subjectOf = (row: typeof OlderSettledTitleRow.Type): ThreadSearchSubject => ({
-      id: row.id,
-      title: row.title,
-      branch: row.branch,
-      projectTitle: row.projectTitle,
-      environmentLabel: environmentLabel ?? null,
-      pullRequests: threadSearchPullRequests({
-        pullRequests: row.pullRequests ?? undefined,
-        linkedPullRequest: row.linkedPullRequest,
-        branchPullRequest: row.branchPullRequest,
-      }),
-      cardLine: typeof row.cardLine === "string" ? row.cardLine : null,
-      topics: Option.getOrElse(decodeCardTopics(row.cardTopics), () => []),
-      // Like the clients: what the user last wrote, else when the thread began.
-      activityAt: Date.parse(row.latestUserMessageAt ?? row.createdAt),
-      opens: Option.getOrNull(decodeThreadOpens(row.opens)),
-    });
-    // Picks on, as in the command palette: a thread picked for this query must make the cut.
-    const titleIds = rankSearchItems(candidates, (row, options) =>
-      scoreThreadSearch(normalizedQuery, subjectOf(row), now, { ...options, picks: true }),
-    )
-      .slice(0, OLDER_SETTLED_TITLE_ROWS)
-      .map(({ item }) => item.id);
+  )(function* ({ query, before, projectIds, environmentLabel, messageThreadIds, skipTitles }) {
+    const titleIds =
+      skipTitles === true
+        ? []
+        : yield* Effect.gen(function* () {
+            const normalizedQuery = foldSearchQuery(query);
+            const now = DateTime.toEpochMillis(yield* DateTime.now);
+            const candidates = yield* read(
+              olderSettledTitleCandidates({ before, projectIds: projectIds ?? null }),
+            );
+            const subjectOf = (row: typeof OlderSettledTitleRow.Type): ThreadSearchSubject => ({
+              id: row.id,
+              title: row.title,
+              branch: row.branch,
+              projectTitle: row.projectTitle,
+              environmentLabel: environmentLabel ?? null,
+              pullRequests: threadSearchPullRequests({
+                pullRequests: row.pullRequests ?? undefined,
+                linkedPullRequest: row.linkedPullRequest,
+                branchPullRequest: row.branchPullRequest,
+              }),
+              cardLine: typeof row.cardLine === "string" ? row.cardLine : null,
+              topics: Option.getOrElse(decodeCardTopics(row.cardTopics), () => []),
+              // Like the clients: what the user last wrote, else when the thread began.
+              activityAt: Date.parse(row.latestUserMessageAt ?? row.createdAt),
+              opens: Option.getOrNull(decodeThreadOpens(row.opens)),
+            });
+            // Picks on, as in the command palette: a thread picked for this query must make the cut.
+            return rankSearchItems(candidates, (row, options) =>
+              scoreThreadSearch(normalizedQuery, subjectOf(row), now, { ...options, picks: true }),
+            )
+              .slice(0, OLDER_SETTLED_TITLE_ROWS)
+              .map(({ item }) => item.id);
+          });
     const shown = new Set(titleIds);
     const messageCandidates = [...new Set(messageThreadIds)].filter((id) => !shown.has(id));
     const older =
@@ -772,13 +841,16 @@ export const make = Effect.gen(function* () {
               }),
             )).map((row) => row.id),
           );
+    const olderMessageIds = messageCandidates.filter((id) => older.has(id));
     return [
       ...titleIds,
-      ...messageCandidates.filter((id) => older.has(id)).slice(0, OLDER_SETTLED_MESSAGE_ROWS),
+      ...(skipTitles === true
+        ? olderMessageIds
+        : olderMessageIds.slice(0, OLDER_SETTLED_MESSAGE_ROWS)),
     ];
   });
 
-  return ThreadSearch.of({ search, searchThreads, searchOlderSettled });
+  return ThreadSearch.of({ search, searchSemantic, searchThreads, searchOlderSettled });
 });
 
 export const layer = Layer.effect(ThreadSearch, make).pipe(Layer.provide(ThreadEntryStore.layer));
@@ -789,11 +861,16 @@ export const layer = Layer.effect(ThreadSearch, make).pipe(Layer.provide(ThreadE
  */
 export const searchThreadsWithOlderSettledRows = Effect.fn(
   "ThreadSearch.searchThreadsWithOlderSettledRows",
-)(function* <E1, E2, E3, E4, E5>(input: {
+)(function* <E1, E2, E3, E4, E5, E6 = never>(input: {
   readonly request: OrchestrationV2SearchThreadsInput;
   readonly search: (
     input: OrchestrationSearchThreadsInput,
   ) => Effect.Effect<OrchestrationSearchThreadsResult, E1>;
+  readonly searchSemantic?: (
+    input: OrchestrationSearchThreadsInput & {
+      readonly projectIds?: ReadonlyArray<ProjectId> | undefined;
+    },
+  ) => Effect.Effect<OrchestrationSearchThreadsResult, E6>;
   readonly searchOlderSettled: (
     input: Parameters<ThreadSearch["Service"]["searchOlderSettled"]>[0],
   ) => Effect.Effect<ReadonlyArray<ThreadId>, E2>;
@@ -803,10 +880,16 @@ export const searchThreadsWithOlderSettledRows = Effect.fn(
   ) => Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E4>, E3>;
   readonly latestSequence: Effect.Effect<number, E5>;
 }) {
-  const { olderSettledBefore, projectIds, environmentLabel, titlesOnly, ...request } =
+  const { olderSettledBefore, projectIds, environmentLabel, titlesOnly, mode, ...request } =
     input.request;
-  const messages: OrchestrationV2SearchThreadsResult =
-    titlesOnly === true ? { matches: [] } : yield* input.search(request);
+  const isSemantic = mode === "semantic";
+  const messages: OrchestrationV2SearchThreadsResult = isSemantic
+    ? input.searchSemantic === undefined
+      ? { matches: [] }
+      : yield* input.searchSemantic({ ...request, projectIds })
+    : titlesOnly === true
+      ? { matches: [] }
+      : yield* input.search(request);
   if (olderSettledBefore === undefined) return messages;
   // Ranked before the rows' transaction, so scoring never holds the shared reader.
   const threadIds = yield* input.searchOlderSettled({
@@ -815,6 +898,7 @@ export const searchThreadsWithOlderSettledRows = Effect.fn(
     projectIds,
     environmentLabel,
     messageThreadIds: messages.matches.map((match) => match.threadId),
+    ...(isSemantic ? { skipTitles: true } : {}),
   });
   const older = yield* loadOlderSettledThreadsPage({
     sql: input.sql,

@@ -15,6 +15,7 @@ export function ThreadSearchMatchExcerpt(props: {
 }) {
   const gt = useGT();
   const isUser = props.match.source === "user";
+  const isSummary = props.match.source === "summary";
   const parts = splitSearchText(
     props.match.snippet,
     findSearchTokenRanges(props.match.snippet, props.query),
@@ -36,7 +37,7 @@ export function ThreadSearchMatchExcerpt(props: {
           props.compact ? "text-sm font-t3-medium" : "text-xs font-t3-medium",
           props.selected
             ? "text-thread-selected-foreground"
-            : isUser
+            : isUser || isSummary
               ? props.sidebar
                 ? "text-drawer-foreground-muted"
                 : "text-foreground-secondary"
@@ -45,7 +46,9 @@ export function ThreadSearchMatchExcerpt(props: {
       >
         {isUser
           ? gt("You:", { $context: "label before a search snippet the user wrote" })
-          : gt("Agent:", { $context: "label before a search snippet the agent wrote" })}{" "}
+          : isSummary
+            ? gt("Summary:", { $context: "label before a search snippet from a thread summary" })
+            : gt("Agent:", { $context: "label before a search snippet the agent wrote" })}{" "}
       </Text>
       {parts.map((part) => (
         <Text

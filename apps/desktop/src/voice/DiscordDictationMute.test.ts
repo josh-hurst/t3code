@@ -50,7 +50,11 @@ it("restores only a mute acquired in an active call", async () => {
     if (state === "disconnected") call.controls.pop();
     if (state === "deafened") call.headphones.checked = "on";
     if (state === "ambiguous controls") call.controls.push(call.mic);
-    await call.setRecording(true);
+    const failure = await call.setRecording(true);
+    if (state === "ambiguous controls")
+      expect(failure).toBe(
+        "unexpected mute state: 5 controls; Mute (check_box, checked off, enabled true), Deafen (check_box, checked off, enabled true), Mute (check_box, checked off, enabled true)",
+      );
     await call.setRecording(false);
     expect(call.mic.press, state).not.toHaveBeenCalled();
   }
@@ -71,7 +75,7 @@ it("preserves a manual unmute or deafen during recording", async () => {
   const moved = discordCall();
   await moved.setRecording(true);
   moved.channel.linkUrl = "https://discord.com/channels/1/3";
-  expect(await moved.setRecording(false)).toBe(false);
+  expect(await moved.setRecording(false)).toBe("moved to another voice channel");
   expect(moved.mic.checked).toBe("on");
 });
 

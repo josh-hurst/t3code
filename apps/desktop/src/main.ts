@@ -54,6 +54,7 @@ import * as DesktopLifecycle from "./app/DesktopLifecycle.ts";
 import * as DesktopLinuxUrlHandler from "./app/DesktopLinuxUrlHandler.ts";
 import * as DesktopAppIcon from "./app/DesktopAppIcon.ts";
 import * as DesktopMacIconCache from "./app/DesktopMacIconCache.ts";
+import * as DesktopRobloxStudioIcon from "./app/DesktopRobloxStudioIcon.ts";
 import * as DesktopShutdown from "./app/DesktopShutdown.ts";
 import * as DesktopObservability from "./app/DesktopObservability.ts";
 import * as DesktopServerExposure from "./backend/DesktopServerExposure.ts";
@@ -221,6 +222,7 @@ const layerDesktopApplication = Layer.mergeAll(
   DesktopMenuBarItem.layer,
   DesktopLinuxUrlHandler.layer,
   DesktopMacIconCache.layer,
+  DesktopRobloxStudioIcon.layer,
   DesktopAppIcon.layer,
   DesktopCliCommand.layer,
 ).pipe(

@@ -53,4 +53,18 @@ describe("filterCommandPaletteItems", () => {
     ]);
     expect(filterCommandPaletteItems(items, "> layout", ["siva:one"], NOW)).toEqual([]);
   });
+
+  it("lists semantic matches after message matches without duplicating exact or message hits", () => {
+    const results = filterCommandPaletteItems(items, "layout", ["mac:one"], NOW, [
+      "mac:one",
+      "siva:one",
+    ]);
+    expect(
+      results.map((entry) => [entry.key, entry.fromMessages ?? false, entry.fromSemantic ?? false]),
+    ).toEqual([
+      ["mac:one", false, false],
+      ["siva:one", false, true],
+    ]);
+    expect(filterCommandPaletteItems(items, "> layout", [], NOW, ["siva:one"])).toEqual([]);
+  });
 });

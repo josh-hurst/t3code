@@ -13,7 +13,10 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import {
+  threadSearchMatchKey,
+  type EnvironmentThreadSearchMatch,
+} from "@t3tools/client-runtime/state/thread-search";
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { THREAD_LIST_ROW_LAYOUT } from "./threadListAnimations";
 import { useAtomValue } from "@effect/atom-react";
@@ -88,6 +91,8 @@ import {
 } from "./threadListV2";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
+
+const EMPTY_SEMANTIC_SEARCH_MATCHES: ReadonlyMap<string, EnvironmentThreadSearchMatch> = new Map();
 
 type SidebarListItem =
   | ThreadListV2ListItem
@@ -233,6 +238,12 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   // This map reaches LegendList's extraData, which re-renders every row whenever it changes
   // identity; the hook keeps it stable.
   const threadSearchMatchByKey = useThreadListSearchMatches(threads, threadSearch);
+  const semanticSearchMatchByKey = useMemo(() => {
+    if (threadSearch.semanticMatches.length === 0) return EMPTY_SEMANTIC_SEARCH_MATCHES;
+    return new Map(
+      threadSearch.semanticMatches.map((match) => [threadSearchMatchKey(match), match] as const),
+    );
+  }, [threadSearch.semanticMatches]);
   const selectedProjectKey = selectedProjectScope?.key ?? null;
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
@@ -296,6 +307,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     layout: threadListV2Layout,
     items: threadListV2Items,
     contentOnlyThreadKeys,
+    semanticOnlyThreadKeys,
     olderSettledShelf,
   } = useThreadListV2({
     projects: projects,
@@ -305,6 +317,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
     searchQuery: props.searchQuery,
     searchMatches: threadSearchMatchByKey,
+    semanticMatches: semanticSearchMatchByKey,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
     laterRecheckLimits: laterRecheckLimitByEnvironmentId,
@@ -356,13 +369,15 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   };
   // Destructure callback props; capturing all props would invalidate these row-closing handlers on unrelated changes.
   const { onSelectThread, onOpenThreadPullRequests } = props;
-  // A row listed for a message match opens the thread at that message, by
+  // A row listed for a message or semantic match opens the thread at that message, by
   // tap or by shortcut.
   const handleSelectThread = (thread: EnvironmentThreadShell) => {
     const key = threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id });
     const messageId = contentOnlyThreadKeys.has(key)
       ? threadSearchMatchByKey.get(key)?.messageId
-      : undefined;
+      : semanticOnlyThreadKeys.has(key)
+        ? semanticSearchMatchByKey.get(key)?.messageId
+        : undefined;
     if (messageId) {
       requestThreadMessageJump(scopedThreadKey(thread.environmentId, thread.id), messageId);
     }
@@ -393,6 +408,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     savedConnectionsById,
     listEnvironments,
     threadSearchMatchByKey,
+    semanticSearchMatchByKey,
     workingShelfEnabled,
   };
   useThreadJumpShortcuts(listItems, handleSelectThread, props.onOpenPendingTask);
@@ -451,6 +467,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             variant={item.item.variant}
             cardLine={item.item.cardLine}
             projectLine={item.item.projectLine}
+            compact={item.item.compact === true}
             hasQueuedMessages={item.hasQueuedMessages}
             snoozed={item.item.snoozed}
             pinned={item.item.pinned}
@@ -467,20 +484,27 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
                 : null
             }
             environmentMachine={machineByEnvironmentId.get(thread.environmentId)}
-            searchMatch={
-              // Only rows listed for their messages show one and open at it.
-              contentOnlyThreadKeys.has(
+            searchMatch={(() => {
+              const matchKey = threadSearchMatchKey({
+                environmentId: thread.environmentId,
+                threadId: thread.id,
+              });
+              // Only rows listed for their messages or by meaning show one and open at it.
+              if (contentOnlyThreadKeys.has(matchKey)) {
+                return threadSearchMatchByKey.get(matchKey);
+              }
+              if (semanticOnlyThreadKeys.has(matchKey)) {
+                return semanticSearchMatchByKey.get(matchKey);
+              }
+              return undefined;
+            })()}
+            searchQuery={
+              semanticOnlyThreadKeys.has(
                 threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id }),
               )
-                ? threadSearchMatchByKey.get(
-                    threadSearchMatchKey({
-                      environmentId: thread.environmentId,
-                      threadId: thread.id,
-                    }),
-                  )
-                : undefined
+                ? threadSearch.semanticQuery
+                : threadSearch.query
             }
-            searchQuery={threadSearch.query}
             pane="sidebar"
             selected={
               !activeNewTask &&
@@ -653,7 +677,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
           : showAddEnvironment
             ? gt("No environments connected")
             : props.searchQuery.trim().length > 0
-              ? threadSearch.isPending
+              ? threadSearch.isPending || threadSearch.isSemanticPending
                 ? gt("Searching thread messages…")
                 : threadSearch.failed
                   ? gt("Couldn't search thread messages")

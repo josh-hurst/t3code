@@ -117,6 +117,7 @@ import Migration0105 from "./Migrations/105_TaskFolders.ts";
 import Migration0106 from "./Migrations/106_WorktreePathKeyIndex.ts";
 import Migration0107 from "./Migrations/107_DeferredSlashCommandIndex.ts";
 import Migration0108 from "./Migrations/108_AgentFeedback.ts";
+import Migration0109 from "./Migrations/109_ThreadSemanticSearch.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -228,6 +229,7 @@ const migrationEntries = [
   [106, "WorktreePathKeyIndex", Migration0106],
   [107, "DeferredSlashCommandIndex", Migration0107],
   [108, "AgentFeedback", Migration0108],
+  [109, "ThreadSemanticSearch", Migration0109],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

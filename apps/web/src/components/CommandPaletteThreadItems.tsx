@@ -4,6 +4,7 @@ import { findForMessageMatch, openThreadFindOnQuery } from "./chat/threadFindSto
 import {
   claimThreadOpen,
   nextShownOrder,
+  SEMANTIC_SEARCH_DISPLAY_LIMIT,
   type EnvironmentThreadSearchMatch,
   type ShownOrder,
 } from "@t3tools/client-runtime/state/thread-search";
@@ -297,11 +298,46 @@ export function useCommandPaletteThreadItems(input: {
     ...order.keys.slice(0, order.shown).flatMap((value) => messageItemByValue.get(value) ?? []),
   ];
 
+  const semanticMatches = messageSearch.semanticMatches ?? [];
+  const semanticQuery = messageSearch.semanticQuery ?? "";
+  const threadSemanticItems = semanticMatches
+    .flatMap((match) => {
+      const item = itemForMatch(match);
+      if (!item) return [];
+      const { description: _description, ...rest } = item;
+      return [
+        {
+          ...rest,
+          ...(match.messageCreatedAt
+            ? { timestamp: formatRelativeTimeLabel(match.messageCreatedAt, undefined, messages) }
+            : {}),
+          threadContentMatch: {
+            source: match.source,
+            snippet: match.snippet,
+            query: semanticQuery,
+          },
+          run: async () => {
+            if (match.messageId) {
+              await navigate({
+                to: "/$environmentId/$threadId",
+                params: buildThreadRouteParams(scopeThreadRef(match.environmentId, match.threadId)),
+                search: { m: match.messageId },
+              });
+            } else {
+              await item.run();
+            }
+          },
+        },
+      ];
+    })
+    .slice(0, SEMANTIC_SEARCH_DISPLAY_LIMIT);
+
   return {
     threadItems,
     threadMessageItems,
+    threadSemanticItems,
     now,
-    isSearchPending: messageSearch.isPending,
+    isSearchPending: messageSearch.isPending || messageSearch.isSemanticPending === true,
     isSearchFailed: messageSearch.failed,
   };
 }

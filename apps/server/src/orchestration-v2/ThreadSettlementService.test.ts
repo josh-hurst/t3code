@@ -50,6 +50,7 @@ import * as ProjectStore from "./ProjectStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ThreadSettlementService from "./ThreadSettlementService.ts";
+import * as ThreadSettleOutlook from "./ThreadSettleOutlook.ts";
 
 const NOW_MS = Date.parse("2026-06-10T12:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -57,6 +58,24 @@ const HOUR_MS = 60 * 60 * 1_000;
 
 function at(offsetMs: number): DateTime.Utc {
   return DateTime.makeUnsafe(NOW_MS + offsetMs);
+}
+
+/** The owner wrote 20 messages in the project's other threads and started 5 since `atMs`. */
+function busySince(
+  thread: { readonly id: string; readonly projectId: string },
+  atMs: number,
+  published = false,
+): ThreadSettleOutlook.SettleOutlookActivity {
+  return {
+    messages: Array.from({ length: 20 }, (_, index) => ({
+      threadId: `elsewhere-${index % 5}`,
+      projectId: thread.projectId,
+      atMs,
+      startsThread: index < 5,
+    })),
+    publishes: published ? [{ projectId: thread.projectId, atMs }] : [],
+    turns: new Map([[thread.id, 1]]),
+  };
 }
 
 type SettlementShell = OrchestrationV2ThreadShell &
@@ -340,8 +359,8 @@ describe("resolveAutoSettlementAt", () => {
     ).toBeNull();
   });
 
-  it("settles a read thread early by its age, and only while the owner is around", () => {
-    // A thread 30 minutes old when it went quiet waits 12h + 12 x 30min = 18h.
+  it("settles a read thread early on its score, and only while the owner is around", () => {
+    // Half an hour old when it went quiet, one message from the owner.
     const quiet = (
       idleMs: number,
       overrides: Partial<ProjectionStore.ProjectionSettlementCandidate> = {},
@@ -368,34 +387,51 @@ describe("resolveAutoSettlementAt", () => {
       autoSettleAfterDays: 2,
       autoSettleOnMerge: true,
       presence: around,
+      // Busy elsewhere and published since: a 2% chance at three hours.
+      activity: busySince(thread, NOW_MS - 5 * 60 * 1_000, true),
       ...overrides,
     });
     const settles = (...args: Parameters<typeof input>) =>
       ThreadSettlementService.resolveAutoSettlementAt(input(...args));
     const planned = (...args: Parameters<typeof input>) =>
       ThreadSettlementService.resolveAutoSettlePlan(input(...args));
-    const early = (idleMs: number) => NOW_MS - idleMs + 18 * HOUR_MS;
     const window = (idleMs: number) => NOW_MS - idleMs + 2 * DAY_MS;
+    const idle = 3 * HOUR_MS;
 
-    expect(settles(quiet(19 * HOUR_MS))).toEqual(at(-19 * HOUR_MS));
-    expect(settles(quiet(17 * HOUR_MS))).toBeNull();
-    expect(planned(quiet(17 * HOUR_MS))).toEqual({
-      at: early(17 * HOUR_MS),
-      basisAt: NOW_MS - 17 * HOUR_MS,
+    expect(settles(quiet(idle))).toEqual(at(-idle));
+    // Without the publish the chance is 4.2%: listed as settling, not settled.
+    const unpublished = { activity: busySince(quiet(idle), NOW_MS - 5 * 60 * 1_000) };
+    expect(settles(quiet(idle), unpublished)).toBeNull();
+    expect(planned(quiet(idle), unpublished)).toEqual({
+      at: window(idle),
+      basisAt: NOW_MS - idle,
+      returnChance: 0.04,
     });
-    // Three hours old when it went quiet: 12h + 36h reaches the two-day window, so nothing changes.
-    const long = quiet(40 * HOUR_MS, { createdAt: at(-43 * HOUR_MS) });
-    expect(settles(long)).toBeNull();
-    expect(planned(long)?.at).toBe(window(40 * HOUR_MS));
+    // Sure enough to settle, but two hours must pass, and it is not listed in its first minutes.
+    expect(planned(quiet(10 * 60 * 1_000))).toEqual({
+      at: NOW_MS + 110 * 60 * 1_000,
+      basisAt: NOW_MS - 10 * 60 * 1_000,
+    });
+    // Nothing the owner did elsewhere: four hours' wait alone leaves a 21% chance, so not listed.
+    const idleOwner = {
+      activity: { messages: [], publishes: [], turns: new Map([["thread-1", 1]]) },
+    };
+    expect(planned(quiet(4 * HOUR_MS), idleOwner)).toEqual({
+      at: window(4 * HOUR_MS),
+      basisAt: NOW_MS - 4 * HOUR_MS,
+    });
 
     const waitsForWindow = [
-      quiet(19 * HOUR_MS, { lastVisitedAt: at(-20 * HOUR_MS) }),
-      quiet(19 * HOUR_MS, { lastVisitedAt: null }),
-      quiet(19 * HOUR_MS, { pullRequests: [persistedLink("open", at(-DAY_MS))] }),
-    ];
-    for (const thread of waitsForWindow) {
-      expect(settles(thread)).toBeNull();
-      expect(planned(thread)?.at).toBe(window(19 * HOUR_MS));
+      [quiet(idle, { lastVisitedAt: at(-4 * HOUR_MS) }), {}],
+      [quiet(idle, { lastVisitedAt: null }), {}],
+      [quiet(idle, { pullRequests: [persistedLink("open", at(-DAY_MS))] }), {}],
+      [quiet(idle), { activity: null }],
+      // A thread the last full sweep did not count.
+      [quiet(idle), { activity: { ...busySince(quiet(idle), NOW_MS), turns: new Map() } }],
+    ] as const;
+    for (const [thread, overrides] of waitsForWindow) {
+      expect(settles(thread, overrides)).toBeNull();
+      expect(planned(thread, overrides)).toEqual({ at: window(idle), basisAt: NOW_MS - idle });
     }
     // Something left to check or commit does not hold a thread, nor does a question once its
     // reply is read; an unread question does.
@@ -403,16 +439,16 @@ describe("resolveAutoSettlementAt", () => {
       kind: "verify" | "ask",
       overrides: Partial<ProjectionStore.ProjectionSettlementCandidate> = {},
     ) =>
-      quiet(19 * HOUR_MS, {
+      quiet(idle, {
         card: {
           open: [{ kind, text: "Check the totals" }],
-          at: DateTime.formatIso(at(-19 * HOUR_MS)),
+          at: DateTime.formatIso(at(-idle)),
         },
         ...overrides,
       });
-    expect(settles(owes("verify"))).toEqual(at(-19 * HOUR_MS));
-    expect(settles(owes("ask"))).toEqual(at(-19 * HOUR_MS));
-    const unread = owes("ask", { lastVisitedAt: at(-20 * HOUR_MS) });
+    expect(settles(owes("verify"))).toEqual(at(-idle));
+    expect(settles(owes("ask"))).toEqual(at(-idle));
+    const unread = owes("ask", { lastVisitedAt: at(-4 * HOUR_MS) });
     expect(settles(unread)).toBeNull();
     expect(planned(unread)).toBeNull();
     // Read an hour ago, three days in: the window has passed, and the open still buys two hours.
@@ -426,28 +462,30 @@ describe("resolveAutoSettlementAt", () => {
     expect(planned(readLate("ask"))?.at).toBe(NOW_MS + HOUR_MS);
 
     // Opened an hour ago, or the owner came back an hour ago: two hours must pass first.
-    const opened = quiet(19 * HOUR_MS, {
+    const opened = quiet(idle, {
       opens: { openedAt: NOW_MS - HOUR_MS, score: 1, picks: [] },
     });
     expect(settles(opened)).toBeNull();
     expect(planned(opened)?.at).toBe(NOW_MS + HOUR_MS);
     const justBack = { lastAtMs: NOW_MS, sinceAtMs: NOW_MS - HOUR_MS };
-    expect(settles(quiet(19 * HOUR_MS), { presence: justBack })).toBeNull();
-    expect(planned(quiet(19 * HOUR_MS), { presence: justBack })?.at).toBe(NOW_MS + HOUR_MS);
+    expect(settles(quiet(idle), { presence: justBack })).toBeNull();
+    expect(planned(quiet(idle), { presence: justBack })?.at).toBe(NOW_MS + HOUR_MS);
 
     // Away: the early time passes without settling, and the plan shows it as already due.
     const away = { lastAtMs: NOW_MS - 3 * HOUR_MS, sinceAtMs: NOW_MS - 9 * HOUR_MS };
     for (const presence of [away, null]) {
-      expect(settles(quiet(19 * HOUR_MS), { presence })).toBeNull();
-      expect(planned(quiet(19 * HOUR_MS), { presence })?.at).toBe(early(19 * HOUR_MS));
+      expect(settles(quiet(idle), { presence })).toBeNull();
+      expect(planned(quiet(idle), { presence })?.at).toBe(NOW_MS - HOUR_MS);
       // The window is the owner's own setting, so it still settles the thread.
       expect(settles(quiet(49 * HOUR_MS), { presence })).toEqual(at(-49 * HOUR_MS));
     }
 
-    expect(settles(quiet(19 * HOUR_MS), { autoSettleAfterDays: null })).toBeNull();
-    expect(planned(quiet(19 * HOUR_MS), { autoSettleAfterDays: null })).toBeNull();
-    // A window shorter than the early wait wins.
-    expect(planned(quiet(HOUR_MS), { autoSettleAfterDays: 0.25 })?.at).toBe(NOW_MS + 5 * HOUR_MS);
+    expect(settles(quiet(idle), { autoSettleAfterDays: null })).toBeNull();
+    expect(planned(quiet(idle), { autoSettleAfterDays: null })).toBeNull();
+    // A window shorter than the two hours wins.
+    expect(planned(quiet(HOUR_MS / 2), { autoSettleAfterDays: 1 / 24 })?.at).toBe(
+      NOW_MS + HOUR_MS / 2,
+    );
   });
 
   it("starts a new stretch of presence only after the owner was away", () => {
@@ -761,6 +799,7 @@ interface HarnessOptions {
   readonly hasActiveSubprocess?: (input: { readonly threadId: string }) => Effect.Effect<boolean>;
   readonly currentThreads?: ReadonlyArray<OrchestrationV2AppThread>;
   readonly projections?: ProjectionStore.ProjectionStoreV2Shape;
+  readonly activity?: ThreadSettleOutlook.SettleOutlookActivity;
 }
 
 const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options: HarnessOptions) {
@@ -776,6 +815,9 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const pullRequestRefreshes = yield* PubSub.unbounded<number>();
   const commands = yield* Ref.make<ReadonlyArray<AutoSettleCommand>>([]);
   const plans = yield* Ref.make<ReadonlyArray<OrchestrationV2AutoSettlePlan | null>>([]);
+  const outlookRecords = yield* Ref.make<ReadonlyArray<ThreadSettleOutlook.SettleOutlookRecord>>(
+    [],
+  );
   const branchCalls = yield* Ref.make<
     ReadonlyArray<{ readonly cwd: string; readonly branch: string }>
   >([]);
@@ -914,6 +956,18 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
           : Effect.die(new Error(`Unexpected thread read: ${threadId}`));
       },
     }),
+    Layer.mock(ThreadSettleOutlook.ThreadSettleOutlookStore)({
+      activity: () =>
+        options.activity === undefined
+          ? Effect.fail(
+              new ThreadSettleOutlook.ThreadSettleOutlookError({
+                operation: "activity",
+                cause: "unread",
+              }),
+            )
+          : Effect.succeed(options.activity),
+      record: (input) => Ref.update(outlookRecords, (recorded) => [...recorded, input]),
+    }),
     Layer.mock(Orchestrator.OrchestratorV2)({
       streamDomainEvents: Stream.fromPubSub(domainEvents).pipe(
         Stream.tap((event) => Queue.offer(observedEvents, event.id)),
@@ -972,6 +1026,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     candidateReads,
     commands,
     plans,
+    outlookRecords,
     branchCalls,
     summaryCalls,
     summaryRecovery,
@@ -1162,7 +1217,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
       yield* Effect.gen(function* () {
         const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
         yield* startHarness(service, fixture.activation, fixture.snapshotReads);
-        const planned = { at: nowMs + 11 * HOUR_MS, basisAt: nowMs - HOUR_MS };
+        const planned = { at: nowMs - HOUR_MS + 3 * DAY_MS, basisAt: nowMs - HOUR_MS };
         assert.deepEqual(yield* Ref.get(fixture.plans), [planned]);
         const sweepAgain = Effect.gen(function* () {
           yield* TestClock.adjust("1 minute");
@@ -1197,6 +1252,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
       const fixture = yield* makeHarness({
         snapshot: makeSnapshot([thread]),
         settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 3 },
+        activity: busySince(thread, nowMs - HOUR_MS),
       });
       const wrote = (id: string, text: string, agoMs: number): OrchestrationV2DomainEvent => {
         const createdAt = DateTime.makeUnsafe(nowMs - agoMs);
@@ -1234,13 +1290,27 @@ describe("ThreadSettlementServiceV2 worker", () => {
             yield* Queue.take(fixture.snapshotReads);
             yield* service.drain;
           });
-        // Due an hour ago, but the owner last wrote 13 hours ago.
+        // Sure enough to settle, but the owner last wrote 13 hours ago: listed as settling.
         assert.deepEqual(yield* Ref.get(fixture.commands), []);
         yield* sweepAfter(wrote("compaction", "/compact", HOUR_MS));
         assert.deepEqual(yield* Ref.get(fixture.commands), []);
+        assert.deepEqual(yield* Ref.get(fixture.plans), [
+          { at: nowMs - 11 * HOUR_MS, basisAt: nowMs - 13 * HOUR_MS, returnChance: 0.02 },
+        ]);
         yield* sweepAfter(wrote("back", "Morning", 3 * HOUR_MS), wrote("still", "Next", HOUR_MS));
         expect((yield* Ref.get(fixture.commands)).map((command) => command.threadId)).toEqual([
           thread.id,
+        ]);
+        // Listed once, however many sweeps saw it, then settled.
+        expect(
+          (yield* Ref.get(fixture.outlookRecords)).map((record) => [
+            record.threadId,
+            record.quietAtMs,
+            record.settled,
+          ]),
+        ).toEqual([
+          [thread.id, nowMs - 13 * HOUR_MS, false],
+          [thread.id, nowMs - 13 * HOUR_MS, true],
         ]);
       }).pipe(Effect.provide(fixture.layer));
     }),

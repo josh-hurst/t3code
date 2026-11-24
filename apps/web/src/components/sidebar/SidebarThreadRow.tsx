@@ -133,7 +133,13 @@ import {
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
-import { TideOwedLabel, TideRowBody, TideStatusLabel, tideRowMeta } from "./SidebarTideRow";
+import {
+  TideOwedLabel,
+  TideProject,
+  TideRowBody,
+  TideStatusLabel,
+  tideRowMeta,
+} from "./SidebarTideRow";
 import { SearchMatchHintLine, ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import type { SearchMatchHint } from "@t3tools/shared/paletteSearch";
 import {
@@ -728,7 +734,8 @@ type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   // "folder" is a one-line row inside a boring sidebar project folder;
   // "folder-multiline" adds the card's environment and PR line under it.
-  variant: "card" | "slim" | "folder" | "folder-multiline";
+  // "compact" is the Settling shelf's one-line row: project, title and time.
+  variant: "card" | "slim" | "compact" | "folder" | "folder-multiline";
   navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
@@ -1274,7 +1281,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               topStatus?.tintClassName ?? "bg-transparent hover:bg-sidebar-row-hover",
             ),
     shouldRecede &&
-      (status === "preparing" || status === "working") &&
+      (status === "preparing" || status === "working" || status === "waiting") &&
       "opacity-70 transition-opacity hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
     (isFileDragOver || props.isNestTarget) && "ring-1 ring-inset ring-primary/70",
     isFileDragOver && !props.isActive && !isSelected && "bg-sidebar-row-hover",
@@ -1630,6 +1637,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   if (props.tide) {
     const isCardRow = variant === "card";
+    const isCompactRow = variant === "compact";
     // A row with nothing owed and no status of its own says when it is about to leave the list.
     const lead =
       tideLead?.lead ??
@@ -1899,11 +1907,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 aria-label={tideAccessibility.label}
                 aria-description={tideLead?.running ? (tideText ?? undefined) : undefined}
                 aria-current={tideAccessibility.current}
-                data-testid={isCardRow ? "sidebar-row-card" : "sidebar-row-slim"}
+                data-testid={
+                  isCardRow
+                    ? "sidebar-row-card"
+                    : isCompactRow
+                      ? "sidebar-row-compact"
+                      : "sidebar-row-slim"
+                }
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(
                   rowSurfaceClassName,
-                  "flex min-h-9 flex-col justify-center px-3 py-2",
+                  "flex flex-col justify-center px-3",
+                  isCompactRow ? "min-h-7 py-1" : "min-h-9 py-2",
                 )}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
@@ -1915,7 +1930,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             <TideRowBody
               project={null}
               time={timeSlot}
-              title={title}
+              title={
+                isCompactRow && projectName !== null ? (
+                  <>
+                    <span className="flex max-w-2/5 shrink-0 text-xs text-foreground/60">
+                      <TideProject project={props.project} name={projectName} />
+                    </span>
+                    {title}
+                  </>
+                ) : (
+                  title
+                )
+              }
               titleTrailing={
                 <>
                   {draftIndicator}
@@ -1924,23 +1950,31 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   {pinIndicator}
                 </>
               }
-              label={label}
+              label={isCompactRow ? null : label}
               unreadCompletion={tideDone}
               text={
-                // Pinned rows without an outcome follow Thread row details.
-                tideText ??
-                (isCardRow && !props.needsYou
-                  ? (messagePreview ??
-                    (showsBranch && metaBranch === null ? (checkoutThread.branch ?? null) : null))
-                  : null)
+                isCompactRow
+                  ? null
+                  : // Pinned rows without an outcome follow Thread row details.
+                    (tideText ??
+                    (isCardRow && !props.needsYou
+                      ? (messagePreview ??
+                        (showsBranch && metaBranch === null
+                          ? (checkoutThread.branch ?? null)
+                          : null))
+                      : null))
               }
               maxLines={props.needsYou ? 3 : 2}
-              meta={tideRowMeta({
-                project: props.project,
-                name: projectName,
-                pullRequest: prBadge,
-                branch: metaBranch,
-              })}
+              meta={
+                isCompactRow
+                  ? undefined
+                  : tideRowMeta({
+                      project: props.project,
+                      name: projectName,
+                      pullRequest: prBadge,
+                      branch: metaBranch,
+                    })
+              }
             />
             {isRegeneratingTitle ? (
               <span role="status" className="sr-only">

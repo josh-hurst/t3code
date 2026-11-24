@@ -400,6 +400,7 @@ export function HtmlRenderTimelineRow({
         environmentId={ctx.activeThreadEnvironmentId}
         htmlRender={row.htmlRender}
         threadRef={ctx.threadRef ?? undefined}
+        onCompose={ctx.onComposeFromHtmlRender}
         onFullscreenChange={onFullscreenChange}
       />
     </div>

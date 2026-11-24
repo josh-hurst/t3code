@@ -2143,6 +2143,7 @@ export const layerWsRpc = (
           ThreadSearch.searchThreadsWithOlderSettledRows({
             request: input,
             search: threadSearch.search,
+            searchSemantic: threadSearch.searchSemantic,
             searchOlderSettled: threadSearch.searchOlderSettled,
             sql,
             readThreads: (threadIds) =>

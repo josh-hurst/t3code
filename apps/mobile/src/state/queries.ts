@@ -20,7 +20,9 @@ import type {
   VcsRef,
 } from "@t3tools/contracts";
 import {
+  createSemanticThreadSearchResultsAtomFamily,
   createThreadSearchResultsAtomFamily,
+  hasSemanticSearchQuery,
   makeThreadSearchKey,
   visibleThreadSearch,
   type EnvironmentThreadSearchMatch,
@@ -39,6 +41,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { appAtomRegistry } from "./atom-registry";
 import { orchestrationEnvironment } from "./orchestration";
+import { serverEnvironment } from "./server";
 import { olderSettledThreads, threadFamilies } from "./threads";
 import { projectEnvironment } from "./projects";
 import { useEnvironmentQuery } from "./query";
@@ -86,6 +89,25 @@ const threadSearch = createThreadSearchResultsAtomFamily({
   olderSettledBefore: olderSettledBeforeAtom,
   labelPrefix: "mobile:thread-search",
 });
+const semanticThreadSearch = createSemanticThreadSearchResultsAtomFamily({
+  getSearchAtom: (environmentId, input) =>
+    input.olderSettledBefore === undefined
+      ? orchestrationEnvironment.threadSearch({ environmentId, input })
+      : olderSettledThreads.searchAtom(environmentId, input),
+  olderSettledBefore: olderSettledBeforeAtom,
+  labelPrefix: "mobile:semantic-thread-search",
+});
+const semanticEnvironmentIdsAtom = Atom.family((environmentIdsKey: string) =>
+  Atom.make((get) =>
+    (JSON.parse(environmentIdsKey) as ReadonlyArray<EnvironmentId>).filter((environmentId) => {
+      const config = get(serverEnvironment.configValueAtom(environmentId));
+      return (
+        config?.environment.capabilities.semanticThreadSearch === true &&
+        config.settings.semanticSearchEnabled !== false
+      );
+    }),
+  ).pipe(Atom.withLabel(`mobile:semantic-environments:${environmentIdsKey}`)),
+);
 
 export interface ComposerPathSearchTarget {
   readonly environmentId: EnvironmentId | null;
@@ -227,11 +249,17 @@ export function useThreadSearch(
   readonly isPending: boolean;
   /** No environment could run the search for the current query, so an empty result is not "no matches". */
   readonly failed: boolean;
+  /** Parallel meaning-based matches, never delaying exact matches. */
+  readonly semanticMatches: ReadonlyArray<EnvironmentThreadSearchMatch>;
+  readonly semanticQuery: string;
+  readonly isSemanticPending: boolean;
 } {
   // A pasted wall of text searches by its start rather than failing the request.
   const normalizedQuery = query.trim().slice(0, THREAD_SEARCH_QUERY_MAX_LENGTH).trim();
   const debouncedQuery = useDebouncedValue(normalizedQuery, THREAD_SEARCH_DEBOUNCE_MS);
-  const anyOlderSettled = useAtomValue(anyOlderSettledAtom(JSON.stringify(environmentIds)));
+  const environmentIdsKey = JSON.stringify(environmentIds);
+  const anyOlderSettled = useAtomValue(anyOlderSettledAtom(environmentIdsKey));
+  const semanticEnvironmentIds = useAtomValue(semanticEnvironmentIdsAtom(environmentIdsKey));
   // Messages need a word of three or more letters; older settled titles match from two.
   const canSearch =
     environmentIds.length > 0 &&
@@ -277,11 +305,65 @@ export function useThreadSearch(
       for (const release of releases) release();
     };
   }, [shownKey]);
+
+  const canSearchSemantic =
+    scope.titlesOnly !== true &&
+    semanticEnvironmentIds.length > 0 &&
+    hasSemanticSearchQuery(normalizedQuery);
+  const settledSemanticQuery =
+    canSearchSemantic && normalizedQuery === debouncedQuery ? debouncedQuery : null;
+  const semanticSearchKeyOf = (searchQuery: string) =>
+    makeThreadSearchKey(semanticEnvironmentIds, searchQuery, scope);
+  const semanticSearchKey =
+    settledSemanticQuery === null ? null : semanticSearchKeyOf(settledSemanticQuery);
+  const semanticResult = useAtomValue(
+    semanticSearchKey === null
+      ? EMPTY_THREAD_SEARCH_ATOM
+      : semanticThreadSearch.results(semanticSearchKey),
+  );
+  const isSemanticPending =
+    canSearchSemantic && (normalizedQuery !== debouncedQuery || semanticResult.isLoading);
+  const semanticReady =
+    settledSemanticQuery !== null &&
+    (!semanticResult.isLoading ||
+      semanticResult.matches.length > 0 ||
+      semanticResult.rows.length > 0)
+      ? { query: settledSemanticQuery, matches: semanticResult.matches }
+      : null;
+  const [previousSemantic, setPreviousSemantic] = useState<SettledThreadSearch | null>(null);
+  if (semanticReady !== null && previousSemantic?.matches !== semanticReady.matches) {
+    setPreviousSemantic(semanticReady);
+  }
+  const visibleSemantic = canSearchSemantic
+    ? visibleThreadSearch(normalizedQuery, semanticReady, previousSemantic)
+    : { query: "", matches: EMPTY_THREAD_SEARCH_MATCHES };
+  const shownSemanticKey =
+    visibleSemantic.query === "" ? null : semanticSearchKeyOf(visibleSemantic.query);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mounts older settled rows for semantic matches into the shared thread registry
+  useEffect(() => {
+    if (shownSemanticKey === null) return;
+    const environments = (JSON.parse(shownSemanticKey) as [ReadonlyArray<EnvironmentId>])[0];
+    const releases = environments.map((environmentId) =>
+      threadFamilies.mountRows(
+        appAtomRegistry,
+        environmentId,
+        `semantic-search:${shownSemanticKey}`,
+        semanticThreadSearch.rows(shownSemanticKey, environmentId),
+      ),
+    );
+    return () => {
+      for (const release of releases) release();
+    };
+  }, [shownSemanticKey]);
+
   return {
     matches: visible.matches,
     query: visible.query,
     isPending,
     failed,
+    semanticMatches: visibleSemantic.matches,
+    semanticQuery: visibleSemantic.query,
+    isSemanticPending,
   };
 }
 

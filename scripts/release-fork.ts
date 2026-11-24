@@ -19,6 +19,10 @@
 //                                (default: T3 Code)
 //   T3CODE_FORK_REPOSITORY       owner/repo to publish to (default: the `fork`
 //                                remote, else `origin`)
+//   T3CODE_FORK_KEEP_LOCAL_RELEASES
+//                                number of local release-fork/<version> directories
+//                                to keep after build/publish (default: 2 after build,
+//                                1 after publish; set to "all" to disable pruning)
 //
 // Signing uses a "Developer ID Application" certificate from the login
 // keychain, or CSC_LINK + CSC_KEY_PASSWORD. Notarization needs either
@@ -50,6 +54,8 @@ const DEFAULT_FORK_PRODUCT_NAME = "T3 Code";
 // Each base version leaves room for this many fork releases before the next
 // official version, so fork versions always sort after the one they build on.
 const RELEASES_PER_BASE_VERSION = 1000;
+const DEFAULT_LOCAL_RELEASES_AFTER_BUILD = 2;
+const DEFAULT_LOCAL_RELEASES_AFTER_PUBLISH = 1;
 
 const ForkRelease = Schema.Struct({
   version: Schema.String,
@@ -238,6 +244,62 @@ export function nextForkReleaseIndex(baseVersion: string, tags: ReadonlyArray<st
   return latest + 1;
 }
 
+function parseSemverTuple(name: string): readonly [number, number, number] | undefined {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(name);
+  if (!match) return undefined;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareSemverDesc(a: string, b: string): number {
+  const ta = parseSemverTuple(a)!;
+  const tb = parseSemverTuple(b)!;
+  return tb[0] - ta[0] || tb[1] - ta[1] || tb[2] - ta[2];
+}
+
+export function parseKeepLocalReleases(
+  raw: string | undefined,
+  fallback: number,
+): number | undefined {
+  const trimmed = raw?.trim().toLowerCase();
+  if (!trimmed) return fallback;
+  if (trimmed === "all" || trimmed === "infinity") return undefined;
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(
+      `Invalid T3CODE_FORK_KEEP_LOCAL_RELEASES value "${raw}"; use a positive integer or "all".`,
+    );
+  }
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(
+      `Invalid T3CODE_FORK_KEEP_LOCAL_RELEASES value "${raw}"; use a positive integer or "all".`,
+    );
+  }
+  return parsed;
+}
+
+export function pruneLocalForkReleases(
+  releaseRoot: string,
+  options: {
+    readonly keepCount?: number | undefined;
+    readonly keepVersions?: ReadonlyArray<string>;
+  },
+): ReadonlyArray<string> {
+  if (options.keepCount === undefined || !NodeFS.existsSync(releaseRoot)) return [];
+  const versions = NodeFS.readdirSync(releaseRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && parseSemverTuple(entry.name) !== undefined)
+    .map((entry) => entry.name)
+    .sort(compareSemverDesc);
+  const keep = new Set<string>(versions.slice(0, Math.max(1, options.keepCount)));
+  for (const version of options.keepVersions ?? []) keep.add(version);
+  const removed: Array<string> = [];
+  for (const version of versions) {
+    if (keep.has(version)) continue;
+    NodeFS.rmSync(NodePath.join(releaseRoot, version), { recursive: true, force: true });
+    removed.push(version);
+  }
+  return removed;
+}
+
 async function main() {
   const { positionals, values } = NodeUtil.parseArgs({
     allowPositionals: true,
@@ -270,12 +332,23 @@ async function main() {
     fail("Use --help for the build, install, publish, and rollback commands.");
   }
   const gh = (args: ReadonlyArray<string>) => output("gh", args);
+  const env = loadRepoEnv();
   if (action === "publish") {
-    await publishForkRelease(NodePath.join(root, "release-fork", versionArg!), gh);
+    const releaseRoot = NodePath.join(root, "release-fork");
+    await publishForkRelease(NodePath.join(releaseRoot, versionArg!), gh);
     console.log(`release:fork: published ${versionArg}`);
+    const pruned = pruneLocalForkReleases(releaseRoot, {
+      keepCount: parseKeepLocalReleases(
+        env.T3CODE_FORK_KEEP_LOCAL_RELEASES,
+        DEFAULT_LOCAL_RELEASES_AFTER_PUBLISH,
+      ),
+      keepVersions: [versionArg!],
+    });
+    if (pruned.length > 0) {
+      console.log(`release:fork: pruned old local builds: ${pruned.join(", ")}`);
+    }
     return;
   }
-  const env = loadRepoEnv();
   const officialProductName = (
     JSON.parse(NodeFS.readFileSync(NodePath.join(root, "apps/desktop/package.json"), "utf8")) as {
       productName: string;
@@ -535,6 +608,16 @@ async function main() {
       archive: NodePath.join(outputDir, forkReleaseMacArchive(release)),
       version,
     });
+  }
+  const pruned = pruneLocalForkReleases(releaseRoot, {
+    keepCount: parseKeepLocalReleases(
+      env.T3CODE_FORK_KEEP_LOCAL_RELEASES,
+      DEFAULT_LOCAL_RELEASES_AFTER_BUILD,
+    ),
+    keepVersions: [version],
+  });
+  if (pruned.length > 0) {
+    console.log(`release:fork: pruned old local builds: ${pruned.join(", ")}`);
   }
 }
 

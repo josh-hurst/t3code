@@ -12,9 +12,11 @@ import { expect, it } from "vite-plus/test";
 
 import {
   claimThreadOpen,
-  nextShownOrder,
+  createSemanticThreadSearchResultsAtomFamily,
   createThreadSearchResultsAtomFamily,
+  hasSemanticSearchQuery,
   makeThreadSearchKey,
+  nextShownOrder,
   threadSearchMatchKey,
   threadSearchSubject,
   visibleThreadSearch,
@@ -254,4 +256,104 @@ it("sends one open per thread every ten minutes by this client's clock", () => {
   expect(claimThreadOpen(envA, "thread-open", 9 * minute)).toBe(false);
   expect(claimThreadOpen(envB, "thread-open", 9 * minute)).toBe(true);
   expect(claimThreadOpen(envA, "thread-open", 10 * minute)).toBe(true);
+});
+
+it("gates semantic search on three words, merges by score, and degrades quietly on failure", () => {
+  expect(hasSemanticSearchQuery("button layout")).toBe(false);
+  expect(hasSemanticSearchQuery("button layout telemetry")).toBe(true);
+
+  const inputs: Array<readonly [EnvironmentId, OrchestrationV2SearchThreadsInput]> = [];
+  const row = { id: ThreadId.make("thread-old") } as OrchestrationV2ThreadShell;
+  const search = createSemanticThreadSearchResultsAtomFamily<Error>({
+    getSearchAtom: (environmentId, input) => {
+      inputs.push([environmentId, input]);
+      if (environmentId === envA) {
+        return Atom.make(
+          AsyncResult.success({
+            matches: [
+              {
+                threadId: ThreadId.make("thread-old"),
+                projectId: ProjectId.make("project-a"),
+                source: "user" as const,
+                snippet: "telemetry for button presses",
+                messageCreatedAt: "2026-09-01T00:00:00.000Z",
+                quality: 0.78,
+              },
+            ],
+            snapshotSequence: 12,
+            threads: [row],
+          }),
+        );
+      }
+      return Atom.make(
+        AsyncResult.failure<OrchestrationSearchThreadsResult, Error>(
+          Cause.fail(new Error("semantic unsupported")),
+        ),
+      );
+    },
+    olderSettledBefore: (environmentId) =>
+      Atom.make(environmentId === envA ? "2026-10-01T00:00:00.000Z" : null),
+    labelPrefix: "test:semantic-search",
+  });
+  const registry = AtomRegistry.make();
+
+  try {
+    // Under three words: never invokes semantic RPC.
+    expect(registry.get(search.results(makeThreadSearchKey([envA], "two words")))).toEqual({
+      matches: [],
+      isLoading: false,
+      failed: false,
+      rows: [],
+    });
+    expect(inputs).toEqual([]);
+
+    const key = makeThreadSearchKey([envA, envB], "using ml for button layouts");
+    const state = registry.get(search.results(key));
+    expect(state.isLoading).toBe(false);
+    expect(state.matches).toEqual([
+      {
+        environmentId: envA,
+        threadId: ThreadId.make("thread-old"),
+        projectId: ProjectId.make("project-a"),
+        source: "user",
+        snippet: "telemetry for button presses",
+        messageCreatedAt: "2026-09-01T00:00:00.000Z",
+        quality: 0.78,
+      },
+    ]);
+    expect(state.rows).toEqual([
+      { environmentId: envA, read: { snapshotSequence: 12, threads: [row] } },
+    ]);
+    expect(inputs).toEqual([
+      [
+        envA,
+        {
+          query: "using ml for button layouts",
+          mode: "semantic",
+          limit: 12,
+          olderSettledBefore: "2026-10-01T00:00:00.000Z",
+        },
+      ],
+      [
+        envB,
+        {
+          query: "using ml for button layouts",
+          mode: "semantic",
+          limit: 12,
+        },
+      ],
+    ]);
+
+    // When every environment fails, semantic search degrades quietly to empty without failing.
+    expect(
+      registry.get(search.results(makeThreadSearchKey([envB], "using ml for button layouts"))),
+    ).toEqual({
+      matches: [],
+      isLoading: false,
+      failed: false,
+      rows: [],
+    });
+  } finally {
+    registry.dispose();
+  }
 });

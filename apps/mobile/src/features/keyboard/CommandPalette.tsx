@@ -298,6 +298,13 @@ export function CommandPalette(props: {
       .filter((match) => match.source === "user" || match.source === "assistant")
       .map((match) => [scopedThreadKey(match.environmentId, match.threadId), match]),
   );
+  const semanticMatchByKey = new Map(
+    (search.semanticMatches ?? []).map((match) => [
+      scopedThreadKey(match.environmentId, match.threadId),
+      match,
+    ]),
+  );
+  const semanticMatchKeys = [...semanticMatchByKey.keys()].slice(0, 8);
   const items = useMemo(() => {
     const actions: CommandPaletteItem[] = [
       {
@@ -540,13 +547,19 @@ export function CommandPalette(props: {
     [messageOrder.keys, messageOrder.shown],
   );
   const results = useMemo(() => {
-    const ranked = filterCommandPaletteItems(items, query, messageMatchKeys, now);
+    const ranked = filterCommandPaletteItems(
+      items,
+      query,
+      messageMatchKeys,
+      now,
+      semanticMatchKeys,
+    );
     // Recent threads leave out the open one, which would always lead them.
     const activeKey = activeThread
       ? scopedThreadKey(activeThread.environmentId, activeThread.id)
       : null;
     return query.trim() ? ranked : ranked.filter((item) => item.key !== activeKey);
-  }, [activeThread, items, messageMatchKeys, now, query]);
+  }, [activeThread, items, messageMatchKeys, now, query, semanticMatchKeys]);
   const runResult = (item: CommandPaletteResult) => {
     const thread =
       item.kind === "thread" && query.trim() && !query.startsWith(">")
@@ -554,8 +567,12 @@ export function CommandPalette(props: {
             (candidate) => scopedThreadKey(candidate.environmentId, candidate.id) === item.key,
           )
         : undefined;
-    // A message result opens the thread at that message.
-    const messageId = item.fromMessages ? contentMatchByKey.get(item.key)?.messageId : undefined;
+    // A message or semantic result opens the thread at that message.
+    const messageId = item.fromMessages
+      ? contentMatchByKey.get(item.key)?.messageId
+      : item.fromSemantic
+        ? semanticMatchByKey.get(item.key)?.messageId
+        : undefined;
     if (messageId) requestThreadMessageJump(item.key, messageId);
     // A pick sends its open with the query, always, so the server records it;
     // the thread screen then skips its own open. The open thread is no pick.
@@ -574,6 +591,7 @@ export function CommandPalette(props: {
     item.run();
   };
   const firstMessageIndex = results.findIndex((item) => item.fromMessages);
+  const firstSemanticIndex = results.findIndex((item) => item.fromSemantic);
   const selectedIndex = Math.max(
     0,
     results.findIndex((item) => item.key === selection),
@@ -719,7 +737,7 @@ export function CommandPalette(props: {
                 contentContainerStyle={{ paddingBottom: 8 }}
                 ListEmptyComponent={
                   <Text className="p-5 text-center text-foreground-muted">
-                    {search.isPending
+                    {search.isPending || search.isSemanticPending
                       ? gt("Searching…")
                       : search.failed
                         ? gt("Couldn't search messages")
@@ -744,12 +762,26 @@ export function CommandPalette(props: {
                         <T>In messages</T>
                       </Text>
                     ) : null}
+                    {index === firstSemanticIndex ? (
+                      <Text
+                        className="px-5 pt-2 text-xs text-foreground-muted"
+                        style={{ height: SECTION_LABEL_HEIGHT }}
+                      >
+                        <T>By meaning</T>
+                      </Text>
+                    ) : null}
                     <PaletteRow
                       item={item}
                       index={index}
                       selected={item.key === selectedKey}
-                      searchMatch={item.fromMessages ? contentMatchByKey.get(item.key) : undefined}
-                      searchQuery={search.query}
+                      searchMatch={
+                        item.fromMessages
+                          ? contentMatchByKey.get(item.key)
+                          : item.fromSemantic
+                            ? semanticMatchByKey.get(item.key)
+                            : undefined
+                      }
+                      searchQuery={item.fromSemantic ? search.semanticQuery : search.query}
                       onSelect={() => close(() => runResult(item))}
                     />
                   </>

@@ -1834,28 +1834,24 @@ describe("Working section beta", () => {
     expect(off.workingCount).toBe(0);
   });
 
-  it("keeps an inactive row in Working during the shared grace and returns it on expiry", () => {
+  it("moves an inactive row out of Working immediately and records its return time", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(NOW));
     const tracker = createInboxReturnTracker();
-    const working = makeThread({ id: ThreadId.make("grace"), title: "grace", runtime: running });
+    const working = makeThread({ id: ThreadId.make("done"), title: "done", runtime: running });
     const inactive = { ...working, runtime: null };
-    const render = () =>
-      build({
-        threads: [inactive],
-        workingShelfExpanded: true,
-        isWorking: tracker.isWorking,
-        inboxReturnAt: tracker.returnedAt,
-      });
     try {
       tracker.observe([working]);
-      tracker.observe([inactive]);
-      expect(render().workingCount).toBe(1);
-      expect(render().items[0]?.thread.runtime).toBeNull();
-      vi.advanceTimersByTime(2_000);
-      expect(render().workingCount).toBe(0);
-      expect(ids(render())).toEqual(["grace"]);
-      expect(tracker.returnedAt(inactive)).toBe(Date.parse(NOW) + 2_000);
+      const inboxReturnAt = tracker.observe([inactive]);
+      const layout = build({
+        threads: [inactive],
+        workingShelfExpanded: true,
+        inboxReturnAt,
+      });
+      expect(layout.workingCount).toBe(0);
+      expect(ids(layout)).toEqual(["done"]);
+      expect(inboxReturnAt(inactive)).toBe(Date.parse(NOW));
+      expect(vi.getTimerCount()).toBe(0);
     } finally {
       tracker.observe(null);
       vi.useRealTimers();
@@ -2060,6 +2056,17 @@ describe("self-filing list", () => {
         settledOverride: "settled",
         settledAt: NOW,
       }),
+      ...[
+        ["settling-surest", 0.03],
+        ["settling-likelier", 0.12],
+      ].map(([id, returnChance]) => ({
+        ...touched(String(id), localIso(7)),
+        autoSettlePlan: {
+          at: Date.parse(localIso(7, 2)),
+          basisAt: Date.parse(localIso(7)),
+          returnChance: Number(returnChance),
+        },
+      })),
     ];
     const folders = [{ key: "folder", title: "Folder", projectRefs: [] }];
     const { layout, items } = build(threads, { projectFolders: folders });
@@ -2074,11 +2081,20 @@ describe("self-filing list", () => {
       "finished-owing",
       "[v2-working-shelf]",
       "working",
+      // Unlikely to be written in again, the surest last.
+      "[Settling]",
+      "settling-likelier",
+      "settling-surest",
       "[Later]",
       "snoozed",
       "[History]",
       "settled",
     ]);
+    expect(
+      items.find((item) => item.key === "v2-thread:environment-1:settling-surest"),
+    ).toMatchObject({
+      item: { variant: "slim", cardLine: null, compact: true },
+    });
     expect(layout.folders).toEqual([]);
     expect(items.find((item) => item.key === "v2-thread:environment-1:trail-newer")).toMatchObject({
       // A publish is counted on the project, so the row is its outcome alone.

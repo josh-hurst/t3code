@@ -983,6 +983,7 @@ function OpenCommandPaletteDialog(props: {
   const {
     threadItems: allThreadItems,
     threadMessageItems,
+    threadSemanticItems,
     now: searchNow,
     isSearchPending: isThreadSearchPending,
     isSearchFailed: isThreadSearchFailed,
@@ -2142,6 +2143,7 @@ function OpenCommandPaletteDialog(props: {
             )
           : allThreadItems,
       threadMessageItems: isLinkedThreadSearch ? [] : threadMessageItems,
+      threadSemanticItems: isLinkedThreadSearch ? [] : threadSemanticItems,
       now: searchNow,
     },
     messages,

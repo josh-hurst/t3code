@@ -106,7 +106,12 @@ export function tideRowMeta(props: {
       ) : null}
       {props.pullRequest}
       {props.branch !== null ? (
-        <span className="ml-auto flex min-w-0 items-center gap-1">
+        <span
+          className={cn(
+            "flex min-w-0 items-center gap-1",
+            (props.name !== null || props.pullRequest) && "ml-auto",
+          )}
+        >
           <GitBranchIcon aria-hidden className="size-3 shrink-0" />
           <span className="flex min-w-0">
             <MiddleTruncate value={props.branch} showTitle={false} />

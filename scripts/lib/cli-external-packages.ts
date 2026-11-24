@@ -6,6 +6,8 @@ const CLI_RUNTIME_EXTERNAL_PREFIXES = [
   // Playwright reads package.json and browsers.json beside its runtime modules.
   "playwright-core",
   "node-pty",
+  "onnxruntime-node",
+  "onnxruntime-common",
   "ffi-rs",
   "@yuuang/",
   "@ff-labs/",
@@ -34,10 +36,37 @@ const CURSOR_RUNTIME_DEPENDENCIES = [
   "@fastify/busboy",
 ] as const;
 
+// onnxruntime-node declares these for its install script; the closure test keeps them external.
+const ONNXRUNTIME_NODE_DEPENDENCIES = [
+  "adm-zip",
+  "boolean",
+  "define-data-property",
+  "define-properties",
+  "detect-node",
+  "es-define-property",
+  "es-errors",
+  "es6-error",
+  "escape-string-regexp",
+  "global-agent",
+  "globalthis",
+  "gopd",
+  "has-property-descriptors",
+  "json-stringify-safe",
+  "matcher",
+  "object-keys",
+  "roarr",
+  "semver",
+  "semver-compare",
+  "serialize-error",
+  "sprintf-js",
+  "type-fest",
+] as const;
+
 export function isRuntimeExternalCliDependency(id: string): boolean {
   return (
     CLI_RUNTIME_EXTERNAL_PREFIXES.some((prefix) => id.startsWith(prefix)) ||
-    CURSOR_RUNTIME_DEPENDENCIES.some((name) => id === name || id.startsWith(`${name}/`))
+    CURSOR_RUNTIME_DEPENDENCIES.some((name) => id === name || id.startsWith(`${name}/`)) ||
+    ONNXRUNTIME_NODE_DEPENDENCIES.some((name) => id === name || id.startsWith(`${name}/`))
   );
 }
 

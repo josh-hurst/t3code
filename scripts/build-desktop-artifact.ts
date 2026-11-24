@@ -1014,22 +1014,43 @@ export const DESKTOP_FILE_EXCLUSIONS = [
 export const MAC_FILE_EXCLUSIONS = [
   "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
   "!**/node_modules/node-pty/third_party/conpty/**/*",
+  "!**/node_modules/onnxruntime-node/bin/napi-v6/win32/**/*",
 ] as const;
 // Linux builds node-pty from source; its prebuilds target other platforms.
 export const LINUX_FILE_EXCLUSIONS = [
   ...MAC_FILE_EXCLUSIONS,
   "!**/node_modules/node-pty/prebuilds/darwin-*/**/*",
+  "!**/node_modules/onnxruntime-node/bin/napi-v6/darwin/**/*",
 ] as const;
+
+export function resolveLinuxFileExclusions(arch?: typeof BuildArch.Type) {
+  if (arch === undefined || arch === "universal") {
+    return [...LINUX_FILE_EXCLUSIONS];
+  }
+  const unusedArch = arch === "arm64" ? "x64" : "arm64";
+  return [
+    ...LINUX_FILE_EXCLUSIONS,
+    `!**/node_modules/onnxruntime-node/bin/napi-v6/linux/${unusedArch}/**/*`,
+  ];
+}
 
 // Native packages (node-pty, objc-js) ship prebuilds for both Darwin architectures; only universal
 // apps need both. macOS 27 warns that an arm64 app holding x64-only code won't open on macOS 28.
 export function resolveMacFileExclusions(arch?: typeof BuildArch.Type) {
+  const macExclusions = [
+    ...MAC_FILE_EXCLUSIONS,
+    "!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**/*",
+  ];
   if (arch === undefined || arch === "universal") {
-    return [...MAC_FILE_EXCLUSIONS];
+    return macExclusions;
   }
 
   const unusedArch = arch === "arm64" ? "x64" : "arm64";
-  return [...MAC_FILE_EXCLUSIONS, `!**/node_modules/**/prebuilds/darwin-${unusedArch}/**/*`];
+  return [
+    ...macExclusions,
+    `!**/node_modules/**/prebuilds/darwin-${unusedArch}/**/*`,
+    `!**/node_modules/onnxruntime-node/bin/napi-v6/darwin/${unusedArch}/**/*`,
+  ];
 }
 // Large ASAR sidecars avoid NSIS extracting thousands of loose files during installs and updates.
 export const WINDOWS_SERVER_ASAR_RESOURCE = "server.asar";
@@ -1058,6 +1079,7 @@ export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type)
   const unusedArch = arch === "arm64" ? "x64" : "arm64";
   const unusedPrebuild = `**/node_modules/node-pty/prebuilds/win32-${unusedArch}`;
   const unusedConpty = `**/node_modules/node-pty/third_party/conpty/*/win10-${unusedArch}`;
+  const unusedOrtWin = `**/node_modules/onnxruntime-node/bin/napi-v6/win32/${unusedArch}`;
 
   return [
     ...WINDOWS_SERVER_ASAR_IGNORE_GLOBS,
@@ -1065,6 +1087,12 @@ export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type)
     `${unusedPrebuild}/**`,
     unusedConpty,
     `${unusedConpty}/**`,
+    "**/node_modules/onnxruntime-node/bin/napi-v6/darwin",
+    "**/node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+    "**/node_modules/onnxruntime-node/bin/napi-v6/linux",
+    "**/node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+    unusedOrtWin,
+    `${unusedOrtWin}/**`,
   ];
 }
 
@@ -2836,7 +2864,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ...(platform === "mac"
         ? resolveMacFileExclusions(arch)
         : platform === "linux"
-          ? LINUX_FILE_EXCLUSIONS
+          ? resolveLinuxFileExclusions(arch)
           : []),
     ],
     directories: {
@@ -2845,7 +2873,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // Disable smart unpack so native packages' JS/metadata stay archived and avoid slowing NSIS with loose files.
     ...(platform === "win"
       ? { asar: { smartUnpack: false }, asarUnpack: [WINDOWS_NATIVE_ASAR_UNPACK_GLOB] }
-      : { asarUnpack: ["**/node_modules/@transcribe-cpp/**/*.{dylib,so,so.*}"] }),
+      : {
+          asarUnpack: [
+            "**/node_modules/@transcribe-cpp/**/*.{dylib,so,so.*}",
+            "**/node_modules/onnxruntime-node/bin/**/*.{node,dylib,so,so.*}",
+          ],
+        }),
     extraResources: [
       ...DESKTOP_EXTRA_RESOURCES,
       ...(platform === "linux" ? LINUX_CAPTURE_EXTRA_RESOURCES : []),

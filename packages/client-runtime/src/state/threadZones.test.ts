@@ -18,6 +18,7 @@ import {
   createOpenThreadPlacementHold,
   sortLaterThreads,
   sortNeedsYouThreads,
+  sortSettlingThreads,
   sortTrailThreads,
   splitTrail,
   threadAutoSettleAt,
@@ -31,6 +32,7 @@ import {
   threadLaterStatusLabel,
   threadRowLineText,
   threadRowProjectName,
+  threadSettlingChance,
   threadStatusKind,
   threadStatusWord,
   threadWorkingLine,
@@ -431,6 +433,23 @@ describe("threadLaterLead", () => {
     ]) {
       expect(threadAutoSettleAt(quiet(stale))).toBeNull();
     }
+    // Listed as settling only with a chance on a plan that still stands, the surest thread last.
+    const plan = { at: Date.parse(T3), basisAt: Date.parse(T1) };
+    const listed = (id: string, returnChance: number, basisAt = plan.basisAt) => ({
+      ...quiet({ autoSettlePlan: { ...plan, basisAt, returnChance } }),
+      id: ThreadId.make(id),
+    });
+    expect(threadSettlingChance(quiet())).toBeNull();
+    expect(threadSettlingChance(listed("a", 0.12))).toBe(0.12);
+    expect(threadSettlingChance({ ...listed("a", 0.12), latestUserMessageAt: T2 })).toBeNull();
+    expect(
+      sortSettlingThreads([
+        listed("sure", 0.02),
+        listed("older", 0.1, Date.parse(T0)),
+        listed("unsure", 0.14),
+        listed("newer", 0.1),
+      ]).map((thread) => thread.id),
+    ).toEqual(["unsure", "newer", "older", "sure"]);
     expect(threadAutoSettleLabel(Date.parse(T3), { now: T1 })).toBe("Settles in 2h");
     expect(threadAutoSettleLabel(Date.parse(T1), { now: T2 })).toBe(
       "Settles soon after your next message",

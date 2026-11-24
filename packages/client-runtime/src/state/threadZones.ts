@@ -385,6 +385,27 @@ export function threadAutoSettleAt(thread: AutoSettleInput): number | null {
   return moved ? null : plan.at;
 }
 
+/**
+ * The chance, 0 to 1, that the owner writes in the thread again, once the server lists it as
+ * settling. Null otherwise, and whenever the plan no longer stands.
+ */
+export function threadSettlingChance(thread: AutoSettleInput): number | null {
+  return threadAutoSettleAt(thread) === null ? null : (thread.autoSettlePlan?.returnChance ?? null);
+}
+
+/** Settling threads, the likeliest to be written in again first, so the surest sit last. */
+export function sortSettlingThreads<T extends SortKeyInput & AutoSettleInput>(
+  threads: readonly T[],
+): T[] {
+  return [...threads].sort(
+    (left, right) =>
+      (right.autoSettlePlan?.returnChance ?? 0) - (left.autoSettlePlan?.returnChance ?? 0) ||
+      (right.autoSettlePlan?.basisAt ?? 0) - (left.autoSettlePlan?.basisAt ?? 0) ||
+      left.id.localeCompare(right.id) ||
+      left.environmentId.localeCompare(right.environmentId),
+  );
+}
+
 /** "Settles in 3h". A time already past is held until the owner is back, which the server decides. */
 export function threadAutoSettleLabel(atMs: number, options: { readonly now: string }): string {
   const when = snoozeWakeLabel(DateTime.formatIso(DateTime.makeUnsafe(atMs)), options);

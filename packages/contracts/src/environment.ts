@@ -226,6 +226,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   agentFeedback: Schema.optionalKey(Schema.Boolean),
   /** Answers `issues.linkedThreads`, the threads an issue is linked to. */
   issueLinkedThreads: Schema.optionalKey(Schema.Boolean),
+  /** Answers `mode: "semantic"` on `orchestration.searchThreads` and honors `semanticSearchEnabled`. */
+  semanticThreadSearch: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

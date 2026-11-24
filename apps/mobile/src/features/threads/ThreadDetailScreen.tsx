@@ -62,6 +62,7 @@ import {
   appendCodexArtifactTemplateUsePrompt,
   type CodexArtifactTemplate,
 } from "@t3tools/shared/codexArtifactTemplates";
+import { appendHtmlRenderComposeText } from "@t3tools/shared/htmlRender";
 import {
   declinePendingApprovals,
   sendApprovalFeedback,
@@ -1483,6 +1484,17 @@ function ThreadDetailBody(
     });
   };
 
+  const handleComposeFromHtmlRender = (text: string) => {
+    if (!canCiteAssistantText || props.composerDraftKey === null) return;
+    const draftMessage = getComposerDraftSnapshot(props.composerDraftKey).text;
+    const nextDraft = appendHtmlRenderComposeText(draftMessage, text);
+    props.onChangeDraftMessage(nextDraft);
+    requestAnimationFrame(() => {
+      composerEditorRef.current?.focus();
+      composerEditorRef.current?.setSelection({ start: nextDraft.length, end: nextDraft.length });
+    });
+  };
+
   const handleScrollToEnd = () => {
     void Haptics.selectionAsync();
     void scrollMessageToEnd({ animated: !reduceMotion, closeKeyboard: false }).catch(() => {
@@ -1615,6 +1627,9 @@ function ThreadDetailBody(
                   onIsAtEndChange={setIsAtEnd}
                   skills={selectedProviderSkills}
                   onCiteAssistantText={canCiteAssistantText ? handleCiteAssistantText : undefined}
+                  onComposeFromHtmlRender={
+                    canCiteAssistantText ? handleComposeFromHtmlRender : undefined
+                  }
                   onUseArtifactTemplate={handleUseArtifactTemplate}
                 />
               </ColumnWidth>

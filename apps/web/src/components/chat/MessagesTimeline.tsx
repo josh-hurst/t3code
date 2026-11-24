@@ -303,6 +303,7 @@ interface MessagesTimelineProps {
   availableRevertTurnCounts?: ReadonlySet<number> | undefined;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
+  onComposeFromHtmlRender?: ((text: string) => void) | undefined;
   onSendAppMessage?: (text: string) => Promise<void>;
   onRunShellCommand?: (command: string) => void;
   isRevertingCheckpoint: boolean;
@@ -410,6 +411,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   availableRevertTurnCounts,
   onRevertToTurnCount,
   onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
+  onComposeFromHtmlRender,
   onSendAppMessage,
   onRunShellCommand,
   isRevertingCheckpoint,
@@ -1199,6 +1201,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onImageExpand,
     onFileOpen,
     onUseArtifactTemplate,
+    onComposeFromHtmlRender,
     onSendAppMessage,
     onAppFullscreenChange,
     onFileDownload,

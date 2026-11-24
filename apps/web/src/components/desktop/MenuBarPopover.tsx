@@ -57,12 +57,20 @@ import {
 import {
   arrangeTideActive,
   resolveTideRowLead,
+  splitTideSettling,
   tideRenderedOrder,
 } from "../sidebar/tideSidebar.logic";
 
 const MAX_HISTORY_ROWS = 15;
 
-type PopoverSection = "pinned" | "needsYou" | "trail" | "working" | "snoozed" | "settled";
+type PopoverSection =
+  | "pinned"
+  | "needsYou"
+  | "trail"
+  | "working"
+  | "settling"
+  | "snoozed"
+  | "settled";
 
 interface PopoverThreadRow {
   readonly key: string;
@@ -149,9 +157,13 @@ export function MenuBarPopover({ onClose }: { readonly onClose: () => void }) {
   const workingThreads = nest(sortWorkingThreadsBySend(working));
   const snoozedThreads = nest(sortLaterThreads(snoozed));
   const settledThreads = nest(sortSettledThreads(settled).slice(0, MAX_HISTORY_ROWS));
+  const isNeedsYou = (thread: EnvironmentThreadShell) =>
+    sidebarThreadNeedsYou(thread, { includeCompleted: false });
+  const split = splitTideSettling(active, isNeedsYou);
+  const settlingThreads = nest(split.settling);
   const tideActive = arrangeTideActive({
-    active,
-    isNeedsYou: (thread) => sidebarThreadNeedsYou(thread, { includeCompleted: false }),
+    active: split.active,
+    isNeedsYou,
     nowMs,
     trailExpanded: true,
     routeKey,
@@ -192,6 +204,12 @@ export function MenuBarPopover({ onClose }: { readonly onClose: () => void }) {
       key: threadKeyOf(thread),
       thread,
       section: "working" as const,
+      groupLabel: null,
+    })),
+    settling: settlingThreads.map((thread) => ({
+      key: threadKeyOf(thread),
+      thread,
+      section: "settling" as const,
       groupLabel: null,
     })),
     later: snoozedThreads.map((thread) => ({
@@ -449,6 +467,11 @@ export function MenuBarPopover({ onClose }: { readonly onClose: () => void }) {
       id: "working",
       label: gt("Working", { $context: "sidebar section" }),
       rows: orderedRows.filter((row) => row.section === "working"),
+    },
+    {
+      id: "settling",
+      label: gt("Settling", { $context: "sidebar section" }),
+      rows: orderedRows.filter((row) => row.section === "settling"),
     },
     {
       id: "snoozed",

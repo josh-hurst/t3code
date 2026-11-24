@@ -1627,6 +1627,8 @@ export const ServerSettings = Schema.Struct({
   threadReplySummariesEnabled: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  /** Embeds thread summaries and messages locally so thread search can match by meaning. */
+  semanticSearchEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Unattended re-checks an agent may chain on one thread before it must report. 0 turns them off. */
   laterRecheckLimit: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 10 })).pipe(
     Schema.withDecodingDefault(Effect.succeed(3)),
@@ -2041,6 +2043,7 @@ export const ServerSettingsPatch = Schema.Struct({
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
   threadReplySummariesEnabled: Schema.optionalKey(Schema.Boolean),
+  semanticSearchEnabled: Schema.optionalKey(Schema.Boolean),
   laterRecheckLimit: Schema.optionalKey(
     Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 10 })),
   ),

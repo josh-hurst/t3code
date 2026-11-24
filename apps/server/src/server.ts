@@ -224,11 +224,15 @@ import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsag
 import * as UsageService from "./usage/UsageService.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
+import * as EventSink from "./orchestration-v2/EventSink.ts";
 import * as ThreadViewers from "./orchestration-v2/ThreadViewers.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as ThreadEntryStore from "./orchestration-v2/ThreadEntryStore.ts";
+import * as SemanticEmbedder from "./semanticSearch/SemanticEmbedder.ts";
+import * as SemanticSearchService from "./semanticSearch/SemanticSearchService.ts";
 import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementService.ts";
+import * as ThreadSettleOutlook from "./orchestration-v2/ThreadSettleOutlook.ts";
 import * as IdleCompactionService from "./orchestration-v2/IdleCompactionService.ts";
 import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestService.ts";
 import * as ThreadIssueService from "./orchestration-v2/ThreadIssueService.ts";
@@ -659,7 +663,11 @@ const layerOrchestrationApplication = Layer.merge(
 
 const layerThreadSettlementWorker = Layer.effectDiscard(
   ThreadSettlementService.make.pipe(Effect.flatMap((service) => service.start())),
-).pipe(Layer.provide(layerPullRequestService), Layer.provide(ProjectionStoreV2.layer));
+).pipe(
+  Layer.provide(layerPullRequestService),
+  Layer.provide(ProjectionStoreV2.layer),
+  Layer.provide(ThreadSettleOutlook.layer),
+);
 
 const layerIdleCompactionWorker = Layer.effectDiscard(
   IdleCompactionService.make.pipe(Effect.flatMap((service) => service.start())),
@@ -759,13 +767,24 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ProviderInstallation.layer,
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const semanticSearch = yield* SemanticSearchService.SemanticSearchService;
+      yield* semanticSearch.start(yield* EventSink.EventSinkV2);
+    }),
+  ).pipe(Layer.provide(RuntimeLayer.layerEventSink)),
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
-  Layer.provideMerge(layerTaskFolders),
-  Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
   Layer.provideMerge(
-    Layer.mergeAll(ProjectStore.layer, ThreadSearch.layer, ThreadEntryStore.layer),
+    Layer.mergeAll(
+      layerTaskFolders,
+      ThreadSearch.layer.pipe(
+        Layer.provideMerge(SemanticSearchService.layer.pipe(Layer.provide(SemanticEmbedder.layer))),
+      ),
+    ),
   ),
+  Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
+  Layer.provideMerge(Layer.mergeAll(ProjectStore.layer, ThreadEntryStore.layer)),
   Layer.provideMerge(SecretCheck.layer),
   Layer.provideMerge(SecretResolver.layer),
   // Above the settings it writes when a theme is applied.

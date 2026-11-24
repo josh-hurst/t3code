@@ -2,6 +2,7 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { useNavigation } from "@react-navigation/native";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
+  HTML_RENDER_COMPOSE_METHOD,
   htmlRenderFileName,
   htmlRenderFrameHeight,
   htmlRenderThemeFragment,
@@ -21,6 +22,10 @@ import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { webViewDecelerationRate } from "../../lib/webViewDecelerationRate";
+import {
+  HTML_RENDER_OVERFLOW_MESSAGE_TYPE,
+  readHtmlRenderWebViewMessage,
+} from "./htmlRenderWebViewMessage";
 
 const ROW_BOTTOM_MARGIN = 8;
 const ACTION_ROW_HEIGHT = 32;
@@ -48,31 +53,12 @@ function postTheme(view: WebView<object> | null, theme: HtmlRenderTheme) {
   );
 }
 
-const OVERFLOW_MESSAGE_TYPE = "t3-html-render-overflow";
-
-const OVERFLOW_SCRIPT = `(function(){var last;function report(){var d=document.documentElement,b=document.body;var x=Math.max(d.scrollWidth,b?b.scrollWidth:0)>window.innerWidth+1,y=Math.max(d.scrollHeight,b?b.scrollHeight:0)>window.innerHeight+1,o=x+","+y;if(o===last)return;last=o;window.ReactNativeWebView.postMessage(JSON.stringify({type:${JSON.stringify(OVERFLOW_MESSAGE_TYPE)},x:x,y:y}));}report();if(window.ResizeObserver){var r=new ResizeObserver(report);r.observe(document.documentElement);if(document.body)r.observe(document.body);}window.addEventListener("resize",report);})();true;`;
+// Reports scroll overflow and relays top-level window.parent.postMessage compose notifications to React Native.
+const NESTED_SCRIPT = `(function(){var last;function report(){var d=document.documentElement,b=document.body;var x=Math.max(d.scrollWidth,b?b.scrollWidth:0)>window.innerWidth+1,y=Math.max(d.scrollHeight,b?b.scrollHeight:0)>window.innerHeight+1,o=x+","+y;if(o===last)return;last=o;window.ReactNativeWebView.postMessage(JSON.stringify({type:${JSON.stringify(HTML_RENDER_OVERFLOW_MESSAGE_TYPE)},x:x,y:y}));}report();if(window.ResizeObserver){var r=new ResizeObserver(report);r.observe(document.documentElement);if(document.body)r.observe(document.body);}window.addEventListener("resize",report);window.addEventListener("message",function(e){var d=e.data;if(e.source===window&&d&&d.jsonrpc==="2.0"&&d.method===${JSON.stringify(HTML_RENDER_COMPOSE_METHOD)}&&window.ReactNativeWebView){try{window.ReactNativeWebView.postMessage(JSON.stringify(d));}catch(x){}}});})();true;`;
 
 type Overflow = { readonly x: boolean; readonly y: boolean };
 
 const NO_OVERFLOW: Overflow = { x: false, y: false };
-
-function readOverflowMessage(data: string): Overflow | null {
-  try {
-    const message: unknown = JSON.parse(data);
-    return typeof message === "object" &&
-      message !== null &&
-      "type" in message &&
-      message.type === OVERFLOW_MESSAGE_TYPE &&
-      "x" in message &&
-      typeof message.x === "boolean" &&
-      "y" in message &&
-      typeof message.y === "boolean"
-      ? { x: message.x, y: message.y }
-      : null;
-  } catch {
-    return null;
-  }
-}
 
 const withoutFragment = (url: string) => url.split("#", 1)[0];
 
@@ -81,6 +67,7 @@ export function HtmlRenderWebView(props: {
   readonly title: string;
   readonly nested: boolean;
   readonly onLoadError?: () => void;
+  readonly onCompose?: ((text: string) => void) | undefined;
 }) {
   const theme = useHtmlRenderTheme();
   const [initialTheme] = useState(theme);
@@ -157,10 +144,12 @@ export function HtmlRenderWebView(props: {
         onRenderProcessGone={restart}
         {...(props.nested
           ? {
-              injectedJavaScript: OVERFLOW_SCRIPT,
+              injectedJavaScript: NESTED_SCRIPT,
               onMessage: (event: WebViewMessageEvent) => {
-                const next = readOverflowMessage(event.nativeEvent.data);
-                if (next !== null) setOverflow(next);
+                const message = readHtmlRenderWebViewMessage(event.nativeEvent.data);
+                if (message === null) return;
+                if (message.kind === "overflow") setOverflow({ x: message.x, y: message.y });
+                else props.onCompose?.(message.text);
               },
             }
           : {})}
@@ -180,6 +169,7 @@ export function ThreadHtmlRender(props: {
   readonly render: HtmlRenderReference;
   readonly frameWidth: number;
   readonly iconColor: ColorValue;
+  readonly onCompose?: ((text: string) => void) | undefined;
 }) {
   const gt = useGT();
   const navigation = useNavigation();
@@ -252,6 +242,7 @@ export function ThreadHtmlRender(props: {
             title={title}
             nested
             onLoadError={handleLoadError}
+            onCompose={props.onCompose}
           />
         ) : failed || asset._tag === "Failure" ? (
           <Pressable

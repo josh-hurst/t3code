@@ -5,6 +5,7 @@ import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import {
   sortNeedsYouThreads,
+  sortSettlingThreads,
   sortTrailThreads,
   splitTrail,
   threadCardQuestionLabel,
@@ -13,6 +14,7 @@ import {
   threadLaterLead,
   threadNeedsYou,
   threadRowLineText,
+  threadSettlingChance,
   threadStatusKind,
   threadStatusWord,
   threadWaitingSince,
@@ -58,6 +60,22 @@ function groupByProject(threads: readonly Thread[], projectOf: TideProjectOf) {
 }
 
 const NO_KEYS: ReadonlySet<string> = new Set();
+
+/**
+ * Takes the quiet threads the server expects not to be written in again out of the active
+ * bucket, the surest last. A thread that needs you stays where it is.
+ */
+export function splitTideSettling(
+  active: readonly Thread[],
+  isNeedsYou: (thread: Thread) => boolean,
+) {
+  const settling = sortSettlingThreads(
+    active.filter((thread) => threadSettlingChance(thread) !== null && !isNeedsYou(thread)),
+  );
+  if (settling.length === 0) return { active, settling };
+  const keys = new Set(settling.map(keyOf));
+  return { active: active.filter((thread) => !keys.has(keyOf(thread))), settling };
+}
 
 /**
  * Splits the active bucket into Needs you (longest wait first) and the Trail
@@ -152,6 +170,7 @@ export function tideRenderedOrder<T>(sections: {
   readonly pinned: readonly T[];
   readonly needsYou: readonly T[];
   readonly working: readonly T[];
+  readonly settling: readonly T[];
   readonly later: readonly T[];
   readonly trail: readonly T[];
   readonly history: readonly T[];
@@ -161,6 +180,7 @@ export function tideRenderedOrder<T>(sections: {
     ...sections.needsYou,
     ...sections.trail,
     ...sections.working,
+    ...sections.settling,
     ...sections.later,
     ...sections.history,
   ];

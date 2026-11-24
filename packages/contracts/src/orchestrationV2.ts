@@ -487,10 +487,12 @@ export type OrchestrationV2LimitRecoveryUpdate = typeof OrchestrationV2LimitReco
  * When inactivity will settle a thread if nothing changes, as the server last worked it out.
  * `basisAt` is the thread activity it was worked out from, so later activity voids the plan.
  * Times are epoch milliseconds. A time already past means the thread is held while the owner is away.
+ * `returnChance` (0 to 1) is set once the owner is unlikely to write again; clients list those apart.
  */
 export const OrchestrationV2AutoSettlePlan = Schema.Struct({
   at: Schema.Finite,
   basisAt: Schema.Finite,
+  returnChance: Schema.optional(Schema.Finite),
 });
 export type OrchestrationV2AutoSettlePlan = typeof OrchestrationV2AutoSettlePlan.Type;
 
@@ -4524,6 +4526,8 @@ export const OrchestrationV2SearchThreadsInput = Schema.Struct({
   environmentLabel: Schema.optionalKey(Schema.String),
   /** Skips message search, for pickers that match titles only. */
   titlesOnly: Schema.optionalKey(Schema.Boolean),
+  /** "semantic" runs embedding similarity search independently of exact search. */
+  mode: Schema.optionalKey(Schema.Literals(["exact", "semantic"])),
 });
 export type OrchestrationV2SearchThreadsInput = typeof OrchestrationV2SearchThreadsInput.Type;
 

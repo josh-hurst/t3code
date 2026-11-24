@@ -554,17 +554,24 @@ export const ThreadListV2SectionHeader = memo(function ThreadListV2SectionHeader
   readonly onClear?: () => void;
   readonly pane?: "screen" | "sidebar";
 }) {
+  const gt = useGT();
   const onClear = props.onClear;
+  const label =
+    props.title === "By meaning"
+      ? gt("By meaning")
+      : props.title === "Settling"
+        ? gt("Settling", { $context: "thread list section" })
+        : props.title;
   return (
     <ThreadListV2Section
-      label={props.title}
+      label={label}
       pane={props.pane}
       {...(onClear === undefined
         ? {}
         : {
             action: {
               label: "Clear",
-              accessibilityLabel: `Clear ${props.title}, settling its threads except the open one`,
+              accessibilityLabel: `Clear ${label}, settling its threads except the open one`,
               disabled: props.disabled,
               onPress: onClear,
             },
@@ -999,6 +1006,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly cardLine?: string | null;
   /** A slim row's project, on its own line above the title. */
   readonly projectLine?: string | null;
+  /** A Settling row: the project, title and time on one line, and nothing under them. */
+  readonly compact?: boolean;
   /** The self-filing list, where card rows share the slim rows' anatomy. */
   readonly selfFiling?: boolean;
   /** A Needs you row, whose card takes the primary tint as on web. */
@@ -2311,6 +2320,31 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         >
           <View className="flex-row items-center gap-2">
             {unreadDot}
+            {props.compact === true && projectLine ? (
+              <View className="max-w-[40%] shrink-0 flex-row items-center gap-1.5">
+                {props.project ? (
+                  <ProjectFavicon
+                    environmentId={thread.environmentId}
+                    faviconPath={props.project.faviconPath}
+                    projectIcon={props.project.projectIcon}
+                    size={Math.round(metadataTypography.fontSize * fontScale)}
+                    projectTitle={props.project.title}
+                    workspaceRoot={props.project.workspaceRoot}
+                  />
+                ) : null}
+                <Text
+                  className={cn(
+                    "shrink text-xs",
+                    selected
+                      ? selectedThreadRowColors.mutedForegroundClassName
+                      : rowAppearance.tertiaryForegroundClassName,
+                  )}
+                  numberOfLines={1}
+                >
+                  {projectLine}
+                </Text>
+              </View>
+            ) : null}
             <Text
               className={cn(
                 "min-w-0 flex-1 text-base",
@@ -2326,7 +2360,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </Text>
             {slimTrailing}
           </View>
-          {slimLine || slimLead ? (
+          {props.compact === true ? null : slimLine || slimLead ? (
             // Takes the provider line's place.
             <View className="mt-0.5">
               <ThreadRowStatusLine
@@ -2355,7 +2389,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               {providerNameLabel}
             </Text>
           ) : null}
-          {projectLine ? projectFooter : null}
+          {projectLine && props.compact !== true ? projectFooter : null}
           {props.searchMatch ? (
             <ThreadSearchMatchExcerpt
               sidebar={sidebarPane}

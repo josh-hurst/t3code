@@ -39,6 +39,7 @@ import {
 } from "react";
 import { isElectron } from "~/env";
 import { FileSurfaceLoading } from "./fileSurfaceChrome";
+import { readActivatedHtmlRenderCompose } from "./htmlRenderCompose.logic";
 import type { PdfViewState } from "./PdfViewer";
 
 import { useOpenLink } from "~/browser/useOpenLink";
@@ -305,6 +306,8 @@ export function HtmlRenderDocument(props: {
   readonly className?: string;
   readonly threadRef?: ScopedThreadRef | undefined;
   readonly onContentHeight?: (height: number) => void;
+  /** Appends a line from the page to the thread's composer draft; omitted where no composer exists. */
+  readonly onCompose?: ((text: string) => void) | undefined;
   /** Keeps the page's scrollIntoView calls from scrolling the host, for frames inline in the chat. */
   readonly containScroll?: boolean | undefined;
   /** Reports fullscreen changes so virtualized rows can stay mounted. */
@@ -403,9 +406,9 @@ export function HtmlRenderDocument(props: {
     onFullscreenChange?.(true);
     return () => onFullscreenChange?.(false);
   }, [expandedImage, onFullscreenChange]);
-  // Links, keys and images require frame focus and recent reader activity: a page can take
-  // focus by script, so this blocks opens on load, though not a page that waits for the
-  // reader's next input.
+  // Links, keys, images and compose require frame focus and recent reader activity: a page
+  // can take focus by script, so this blocks actions on load, though not a page that waits for
+  // the reader's next input.
   const onFrameMessage = useEffectEvent((frame: HTMLIFrameElement, event: MessageEvent) => {
     const height = readHtmlRenderContentHeight(event.data);
     if (height !== undefined) {
@@ -431,6 +434,15 @@ export function HtmlRenderDocument(props: {
     const imageRequest = readHtmlRenderImageRequest(event.data);
     if (imageRequest !== undefined) {
       setExpandedImage({ images: [...imageRequest.images], index: imageRequest.index });
+      return;
+    }
+    const composeText = readActivatedHtmlRenderCompose({
+      data: event.data,
+      frameFocused: document.activeElement === frame,
+      userActivationActive: navigator.userActivation?.isActive === true,
+    });
+    if (composeText !== undefined) {
+      props.onCompose?.(composeText);
     }
   });
   // Attach at commit because a fast page may post its initial height before passive effects run.

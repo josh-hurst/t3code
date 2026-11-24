@@ -27,6 +27,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 
+import * as SemanticSearchService from "../semanticSearch/SemanticSearchService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { rebuildMessageSearch } from "./messageSearchIndex.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -1641,4 +1642,92 @@ it.effect("searches on the reader worker while the writer is busy", () =>
       );
     }).pipe(Effect.provide(layerFile));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "appends semantic matches to MCP searchThreads and returns older settled rows in semantic mode",
+  () => {
+    const project = ProjectId.make("project:semantic");
+    const exactThread = ThreadId.make("thread:exact");
+    const semanticThread = ThreadId.make("thread:semantic");
+    const fakeSemanticLayer = Layer.succeed(
+      SemanticSearchService.SemanticSearchService,
+      SemanticSearchService.SemanticSearchService.of({
+        search: (input) =>
+          Effect.succeed(
+            [
+              {
+                threadId: exactThread,
+                projectId: project,
+                title: "Exact match",
+                source: "user" as const,
+                snippet: "exact snippet",
+                messageId: MessageId.make("m-exact"),
+                messageCreatedAt: DateTime.formatIso(at(1)),
+                score: 0.9,
+              },
+              {
+                threadId: semanticThread,
+                projectId: project,
+                title: "Customizable Button Layout Telemetry",
+                source: "user" as const,
+                snippet: "telemetry for button presses so ML can optimize layouts",
+                messageId: MessageId.make("m-sem"),
+                messageCreatedAt: DateTime.formatIso(at(2)),
+                score: 0.82,
+              },
+            ].filter((hit) => !input.excludedThreadIds?.has(hit.threadId)),
+          ),
+        syncThread: () => Effect.void,
+        sweep: () => Effect.succeed({ embedded: 0, deleted: 0 }),
+        start: () => Effect.void,
+      }),
+    );
+    const layerWithSemantic = Layer.mergeAll(
+      ThreadSearch.layer.pipe(Layer.provide(fakeSemanticLayer)),
+      ProjectionStore.layer,
+      ProjectStore.layer,
+    ).pipe(Layer.provideMerge(SqlitePersistence.layerMemory));
+
+    return Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      yield* createProject(project);
+      yield* Effect.forEach(
+        [
+          thread(exactThread, project, { title: "using ml to read button layouts" }),
+          thread(semanticThread, project, {
+            title: "Customizable Button Layout Telemetry",
+            settledAt: at(1),
+          }),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+
+      const mcpHits = yield* search.searchThreads({
+        query: "using ml to read button layouts",
+        limit: 10,
+      });
+      assert.deepEqual(
+        mcpHits.matches.map((hit) => [hit.threadId, hit.source]),
+        [
+          [exactThread, "title"],
+          [semanticThread, "semantic"],
+        ],
+      );
+
+      const semanticOnly = yield* search.searchSemantic({
+        query: "using ml to read button layouts",
+        limit: 10,
+      });
+      assert.deepEqual(
+        semanticOnly.matches.map((hit) => [hit.threadId, hit.quality]),
+        [
+          [exactThread, 0.9],
+          [semanticThread, 0.82],
+        ],
+      );
+    }).pipe(Effect.provide(layerWithSemantic));
+  },
 );

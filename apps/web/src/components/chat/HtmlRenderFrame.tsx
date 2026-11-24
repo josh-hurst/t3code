@@ -38,6 +38,7 @@ export function HtmlRenderFrame(props: {
   readonly environmentId: EnvironmentId;
   readonly htmlRender: HtmlRenderReference;
   readonly threadRef: ScopedThreadRef | undefined;
+  readonly onCompose?: ((text: string) => void) | undefined;
   readonly onFullscreenChange?: (fullscreen: boolean) => void;
 }) {
   const gt = useGT();
@@ -97,6 +98,7 @@ export function HtmlRenderFrame(props: {
               rememberContentHeight(attachmentId, height);
               setContentHeight(height);
             }}
+            onCompose={props.onCompose}
             onFullscreenChange={onFullscreenChange}
           />
           <div className="absolute end-2 top-2 flex gap-1 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/html-render:opacity-100 pointer-coarse:opacity-100">
@@ -135,6 +137,7 @@ export function HtmlRenderFrame(props: {
               src={expandedSrc}
               htmlRender={props.htmlRender}
               threadRef={props.threadRef}
+              onCompose={props.onCompose}
               onClose={() => setExpandedSrc(null)}
             />
           ) : null}

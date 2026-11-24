@@ -788,6 +788,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     const arm64 = [
       "node_modules/node-pty/prebuilds/darwin-arm64/pty.node",
       "node_modules/objc-js/prebuilds/darwin-arm64/node.napi.armv8.node",
+      "node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/onnxruntime_binding.node",
     ];
 
     for (const file of x64) {
@@ -800,6 +801,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.isFalse(excludes("arm64", file), file);
       assert.isFalse(excludes("universal", file), file);
     }
+    assert.isTrue(
+      excludes(
+        "arm64",
+        "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/onnxruntime_binding.node",
+      ),
+    );
+    assert.isTrue(
+      excludes("arm64", "node_modules/onnxruntime-node/bin/napi-v6/win32/x64/onnxruntime.dll"),
+    );
   });
 
   it.effect("unpacks target Windows natives while excluding the other architecture", () =>

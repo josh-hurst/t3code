@@ -32,6 +32,7 @@ import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
 import * as DesktopAppIcon from "./DesktopAppIcon.ts";
 import * as DesktopMacIconCache from "./DesktopMacIconCache.ts";
+import * as DesktopRobloxStudioIcon from "./DesktopRobloxStudioIcon.ts";
 import * as DesktopObservability from "./DesktopObservability.ts";
 import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
@@ -369,6 +370,7 @@ const startup = Effect.gen(function* () {
   const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
   const linuxUrlHandler = yield* DesktopLinuxUrlHandler.DesktopLinuxUrlHandler;
   const macIconCache = yield* DesktopMacIconCache.DesktopMacIconCache;
+  const robloxStudioIcon = yield* DesktopRobloxStudioIcon.DesktopRobloxStudioIcon;
   const appIcon = yield* DesktopAppIcon.DesktopAppIcon;
   const clerk = yield* DesktopClerk.DesktopClerk;
   const shellEnvironment = yield* DesktopShellEnvironment.DesktopShellEnvironment;
@@ -447,6 +449,7 @@ const startup = Effect.gen(function* () {
   // Portal identity is prepared pre-ready; MIME helpers must not gate the backend or window.
   yield* linuxUrlHandler.register.pipe(Effect.forkScoped);
   yield* macIconCache.refreshAfterInstall.pipe(Effect.forkScoped);
+  yield* robloxStudioIcon.register;
   yield* appIcon.register;
   yield* bootstrap(backendStarted).pipe(
     Effect.catchCause((cause) => fatalStartupCause("bootstrap", cause)),

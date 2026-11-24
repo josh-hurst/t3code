@@ -226,7 +226,7 @@ const ThreadSearchTool = Tool.make("t3_thread_search", {
         projectId: OrchestrationThreadSearchMatch.fields.projectId,
         title: Schema.String,
         link: Schema.optional(Schema.String),
-        source: Schema.Literals(["title", "topic", "user", "assistant"]),
+        source: Schema.Literals(["title", "topic", "user", "assistant", "summary", "semantic"]),
         snippet: Schema.optional(OrchestrationThreadSearchMatch.fields.snippet),
         messageCreatedAt: Schema.optional(OrchestrationThreadSearchMatch.fields.messageCreatedAt),
       }),

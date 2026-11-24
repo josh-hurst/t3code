@@ -30,6 +30,9 @@ export async function runCliCommand() {
     if (mode !== "discover" && mode !== "model") throw new Error("Unknown speech worker mode.");
     const { runNativeSpeechWorker } = await import("./speech/native.ts");
     await runNativeSpeechWorker(mode, process.argv[4]);
+  } else if (command === "__semantic-embed-worker") {
+    const { runNativeSemanticWorker } = await import("./semanticSearch/worker.ts");
+    await runNativeSemanticWorker();
   } else if (command === "__cursor-sdk-worker") {
     const [NodeServices, { runCursorSdkWorker }] = await Promise.all([
       import("@effect/platform-node/NodeServices"),

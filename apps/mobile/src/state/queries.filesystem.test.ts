@@ -41,6 +41,7 @@ vi.mock("./projects", () => ({
 }));
 vi.mock("./atom-registry", () => ({ appAtomRegistry: {} }));
 vi.mock("./orchestration", () => ({ orchestrationEnvironment: {} }));
+vi.mock("./server", () => ({ serverEnvironment: {} }));
 vi.mock("./threads", () => ({ useEnvironmentThread: vi.fn() }));
 vi.mock("./vcs", () => ({ vcsEnvironment: {} }));
 vi.mock("./query", () => ({

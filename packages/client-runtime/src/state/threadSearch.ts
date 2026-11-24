@@ -89,6 +89,16 @@ const ThreadSearchKey = Schema.fromJsonString(
 const decodeThreadSearchKey = Schema.decodeUnknownOption(ThreadSearchKey);
 const EMPTY_SEARCH_ROWS: ThreadSearchResultsState["rows"] = [];
 const EMPTY_READS: ReadonlyArray<OrchestrationV2ThreadFamily> = [];
+const SEMANTIC_QUERY_WORD = /[\p{L}\p{N}]+/gu;
+
+const SEMANTIC_SEARCH_MIN_QUERY_WORDS = 3;
+export const SEMANTIC_SEARCH_DISPLAY_LIMIT = 8;
+// Ask for a few extra so threads already shown by exact search still leave up to 8 semantic hits.
+const SEMANTIC_SEARCH_REQUEST_LIMIT = 12;
+
+export function hasSemanticSearchQuery(query: string): boolean {
+  return (query.match(SEMANTIC_QUERY_WORD)?.length ?? 0) >= SEMANTIC_SEARCH_MIN_QUERY_WORDS;
+}
 
 export function makeThreadSearchKey(
   environmentIds: ReadonlyArray<EnvironmentId>,
@@ -197,6 +207,90 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
   return {
     results,
     /** One environment's older settled rows for a search key, for `mountRows`. */
+    rows: (key: string, environmentId: EnvironmentId) =>
+      rowsAtom(JSON.stringify([key, environmentId])),
+  };
+}
+
+/**
+ * Parallel semantic search over connected environments that support it. Degrades quietly on
+ * failure and never blocks exact results.
+ */
+export function createSemanticThreadSearchResultsAtomFamily<E>(options: {
+  readonly getSearchAtom: (
+    environmentId: EnvironmentId,
+    input: OrchestrationV2SearchThreadsInput,
+  ) => Atom.Atom<AsyncResult.AsyncResult<OrchestrationV2SearchThreadsResult, E>>;
+  readonly olderSettledBefore?: (environmentId: EnvironmentId) => Atom.Atom<string | null>;
+  readonly labelPrefix: string;
+}) {
+  const results = Atom.family((key: string) =>
+    Atom.make((get): ThreadSearchResultsState => {
+      const parsedKey = parseThreadSearchKey(key);
+      if (Option.isNone(parsedKey)) {
+        return { matches: [], isLoading: false, failed: false, rows: EMPTY_SEARCH_ROWS };
+      }
+
+      const [environmentIds, query, scope = {}] = parsedKey.value;
+      if (scope.titlesOnly === true || !hasSemanticSearchQuery(query)) {
+        return { matches: [], isLoading: false, failed: false, rows: EMPTY_SEARCH_ROWS };
+      }
+
+      const matches: EnvironmentThreadSearchMatch[] = [];
+      const rows: Array<ThreadSearchResultsState["rows"][number]> = [];
+      let isLoading = false;
+
+      for (const environmentId of environmentIds) {
+        const before = options.olderSettledBefore
+          ? get(options.olderSettledBefore(environmentId))
+          : null;
+        const result = get(
+          options.getSearchAtom(environmentId, {
+            query,
+            mode: "semantic",
+            limit: SEMANTIC_SEARCH_REQUEST_LIMIT,
+            ...(scope.projectIds === undefined ? {} : { projectIds: scope.projectIds }),
+            ...(before === null ? {} : { olderSettledBefore: before }),
+          }),
+        );
+        isLoading ||= result.waiting;
+        const value = AsyncResult.getOrElse(result, () => null);
+        if (value !== null) {
+          matches.push(...value.matches.map((match) => ({ ...match, environmentId })));
+          if (value.threads !== undefined && value.threads.length > 0) {
+            rows.push({
+              environmentId,
+              read: { snapshotSequence: value.snapshotSequence ?? 0, threads: value.threads },
+            });
+          }
+        }
+      }
+
+      matches.sort((left, right) => (right.quality ?? 0) - (left.quality ?? 0));
+
+      return {
+        matches,
+        isLoading,
+        failed: false,
+        rows: rows.length === 0 ? EMPTY_SEARCH_ROWS : rows,
+      };
+    }).pipe(Atom.withLabel(`${options.labelPrefix}:${key}`)),
+  );
+  const rowsAtom = Atom.family((rowsKey: string) => {
+    const [key, environmentId] = JSON.parse(rowsKey) as [string, EnvironmentId];
+    let previous = EMPTY_READS;
+    return Atom.make((get) => {
+      const next = get(results(key)).rows.flatMap((row) =>
+        row.environmentId === environmentId ? [row.read] : [],
+      );
+      if (next.length === previous.length && next.every((read, index) => read === previous[index]))
+        return previous;
+      previous = next.length === 0 ? EMPTY_READS : next;
+      return previous;
+    }).pipe(Atom.withLabel(`${options.labelPrefix}-rows:${rowsKey}`));
+  });
+  return {
+    results,
     rows: (key: string, environmentId: EnvironmentId) =>
       rowsAtom(JSON.stringify([key, environmentId])),
   };

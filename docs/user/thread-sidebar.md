@@ -82,7 +82,7 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 Pin a thread from its menu to keep it above your active work.
 
 On web and desktop, the rest of the sidebar files itself. Below your pins come
-**Needs you**, **Recent**, **Working**, **Later**, and **History**, and each section
+**Needs you**, **Recent**, **Working**, **Settling**, **Later**, and **History**, and each section
 keeps its own order, so there is nothing to arrange by hand. Dragging still pins, unpins,
 settles, un-settles, and wakes a thread; a thread you drop below the pins goes to Needs
 you or Recent, wherever it belongs. An older thread can land under **more** in Recent.
@@ -343,13 +343,24 @@ but an old closed or merged pull request does not settle work you
 resumed after it closed. Only your own messages count as resuming. A turn that
 finished background work or a pull request watch starts on its own does not.
 
-A short thread settles sooner than that setting. Once you have read its latest reply, a
-thread settles 12 hours after its last activity, plus 12 hours for each hour it had been
-going, and never later than the setting. A thread ten minutes old leaves after about 14
-hours, and one that ran for three hours waits the full time. A thread with a pull request
-keeps the full wait. Something its summary lists for you to check, commit, or publish does not
-hold it, but a question you have not read keeps it from settling on its own, and a thread
-stays at least two hours after you open it to read one.
+A thread you are unlikely to write in again settles sooner than that setting. Once you have
+read its latest reply, T3 Code estimates the chance you come back to it from how long it has
+been quiet, how long it ran and how many messages you sent it, and what you have done since:
+messages in the project's other threads, new threads you started, and a publish in the
+project. A short thread you left for other work scores low within the hour; a long one you
+wrote in often stays in Recent for much longer.
+
+When the chance is low, the thread moves from Recent to **Settling**, below Working. Its rows
+are one line each: project, title, and time. The thread you are likeliest to come back to is
+at the top and the surest to leave is at the bottom. Once a thread there has been quiet for
+two hours and the chance is very low, it settles, and never later than the setting. Write in
+a thread to take it back to Recent. The classic sidebar has no Settling section, and its
+threads settle by the same rule.
+
+A thread with a pull request keeps the full wait and is not listed in Settling. Something its
+summary lists for you to check, commit, or publish does not hold it, but a question you have
+not read keeps it from settling on its own, and a thread stays at least two hours after you
+open it to read one.
 
 Nothing settles early while you are away. After two hours without a message from you in
 any thread, early settling pauses, and it resumes two hours after you next write. A thread

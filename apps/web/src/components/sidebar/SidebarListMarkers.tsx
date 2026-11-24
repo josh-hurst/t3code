@@ -1,7 +1,13 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ActivityIcon, AlarmClockIcon, HistoryIcon, type LucideIcon } from "lucide-react";
+import {
+  ActivityIcon,
+  AlarmClockIcon,
+  HistoryIcon,
+  TimerIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { type ReactNode, useLayoutEffect } from "react";
 import { cn } from "~/lib/utils";
 import {
@@ -113,6 +119,7 @@ export function SidebarDragBoundary(props: {
 
 const shelves = {
   "working-header": { id: "working", Icon: ActivityIcon },
+  "settling-header": { id: "settling", Icon: TimerIcon },
   "snoozed-header": { id: "snoozed", Icon: AlarmClockIcon },
   "settled-header": { id: "settled", Icon: HistoryIcon },
 } as const;

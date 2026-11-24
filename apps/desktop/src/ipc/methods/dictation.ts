@@ -30,6 +30,11 @@ export const installDictation = Effect.fn("desktop.ipc.installDictation")(functi
     contents = undefined;
     return setRecording(false);
   };
+  const warnIfFailed = Effect.fnUntraced(function* (failure: string | null) {
+    if (failure === null) return null;
+    yield* Effect.logWarning(`Discord dictation mute: ${failure}`);
+    return "check-discord" as const;
+  });
   yield* Effect.addFinalizer(() => Effect.asVoid(Effect.promise(release)));
   yield* ipc.handle(
     DesktopIpc.makeIpcMethod({
@@ -37,7 +42,7 @@ export const installDictation = Effect.fn("desktop.ipc.installDictation")(functi
       payload: Schema.Boolean,
       result: Schema.NullOr(DesktopDictationWarningSchema),
       handler: Effect.fn("desktop.ipc.setDictationRecording")(function* (active, event) {
-        if (!active) return (yield* Effect.promise(release)) ? null : ("check-discord" as const);
+        if (!active) return yield* warnIfFailed(yield* Effect.promise(release));
         if (!event) return null;
         if (
           platform === "darwin" &&
@@ -61,9 +66,7 @@ export const installDictation = Effect.fn("desktop.ipc.installDictation")(functi
           contents.once("render-process-gone", release);
           contents.once("destroyed", release);
         }
-        return (yield* Effect.promise(() => setRecording(true)))
-          ? null
-          : ("check-discord" as const);
+        return yield* warnIfFailed(yield* Effect.promise(() => setRecording(true)));
       }),
     }),
   );

@@ -37,7 +37,7 @@ export function SearchMatchHintLine(props: { hint: SearchMatchHint }) {
 
 export function ThreadSearchMatchExcerpt(props: {
   match: {
-    readonly source: "user" | "assistant" | "topic";
+    readonly source: "user" | "assistant" | "topic" | "summary";
     readonly snippet: string;
     readonly query: string;
   };
@@ -54,7 +54,15 @@ export function ThreadSearchMatchExcerpt(props: {
               : "text-foreground/85"
         }
       >
-        {source === "user" ? <T>You:</T> : source === "assistant" ? <T>Agent:</T> : <T>Topic:</T>}
+        {source === "user" ? (
+          <T>You:</T>
+        ) : source === "assistant" ? (
+          <T>Agent:</T>
+        ) : source === "summary" ? (
+          <T>Summary:</T>
+        ) : (
+          <T>Topic:</T>
+        )}
       </span>{" "}
       <HighlightedSearchText
         text={props.match.snippet}

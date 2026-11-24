@@ -2574,6 +2574,24 @@ export function ThreadsSettingsPanel() {
           }
         />
         <ReplySummarySettings />
+        <SettingsRow
+          serverScoped
+          settingKeys={["semanticSearchEnabled"]}
+          {...setting("search-by-meaning")}
+          description={gt(
+            "Index thread summaries and messages locally with a small embedding model so thread search finds matches by meaning even when the wording differs. Turning this off stops downloads and indexing.",
+          )}
+          control={
+            <ScopedSwitch
+              settingKeys={["semanticSearchEnabled"]}
+              checked={settings.semanticSearchEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ semanticSearchEnabled: Boolean(checked) })
+              }
+              aria-label={gt("Search by meaning")}
+            />
+          }
+        />
         <LaterRecheckSettings />
         <AdvancedSettings
           targetIds={[setting("thread-title-instructions").id, setting("response-streaming").id]}

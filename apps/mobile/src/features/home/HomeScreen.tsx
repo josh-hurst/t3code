@@ -17,7 +17,10 @@ import {
   type EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
-import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import {
+  threadSearchMatchKey,
+  type EnvironmentThreadSearchMatch,
+} from "@t3tools/client-runtime/state/thread-search";
 import { type EnvironmentId, type SidebarProjectGroupingMode } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -165,6 +168,7 @@ interface HomeScreenProps {
 }
 
 const ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT = 72;
+const EMPTY_SEMANTIC_SEARCH_MATCHES: ReadonlyMap<string, EnvironmentThreadSearchMatch> = new Map();
 // Rows away from the viewport skip their swipe actions (see
 // swipe-row-activation), so render further ahead: a fast fling then reaches
 // rows that are already built instead of rows still being rebuilt.
@@ -366,6 +370,12 @@ export function HomeScreen(props: HomeScreenProps) {
       : { projectIds: v2ScopedProjectGroup.projectRefs.map((ref) => ref.projectId) },
   );
   const threadSearchMatchByKey = useThreadListSearchMatches(props.threads, threadSearch);
+  const semanticSearchMatchByKey = useMemo(() => {
+    if (threadSearch.semanticMatches.length === 0) return EMPTY_SEMANTIC_SEARCH_MATCHES;
+    return new Map(
+      threadSearch.semanticMatches.map((match) => [threadSearchMatchKey(match), match] as const),
+    );
+  }, [threadSearch.semanticMatches]);
   const v2ProjectTitleByProjectKey = new Map(
     projectScopes.flatMap((scope) =>
       scope.projectRefs.map(
@@ -442,6 +452,7 @@ export function HomeScreen(props: HomeScreenProps) {
     layout: threadListV2Layout,
     items: threadListV2Items,
     contentOnlyThreadKeys,
+    semanticOnlyThreadKeys,
     olderSettledShelf,
   } = useThreadListV2({
     projects: props.projects,
@@ -451,6 +462,7 @@ export function HomeScreen(props: HomeScreenProps) {
     projectRefs: v2ScopedProjectGroup === null ? null : v2ScopedProjectGroup.projectRefs,
     searchQuery: props.searchQuery,
     searchMatches: threadSearchMatchByKey,
+    semanticMatches: semanticSearchMatchByKey,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
     laterRecheckLimits: laterRecheckLimitByEnvironmentId,
@@ -475,13 +487,15 @@ export function HomeScreen(props: HomeScreenProps) {
   // Called as `props.onSelectThread(...)`, the compiler would cache this handler on the whole
   // props object, which is new on every render of Home's parent.
   const { onSelectThread } = props;
-  // A row listed for a message match opens the thread at that message, by
+  // A row listed for a message or semantic match opens the thread at that message, by
   // tap or by shortcut.
   const selectThread = (thread: EnvironmentThreadShell) => {
     const key = threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id });
     const messageId = contentOnlyThreadKeys.has(key)
       ? threadSearchMatchByKey.get(key)?.messageId
-      : undefined;
+      : semanticOnlyThreadKeys.has(key)
+        ? semanticSearchMatchByKey.get(key)?.messageId
+        : undefined;
     if (messageId) {
       requestThreadMessageJump(scopedThreadKey(thread.environmentId, thread.id), messageId);
     }
@@ -610,6 +624,7 @@ export function HomeScreen(props: HomeScreenProps) {
         variant={item.item.variant}
         cardLine={item.item.cardLine}
         projectLine={item.item.projectLine}
+        compact={item.item.compact === true}
         selfFiling={tide}
         needsYou={item.item.needsYou === true}
         groupStart={item.groupStart}
@@ -631,17 +646,27 @@ export function HomeScreen(props: HomeScreenProps) {
             : null
         }
         environmentMachine={machineByEnvironmentId.get(thread.environmentId)}
-        searchMatch={
-          // Only rows listed for their messages show one and open at it.
-          contentOnlyThreadKeys.has(
+        searchMatch={(() => {
+          const matchKey = threadSearchMatchKey({
+            environmentId: thread.environmentId,
+            threadId: thread.id,
+          });
+          // Only rows listed for their messages or by meaning show one and open at it.
+          if (contentOnlyThreadKeys.has(matchKey)) {
+            return threadSearchMatchByKey.get(matchKey);
+          }
+          if (semanticOnlyThreadKeys.has(matchKey)) {
+            return semanticSearchMatchByKey.get(matchKey);
+          }
+          return undefined;
+        })()}
+        searchQuery={
+          semanticOnlyThreadKeys.has(
             threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id }),
           )
-            ? threadSearchMatchByKey.get(
-                threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id }),
-              )
-            : undefined
+            ? threadSearch.semanticQuery
+            : threadSearch.query
         }
-        searchQuery={threadSearch.query}
         onSelectThread={selectThread}
         onOpenThreadPullRequests={handleOpenThreadPullRequests}
         onDeleteThread={handleDeleteThread}
@@ -688,6 +713,7 @@ export function HomeScreen(props: HomeScreenProps) {
     searchQuery: props.searchQuery,
     selectedThreadKey,
     threadSearchMatchByKey,
+    semanticSearchMatchByKey,
     workingShelfEnabled,
   };
 
@@ -774,7 +800,7 @@ export function HomeScreen(props: HomeScreenProps) {
   );
 
   const v2ListEmpty =
-    hasSearchQuery && threadSearch.isPending ? (
+    hasSearchQuery && (threadSearch.isPending || threadSearch.isSemanticPending) ? (
       <EmptyState
         title={gt("Searching thread messages…")}
         detail={gt('Looking for "{query}" in messages.', { query: props.searchQuery })}
