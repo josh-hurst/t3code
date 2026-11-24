@@ -973,6 +973,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
                     ...thread,
                     lastVisitedAt: thread.lastVisitedAt ?? null,
                     card: null,
+                    progress: null,
                     followUp: null,
                   },
                 });

@@ -744,6 +744,7 @@ describe("AgentAwarenessRelay", () => {
           settledAt: now,
           lastVisitedAt: null,
           card: null,
+          progress: null,
           followUp: null,
         };
         yield* Ref.set(currentShell, settled);

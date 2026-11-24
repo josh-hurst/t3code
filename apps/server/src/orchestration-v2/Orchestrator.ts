@@ -33,6 +33,7 @@ import {
   threadCardHasOpenAsk,
   threadCardOpenItemKey,
   type ThreadCardOpenItem,
+  type ThreadProgress,
   type ThreadEntriesUpdate,
   threadFollowUpIsArmed,
   isListedThreadLineage,
@@ -706,6 +707,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.tag.set":
     case "thread.visit":
     case "thread.card.record":
+    case "thread.progress.record":
     case "thread.contents.regroup.request":
     case "thread.contents.regroup.record":
     case "thread.contents.backfill.record":
@@ -4570,6 +4572,60 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (update !== null) {
       yield* emit(events, command)({ ...event, type: "thread.entries-updated", payload: update });
     }
+  });
+
+  const dispatchThreadProgress = Effect.fn("orchestrationV2.dispatch.threadProgress")(function* (
+    command: Extract<OrchestrationV2ServerCommand, { readonly type: "thread.progress.record" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+  ) {
+    const thread = yield* projectionStore
+      .getThread(command.threadId)
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    if (thread.deletedAt !== null) return;
+    if (command.progress === null) {
+      if (thread.progress == null) return;
+      yield* emit(
+        events,
+        command,
+      )({
+        threadId: command.threadId,
+        providerInstanceId: thread.providerInstanceId,
+        occurredAt: yield* DateTime.now,
+        type: "thread.progress-updated",
+        payload: { progress: null },
+      });
+      return;
+    }
+    const shell = yield* projectionStore
+      .getThreadShell(command.threadId)
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    const runId = shell?.activeRunId ?? shell?.latestRunId ?? null;
+    if (runId === null) return;
+    const occurredAt = yield* DateTime.now;
+    const progress: ThreadProgress = {
+      line: command.progress.line,
+      runId,
+      at: DateTime.formatIso(occurredAt),
+      agents: command.progress.agents,
+    };
+    yield* emit(
+      events,
+      command,
+    )({
+      threadId: command.threadId,
+      providerInstanceId: thread.providerInstanceId,
+      occurredAt,
+      type: "thread.progress-updated",
+      payload: { progress },
+    });
   });
 
   const dispatchThreadCard = Effect.fn("orchestrationV2.dispatch.threadCard")(function* (
@@ -16633,6 +16689,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.card.record":
         yield* dispatchThreadCard(command, events, effects);
         break;
+      case "thread.progress.record":
+        yield* dispatchThreadProgress(command, events);
+        break;
       case "thread.contents.regroup.request":
       case "thread.contents.regroup.record":
       case "thread.entry.rename":
@@ -17205,6 +17264,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.type === "thread.visit" ||
           // A card for a thread deleted while the model ran has nowhere to go.
           command.type === "thread.card.record" ||
+          // Progress for a deleted or run-less thread, or clearing an already-empty progress.
+          command.type === "thread.progress.record" ||
           // Resolving or restoring items that are already gone or back changes nothing.
           command.type === "thread.open-items.resolve" ||
           command.type === "thread.open-items.restore" ||

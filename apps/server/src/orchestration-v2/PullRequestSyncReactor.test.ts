@@ -1862,6 +1862,7 @@ describe("PullRequestSyncReactor", () => {
               ...v2PullRequestThread(linked),
               lastVisitedAt: null,
               card: null,
+              progress: null,
               followUp: null,
             },
           });

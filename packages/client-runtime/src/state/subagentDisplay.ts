@@ -1,9 +1,11 @@
 import type {
   ModelSelection,
+  NodeId,
   OrchestrationV2TurnItemStatus,
   OrchestrationV2ThreadShell,
   OrchestrationProjectShell,
   ServerProvider,
+  ThreadProgress,
 } from "@t3tools/contracts";
 import { formatModelSlugName, resolveSelectableModel } from "@t3tools/shared/model";
 import { fileDisplayName } from "@t3tools/shared/path";
@@ -190,4 +192,15 @@ export function subagentCardDetail(detail: string | null | undefined): string | 
       .replace(/\s+/g, " ")
       .trim() || null
   );
+}
+
+/**
+ * The summary line of one live subagent. Callers show it only while that subagent is live, which
+ * is what keeps a line left behind by an earlier run from showing.
+ */
+export function subagentProgressLine(
+  progress: Pick<ThreadProgress, "agents"> | null | undefined,
+  subagentId: NodeId,
+): string | null {
+  return progress?.agents.find((agent) => agent.subagentId === subagentId)?.line.trim() || null;
 }

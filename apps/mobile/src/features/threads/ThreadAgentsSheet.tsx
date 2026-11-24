@@ -9,6 +9,7 @@ import {
   type EnvironmentId,
   type OrchestrationV2Subagent,
   type ThreadId,
+  type ThreadProgress,
 } from "@t3tools/contracts";
 import { deriveSubagentElapsedMs } from "@t3tools/shared/orchestrationTiming";
 import { formatDuration } from "@t3tools/shared/orchestrationTimingCopy";
@@ -58,6 +59,10 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
   const gt = useGT();
   const messages = useMessages();
   const turn = useThreadTurnSubagents(target);
+  const threadProgress = useAtomValue(
+    environmentThreadDetails.threadAtom(target),
+    (thread) => thread?.projection.thread.progress ?? null,
+  );
   const subagents = turn?.subagents ?? [];
   const hasLiveAgent = (turn?.liveCount ?? 0) > 0;
   const workflowGroups = useMemo(
@@ -116,6 +121,7 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
                 subagent={subagent}
                 environmentId={target.environmentId}
                 tickSeconds={hasLiveAgent}
+                threadProgress={threadProgress}
                 onOpen={openChildThread}
               />
             </View>
@@ -147,6 +153,7 @@ function AgentRow(props: {
   readonly environmentId: EnvironmentId;
   readonly subagent: OrchestrationV2Subagent;
   readonly tickSeconds: boolean;
+  readonly threadProgress: ThreadProgress | null;
   readonly onOpen: (child: SubagentThreadTarget, title: string | null) => void;
 }) {
   const { subagent } = props;
@@ -165,6 +172,7 @@ function AgentRow(props: {
         environmentId={props.environmentId}
         subagent={subagent}
         canOpenRemote={target !== null}
+        threadProgress={props.threadProgress}
         elapsed={<AgentElapsed subagent={subagent} tickSeconds={props.tickSeconds} />}
       />
     </View>

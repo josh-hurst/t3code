@@ -9,7 +9,12 @@ import {
   subagentCardDetail,
 } from "@t3tools/client-runtime/state/subagent-display";
 import { formatSubagentEffort } from "@t3tools/client-runtime/state/thread-execution";
-import type { EnvironmentId, OrchestrationV2Subagent } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  NodeId,
+  OrchestrationV2Subagent,
+  ThreadProgress,
+} from "@t3tools/contracts";
 import { msg, T, useMessages, Var } from "gt-react-native";
 import type { ReactNode } from "react";
 import { View } from "react-native";
@@ -36,7 +41,7 @@ type SubagentRowSubagent = Pick<
   | "progress"
   | "result"
   | "remoteChild"
->;
+> & { readonly id?: NodeId | undefined };
 
 export function SubagentRow(props: {
   readonly environmentId: EnvironmentId;
@@ -44,12 +49,15 @@ export function SubagentRow(props: {
   readonly elapsed: ReactNode;
   /** The task runs in a linked environment this app is connected to. */
   readonly canOpenRemote?: boolean;
+  /** The parent thread's live status lines. */
+  readonly threadProgress?: Pick<ThreadProgress, "agents"> | null;
 }) {
   const messages = useMessages();
   const presentation = resolveSubagentRowPresentation(
     props.subagent,
     props.canOpenRemote,
     messages,
+    props.threadProgress,
   );
   const detail = subagentCardDetail(presentation.detail);
   return (

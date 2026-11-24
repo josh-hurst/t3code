@@ -127,6 +127,7 @@ function shouldPublishAgentAwarenessEvent(
     case "thread.visited":
     case "thread.visit-recorded":
     case "thread.card-updated":
+    case "thread.progress-updated":
     case "thread.entries-updated":
     case "thread.marked-unread":
     case "thread.runtime-mode-updated":

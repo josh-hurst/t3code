@@ -4,6 +4,7 @@ import {
   resolveSubagentMetadata,
   subagentCardDetail,
   subagentDetailPreview,
+  subagentProgressLine,
 } from "@t3tools/client-runtime/state/subagent-display";
 import {
   isActiveSubagentStatus,
@@ -13,9 +14,11 @@ import {
 import { REASONING_EFFORT_OPTION_IDS } from "@t3tools/client-runtime/state/thread-execution";
 import type {
   EnvironmentId,
+  NodeId,
   OrchestrationV2Subagent,
   ServerProvider,
   ThreadId,
+  ThreadProgress,
 } from "@t3tools/contracts";
 import { resolveSelectableModel } from "@t3tools/shared/model";
 import { msg } from "gt-react-native";
@@ -121,14 +124,21 @@ export function resolveSubagentRowPresentation(
   subagent: Pick<
     OrchestrationV2Subagent,
     "title" | "prompt" | "status" | "progress" | "result" | "childThreadId" | "remoteChild"
-  >,
+  > & { readonly id?: NodeId | undefined },
   canOpenRemote = false,
   resolve: MessageResolver = m,
+  threadProgress?: Pick<ThreadProgress, "agents"> | null,
 ): SubagentRowPresentation {
   const live = isActiveSubagentStatus(subagent.status);
+  const summarizedProgress =
+    live && subagent.id !== undefined ? subagentProgressLine(threadProgress, subagent.id) : null;
   return {
     title: rowTitle(subagent, resolve),
-    detail: subagentDetailPreview(subagent),
+    detail: subagentDetailPreview({
+      status: subagent.status,
+      result: subagent.result,
+      progress: summarizedProgress ?? subagent.progress,
+    }),
     statusLabel: rowStatusLabel(subagent.status, resolve),
     tone: rowTone(subagent.status),
     live,

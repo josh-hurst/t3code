@@ -2,6 +2,7 @@
 import {
   isThreadSetAside,
   threadCardHasOpenAsk,
+  threadProgressIsCurrent,
   type OrchestrationV2PendingRuntimeRequestSummary,
   type OrchestrationV2ThreadShell,
   type ThreadCardOpenKind,
@@ -231,6 +232,10 @@ export function threadWorkingLine(
   kind = threadStatusKind(thread),
 ): string | null {
   if (kind !== "working" && kind !== "connecting" && kind !== "waiting") return null;
+  if (kind !== "connecting" && threadProgressIsCurrent(thread.progress, thread.source)) {
+    const progressLine = threadPreviewText(thread.progress?.line ?? "");
+    if (progressLine !== null) return progressLine;
+  }
   if (kind === "waiting") {
     const task = thread.pendingBackgroundTasks.find(
       (task) => task.description && backgroundWorkHoldsCompletion([task]),

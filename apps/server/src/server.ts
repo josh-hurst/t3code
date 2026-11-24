@@ -233,6 +233,7 @@ import * as ThreadEntryStore from "./orchestration-v2/ThreadEntryStore.ts";
 import * as SemanticEmbedder from "./semanticSearch/SemanticEmbedder.ts";
 import * as SemanticSearchService from "./semanticSearch/SemanticSearchService.ts";
 import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementService.ts";
+import * as ThreadProgressService from "./orchestration-v2/ThreadProgressService.ts";
 import * as ThreadSettleOutlook from "./orchestration-v2/ThreadSettleOutlook.ts";
 import * as IdleCompactionService from "./orchestration-v2/IdleCompactionService.ts";
 import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestService.ts";
@@ -738,6 +739,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   KeepAwake.layer,
   ProjectKeepRunningService.layer,
   DelegatedTaskAnalytics.layer,
+  ThreadProgressService.layer,
   Layer.effectDiscard(
     Effect.gen(function* () {
       const service = yield* PullRequestSyncReactor.PullRequestSyncReactor;

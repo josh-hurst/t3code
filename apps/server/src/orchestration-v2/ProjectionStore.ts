@@ -1,12 +1,14 @@
 import type { ProjectThreadAwarenessV2Input } from "@t3tools/shared/agentAwareness";
 import {
   applyOrchestrationV2ThreadCard,
+  applyOrchestrationV2ThreadProgress,
   isListedThreadLineage,
   applyOrchestrationV2ThreadVisit,
   pendingGuestMessageCount,
   type ThreadCardSummary,
   threadCardSummary,
   threadFollowUpSummary,
+  threadProgressSummary,
 } from "@t3tools/contracts";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
@@ -1138,6 +1140,11 @@ export function applyToProjection(
         ...projection,
         thread: applyOrchestrationV2ThreadCard(projection.thread, event.payload),
       };
+    case "thread.progress-updated":
+      return {
+        ...projection,
+        thread: applyOrchestrationV2ThreadProgress(projection.thread, event.payload),
+      };
     // Contents live in their own tables, never on the thread projection.
     case "thread.entries-updated":
       return projection;
@@ -2194,6 +2201,9 @@ export function threadShellFromProjection(
     lastVisitedAt: projection.thread.lastVisitedAt,
     opens: projection.thread.opens ?? null,
     ...(projection.thread.card ? { card: threadCardSummary(projection.thread.card) } : {}),
+    ...(projection.thread.progress
+      ? { progress: threadProgressSummary(projection.thread.progress) }
+      : {}),
     ...(projection.thread.followUp
       ? { followUp: threadFollowUpSummary(projection.thread.followUp) }
       : {}),
@@ -2504,6 +2514,9 @@ function shellFromState(input: {
     lastVisitedAt: input.state.thread.lastVisitedAt,
     opens: input.state.thread.opens ?? null,
     ...(input.state.thread.card ? { card: threadCardSummary(input.state.thread.card) } : {}),
+    ...(input.state.thread.progress
+      ? { progress: threadProgressSummary(input.state.thread.progress) }
+      : {}),
     ...(input.state.thread.followUp
       ? { followUp: threadFollowUpSummary(input.state.thread.followUp) }
       : {}),
@@ -2704,6 +2717,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ...event,
                 type: "thread.tags-updated",
                 payload: applyOrchestrationV2ThreadCard(thread, event.payload),
+              });
+              break;
+            }
+            case "thread.progress-updated": {
+              const thread = yield* getThread(event.threadId);
+              // Stored through the full-payload event that keeps the thread's updatedAt.
+              yield* apply({
+                ...event,
+                type: "thread.tags-updated",
+                payload: applyOrchestrationV2ThreadProgress(thread, event.payload),
               });
               break;
             }
@@ -3595,6 +3618,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             event.type !== "thread.visited" &&
             event.type !== "thread.visit-recorded" &&
             event.type !== "thread.card-updated" &&
+            event.type !== "thread.progress-updated" &&
             event.type !== "thread.entries-updated" &&
             event.type !== "thread.marked-unread" &&
             event.type !== "thread.metadata-updated" &&

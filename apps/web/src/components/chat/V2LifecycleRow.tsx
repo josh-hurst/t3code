@@ -24,6 +24,7 @@ import {
 import {
   formatSubagentDisplayTitle,
   subagentCardDetail,
+  subagentProgressLine,
 } from "@t3tools/client-runtime/state/subagent-display";
 import {
   ProviderDriverKind,
@@ -462,6 +463,10 @@ function SubagentTimelineLink(props: {
     environmentThreadDetails.threadAtom(props.parentRef),
     (thread) => thread?.projection.subagents.find((agent) => agent.id === props.subagentId) ?? null,
   );
+  const progressSummary = useAtomValue(
+    environmentThreadDetails.threadAtom(props.parentRef),
+    (thread) => subagentProgressLine(thread?.projection.thread.progress, props.subagentId),
+  );
   const remote = props.remote ?? agent?.remoteChild;
   const gt = useGT();
   const m = useMessages();
@@ -481,9 +486,10 @@ function SubagentTimelineLink(props: {
   const status = props.event ? props.event.status : liveStatus;
   const statusLabel = props.event?.label ?? m(subagentStatusVisual(liveStatus).label);
   const result = (agent?.result ?? props.result)?.trim();
-  const progress = (agent?.progress ?? props.progress)?.trim();
+  const rawProgress = (agent?.progress ?? props.progress)?.trim();
   const settled = SETTLED_SUBAGENT_STATUSES.has(status ?? liveStatus);
-  const rawDetail = settled ? result || progress : progress || result;
+  const progress = settled ? rawProgress : (progressSummary ?? rawProgress);
+  const rawDetail = settled ? result || rawProgress : progress || result;
   const detail = subagentCardDetail(rawDetail);
   const failed = status === "failed";
   const timing = {
@@ -580,7 +586,7 @@ function SubagentTimelineLink(props: {
           modelSelection={agent?.modelSelection}
           status={liveStatus}
           result={agent?.result ?? props.result}
-          progress={agent?.progress ?? props.progress}
+          progress={progress}
         />
       </ThreadHoverCardPopup>
     </Tooltip>

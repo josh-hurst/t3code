@@ -51,6 +51,7 @@ import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import { ThreadCard, ThreadCardOpenKind, ThreadCardSummary } from "./threadCard.ts";
+import { ThreadProgress, ThreadProgressSummary } from "./threadProgress.ts";
 import {
   ContentsBackfillEstimate,
   ContentsBackfillEstimateInput,
@@ -523,6 +524,13 @@ const LenientThreadCard = Schema.NullOr(ThreadCard).pipe(
 const LenientThreadCardSummary = Schema.NullOr(ThreadCardSummary).pipe(
   Schema.catchDecoding(() => Effect.succeedSome(null)),
 );
+// Live progress only describes ongoing subagent work, so an unreadable shape becomes null.
+const LenientThreadProgress = Schema.NullOr(ThreadProgress).pipe(
+  Schema.catchDecoding(() => Effect.succeedSome(null)),
+);
+const LenientThreadProgressSummary = Schema.NullOr(ThreadProgressSummary).pipe(
+  Schema.catchDecoding(() => Effect.succeedSome(null)),
+);
 // A follow-up this build cannot read is dropped rather than sent.
 const LenientThreadFollowUp = Schema.NullOr(ThreadFollowUp).pipe(
   Schema.catchDecoding(() => Effect.succeedSome(null)),
@@ -598,6 +606,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   ),
   opens: Schema.optional(LenientThreadOpens),
   card: Schema.optional(LenientThreadCard),
+  progress: Schema.optional(LenientThreadProgress),
   followUp: Schema.optional(LenientThreadFollowUp),
   /** The owner made this thread a standing check: its scheduled runs file quietly. */
   standingCheck: Schema.optional(Schema.Boolean),
@@ -2230,6 +2239,19 @@ export function applyOrchestrationV2ThreadCard<Thread extends OrchestrationV2App
   return { ...thread, card: update.card };
 }
 
+/** Live subagent progress only describes ongoing work, never the thread's activity. */
+export const OrchestrationV2ThreadProgressUpdate = Schema.Struct({
+  progress: LenientThreadProgress,
+});
+export type OrchestrationV2ThreadProgressUpdate = typeof OrchestrationV2ThreadProgressUpdate.Type;
+
+export function applyOrchestrationV2ThreadProgress<Thread extends OrchestrationV2AppThread>(
+  thread: Thread,
+  update: OrchestrationV2ThreadProgressUpdate,
+): Thread {
+  return { ...thread, progress: update.progress };
+}
+
 export const OrchestrationV2DomainEvent = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2EventBase.fields,
@@ -2282,6 +2304,11 @@ export const OrchestrationV2DomainEvent = Schema.Union([
     ...OrchestrationV2EventBase.fields,
     type: Schema.Literal("thread.card-updated"),
     payload: OrchestrationV2ThreadCardUpdate,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2EventBase.fields,
+    type: Schema.Literal("thread.progress-updated"),
+    payload: OrchestrationV2ThreadProgressUpdate,
   }),
   /** The thread's Contents changed. Like a card, never the thread's activity. */
   Schema.Struct({
@@ -2546,6 +2573,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   opens: Schema.optional(LenientThreadOpens),
   card: Schema.optional(LenientThreadCardSummary),
+  progress: Schema.optional(LenientThreadProgressSummary),
   followUp: Schema.optional(LenientThreadFollowUpSummary),
   standingCheck: Schema.optional(Schema.Boolean),
   titleRegeneration: Schema.optional(
@@ -3265,6 +3293,11 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
     ...OrchestrationV2JsonEventBaseFields,
     type: Schema.Literal("thread.card-updated"),
     payload: OrchestrationV2ThreadCardUpdate,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2JsonEventBaseFields,
+    type: Schema.Literal("thread.progress-updated"),
+    payload: OrchestrationV2ThreadProgressUpdate,
   }),
   Schema.Struct({
     ...OrchestrationV2JsonEventBaseFields,
@@ -4100,6 +4133,18 @@ const OrchestrationV2InternalCommand = Schema.Union([
       }),
     ),
     filing: Schema.optional(Schema.Array(ThreadEntryFiling).check(Schema.isMaxLength(2))),
+  }),
+  /** Live status lines for a thread with running subagents; null clears. Never bumps updatedAt. */
+  Schema.Struct({
+    type: Schema.Literal("thread.progress.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    progress: Schema.NullOr(
+      Schema.Struct({
+        line: ThreadProgressSummary.fields.line,
+        agents: ThreadProgress.fields.agents,
+      }),
+    ),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.contents.regroup.record"),

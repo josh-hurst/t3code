@@ -2813,6 +2813,7 @@ describe("storage cleanup reports and local file policies", () => {
               ...shell({ deletedAt: at(0) }),
               lastVisitedAt: null,
               card: null,
+              progress: null,
               followUp: null,
             },
           });

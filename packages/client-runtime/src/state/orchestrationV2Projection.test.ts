@@ -193,6 +193,23 @@ describe("applyOrchestrationV2ProjectionEvent", () => {
     expect(next).toEqual({ ...emptyProjection, thread: { ...emptyProjection.thread, card } });
   });
 
+  it("applies live progress without counting it as activity", () => {
+    const progress = {
+      line: "1 of 2 agents done; auth tests running",
+      runId,
+      at: "2026-06-20T01:00:00.000Z",
+      agents: [{ subagentId: "sub-1" as never, line: "Rerunning auth.test.ts" }],
+    };
+    const next = applyOrchestrationV2ProjectionEvent(emptyProjection, {
+      id: "event-progress" as OrchestrationV2DomainEvent["id"],
+      type: "thread.progress-updated",
+      threadId,
+      occurredAt: DateTime.makeUnsafe("2026-06-20T01:00:00.000Z"),
+      payload: { progress },
+    });
+    expect(next).toEqual({ ...emptyProjection, thread: { ...emptyProjection.thread, progress } });
+  });
+
   it("applies thread lifecycle payloads instead of leaving stale metadata", () => {
     const archivedAt = DateTime.makeUnsafe("2026-06-20T01:00:00.000Z");
     const event = {

@@ -1,6 +1,11 @@
+import { NodeId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { subagentCardDetail, subagentDetailPreview } from "./subagentDisplay.js";
+import {
+  subagentCardDetail,
+  subagentDetailPreview,
+  subagentProgressLine,
+} from "./subagentDisplay.js";
 
 describe("subagentDetailPreview", () => {
   it("prefers progress for live work and results for settled work", () => {
@@ -48,5 +53,25 @@ describe("subagentCardDetail", () => {
     ["[report](outputs/report\\(final.md)", "report"],
   ])("strips image and link markup from %s", (detail, expected) => {
     expect(subagentCardDetail(detail)).toBe(expected);
+  });
+});
+
+describe("subagentProgressLine", () => {
+  const sub1 = NodeId.make("sub-1");
+  const sub2 = NodeId.make("sub-2");
+  const progress = {
+    agents: [
+      { subagentId: sub1, line: "Rerunning auth.test.ts after fixing 2 tests" },
+      { subagentId: sub2, line: "   " },
+    ],
+  };
+
+  it.each([
+    ["the subagent's line", progress, sub1, "Rerunning auth.test.ts after fixing 2 tests"],
+    ["null for a subagent with no line", progress, NodeId.make("other"), null],
+    ["null for a blank line", progress, sub2, null],
+    ["null without progress", null, sub1, null],
+  ])("returns %s", (_name, prog, id, expected) => {
+    expect(subagentProgressLine(prog, id)).toBe(expected);
   });
 });

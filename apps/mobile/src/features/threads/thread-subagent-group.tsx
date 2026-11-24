@@ -118,14 +118,20 @@ export function ThreadSubagentGroup(props: {
   const members = props.activities.flatMap(({ projectedItem }) =>
     projectedItem.item.type === "subagent" ? [projectedItem.item] : [],
   );
+  const parentThreadRef = scopeThreadRef(props.environmentId, members[0]!.threadId);
   const liveAgents = useAtomValue(
-    environmentThreadDetails.threadAtom(scopeThreadRef(props.environmentId, members[0]!.threadId)),
+    environmentThreadDetails.threadAtom(parentThreadRef),
     (thread) => thread?.projection.subagents,
+  );
+  const threadProgress = useAtomValue(
+    environmentThreadDetails.threadAtom(parentThreadRef),
+    (thread) => thread?.projection.thread.progress ?? null,
   );
   const agents = members.map((item) => {
     const live = liveAgents?.find((agent) => agent.id === item.subagentId);
     return {
       ...item,
+      id: item.subagentId,
       item,
       status: live?.status ?? item.status,
       startedAt: live?.startedAt ?? item.startedAt,
@@ -257,6 +263,7 @@ export function ThreadSubagentGroup(props: {
                   environmentId={props.environmentId}
                   subagent={agent}
                   canOpenRemote={target !== null}
+                  threadProgress={threadProgress}
                   elapsed={<SubagentElapsed agents={[agent]} />}
                 />
               </Pressable>

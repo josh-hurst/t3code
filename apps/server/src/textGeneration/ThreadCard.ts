@@ -200,7 +200,7 @@ const QUOTES = /^["'“”‘’`]+|["'“”‘’`]+$/g;
 const MARKDOWN_NOISE = /\*\*|__|`+|^#+\s+|^[-*>]\s+/g;
 const LABEL_PREFIX = /^(summary|preview)\s*:\s*/i;
 
-function stripNoise(text: string): string {
+export function stripNoise(text: string): string {
   return text
     .replace(MARKDOWN_NOISE, "")
     .replace(LABEL_PREFIX, "")
@@ -210,7 +210,7 @@ function stripNoise(text: string): string {
     .trim();
 }
 
-function capAtWord(text: string, maxChars: number): string {
+export function capAtWord(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   const cut = text.slice(0, maxChars);
   const lastSpace = cut.lastIndexOf(" ");

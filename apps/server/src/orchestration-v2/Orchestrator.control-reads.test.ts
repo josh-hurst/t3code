@@ -3345,6 +3345,66 @@ it.effect(
 );
 
 it.effect(
+  "thread.progress.record stores live progress on the thread and shell without bumping updatedAt, and null clears it",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = yield* laterThread("progress");
+      yield* laterMessage(threadId, "progress-owner", "owner");
+      const before = yield* projections.getThread(threadId);
+      const runId = (yield* projections.getThreadShell(threadId))!.activeRunId!;
+      const subagentId = NodeId.make("sub-progress-1");
+
+      yield* TestClock.adjust("5 seconds");
+      const recorded = yield* orchestrator.dispatch({
+        type: "thread.progress.record",
+        commandId: CommandId.make("progress-record-1"),
+        threadId,
+        progress: {
+          line: "1 of 2 agents done; auth tests running",
+          agents: [{ subagentId, line: "Rerunning auth.test.ts after cookie fix" }],
+        },
+      });
+      assert.equal(recorded.storedEvents[0]?.event.type, "thread.progress-updated");
+      const after = yield* projections.getThread(threadId);
+      const shell = yield* projections.getThreadShell(threadId);
+      assert.deepEqual(after.updatedAt, before.updatedAt);
+      assert.equal(after.progress?.runId, runId);
+      assert.equal(after.progress?.line, "1 of 2 agents done; auth tests running");
+      assert.deepEqual(after.progress?.agents, [
+        { subagentId, line: "Rerunning auth.test.ts after cookie fix" },
+      ]);
+      assert.deepEqual(shell?.progress, {
+        line: "1 of 2 agents done; auth tests running",
+        runId,
+        at: after.progress!.at,
+      });
+
+      yield* TestClock.adjust("5 seconds");
+      const cleared = yield* orchestrator.dispatch({
+        type: "thread.progress.record",
+        commandId: CommandId.make("progress-clear-1"),
+        threadId,
+        progress: null,
+      });
+      assert.equal(cleared.storedEvents[0]?.event.type, "thread.progress-updated");
+      assert.isNull((yield* projections.getThread(threadId)).progress ?? null);
+      assert.isUndefined((yield* projections.getThreadShell(threadId))?.progress);
+      assert.deepEqual((yield* projections.getThread(threadId)).updatedAt, before.updatedAt);
+
+      // Clearing when already null emits zero events cleanly.
+      const noop = yield* orchestrator.dispatch({
+        type: "thread.progress.record",
+        commandId: CommandId.make("progress-clear-2"),
+        threadId,
+        progress: null,
+      });
+      assert.equal(noop.storedEvents.length, 0);
+    }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
   "the owner's follow-up holds the thread until the owner writes, and cancel lets it go",
   () =>
     Effect.gen(function* () {

@@ -2,8 +2,10 @@ import type {
   EnvironmentId,
   OrchestrationV2PendingBackgroundTask,
   ThreadId,
+  ThreadProgress,
 } from "@t3tools/contracts";
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
+import { subagentProgressLine } from "@t3tools/client-runtime/state/subagent-display";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { T, useGT } from "gt-react";
 import { useState } from "react";
@@ -25,6 +27,7 @@ export function BackgroundWorkDetails(props: {
   readonly threadId: ThreadId;
   readonly tasks: ReadonlyArray<OrchestrationV2PendingBackgroundTask>;
   readonly turnItems: ThreadStructure["turnItems"];
+  readonly progress?: ThreadProgress | null | undefined;
   readonly onOpenThread: (threadId: ThreadId) => void;
 }) {
   const gt = useGT();
@@ -75,6 +78,12 @@ export function BackgroundWorkDetails(props: {
               const itemId =
                 task.itemId ?? (item?.type === "command_execution" ? item.id : undefined);
               const childThreadId = task.kind === "subagent" ? task.childThreadId : undefined;
+              const subagent = item?.type === "subagent" ? item : undefined;
+              const subagentProgress =
+                subagent !== undefined
+                  ? (subagentProgressLine(props.progress, subagent.subagentId) ??
+                    (subagent.progress?.replace(/\s+/gu, " ").trim() || null))
+                  : null;
               return (
                 <section key={task.taskId} className="space-y-2 text-sm">
                   <div className="flex items-baseline justify-between gap-3">
@@ -85,6 +94,9 @@ export function BackgroundWorkDetails(props: {
                         : gt("Running", { $context: "status of background work" })}
                     </span>
                   </div>
+                  {subagentProgress ? (
+                    <p className="text-xs text-muted-foreground">{subagentProgress}</p>
+                  ) : null}
                   {command ? (
                     <div className="rounded-md border border-border bg-muted/20 p-3 font-mono text-xs whitespace-pre-wrap break-words">
                       <ShellCommandBlock command={command} />

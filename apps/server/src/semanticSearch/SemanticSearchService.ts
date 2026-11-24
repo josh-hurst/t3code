@@ -874,6 +874,8 @@ const make = Effect.gen(function* () {
       case "thread.card-updated":
       case "thread.entries-updated":
         return scheduleDirtyThread(event.threadId);
+      case "thread.progress-updated":
+        return Effect.void;
       case "run.updated":
         return TERMINAL_RUN_STATUSES.has(event.payload.status)
           ? scheduleDirtyThread(event.threadId)

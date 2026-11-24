@@ -12,7 +12,10 @@ import {
   projectedSubagentsToRuntime,
   type RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
+import {
+  formatSubagentDisplayTitle,
+  subagentProgressLine,
+} from "@t3tools/client-runtime/state/subagent-display";
 import { deriveProviderSubagentStatus } from "@t3tools/client-runtime/state/thread-execution";
 import {
   deriveThreadRelationshipGraph,
@@ -869,7 +872,11 @@ export function ThreadRelationshipsPanel(props: {
         elapsed={<AgentElapsed agent={agent} />}
         status={agent.status}
         result={agent.result}
-        progress={agent.progress}
+        progress={
+          isFinishedAgentStatus(agent.status)
+            ? agent.progress
+            : (subagentProgressLine(projection?.thread.progress, agent.id) ?? agent.progress)
+        }
         parentThread={currentThread ?? undefined}
         childThread={node?.thread ?? undefined}
         parentProject={currentProject}

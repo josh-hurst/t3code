@@ -295,7 +295,9 @@ mobile **Classic thread list** does not show summaries.
 
 While a thread works, its subtitle shows the plan step in progress. If the agent has no
 current step, the subtitle shows its latest progress update or the request it is working on.
-You can follow the work from the sidebar even with reply summaries turned off.
+Threads with running subagents show a live status line per subagent and for the thread, refreshed
+about once a minute using the reply-summary model. You can follow the work from the sidebar even
+with reply summaries turned off.
 
 For other threads without a summary on web and desktop, **Settings → General → Thread row
 details** lets you choose **Branch**, **Latest message**, or **Both**. In

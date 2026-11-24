@@ -212,6 +212,7 @@ export interface EnvironmentThreadShell {
   /** Server-tracked open history for search ranking. */
   readonly opens?: import("@t3tools/contracts").OrchestrationV2ThreadOpens | null;
   readonly card?: import("@t3tools/contracts").ThreadCardSummary | null;
+  readonly progress?: import("@t3tools/contracts").ThreadProgressSummary | null;
   readonly followUp?: import("@t3tools/contracts").ThreadFollowUpSummary | null;
   readonly standingCheck?: boolean;
   readonly titleRegeneration?: { readonly requestId: string; readonly startedAt: string } | null;
@@ -366,6 +367,7 @@ export function presentThreadShell(
       : { lastVisitedAt: nullableIso(thread.lastVisitedAt) }),
     opens: thread.opens ?? null,
     card: thread.card ?? null,
+    progress: thread.progress ?? null,
     followUp: thread.followUp ?? null,
     standingCheck: thread.standingCheck === true,
     titleRegeneration:

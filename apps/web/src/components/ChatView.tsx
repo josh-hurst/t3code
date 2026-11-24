@@ -2615,6 +2615,7 @@ export default function ChatView(props: ChatViewProps) {
     runIsLive: (isWorking && activeRuntime?.status !== "waiting") || phase === "connecting",
     pendingBackgroundTasks,
     turnItems: serverProjection?.turnItems ?? EMPTY_TURN_ITEMS,
+    threadProgress: serverProjection?.thread.progress ?? null,
     activePendingApproval,
     activePendingUserInput,
     localCheckoutBranchMismatch,

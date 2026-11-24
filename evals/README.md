@@ -11,6 +11,7 @@ Write or run an eval when a change affects what a model sees or does: agent inst
 | [pr-content](pr-content/)               | Whether PR generation describes the diff when project instructions try to redirect it.               |
 | [voice-cleanup](voice-cleanup/)         | Whether optional dictation cleanup edits only the spoken text and preserves its meaning.             |
 | [reply-summaries](reply-summaries/)     | Whether thread cards keep a reply's detail and state, list only what it leaves open, and file runs.  |
+| [thread-progress](thread-progress/)     | Whether live subagent progress lines stay specific, terse, and resistant to injected instructions.   |
 | [project-changelog](project-changelog/) | Whether a publish's commits become a few changes that each say what changed.                         |
 | [topic-regroup](topic-regroup/)         | Whether a long thread's runs are grouped into the topics a person would look for.                    |
 | [test-signal](test-signal/)             | Whether a cheap model running the test-signal check flags low-signal tests.                          |

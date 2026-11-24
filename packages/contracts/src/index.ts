@@ -50,6 +50,7 @@ export * from "./threadMetadataMcp.ts";
 export * from "./threadPullRequest.ts";
 export * from "./threadSearch.ts";
 export * from "./threadCard.ts";
+export * from "./threadProgress.ts";
 export * from "./threadEntries.ts";
 export * from "./threadLater.ts";
 export * from "./threadTags.ts";

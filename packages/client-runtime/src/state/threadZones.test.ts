@@ -254,6 +254,64 @@ it("uses an older server's message preview only while it belongs to the working 
   expect(line({ activityDescription: null })).toBe("Fix navigation");
 });
 
+describe("threadWorkingLine with live thread progress", () => {
+  const currentRun = RunId.make("run-current");
+  const olderRun = RunId.make("run-older");
+  const progress = (runId: RunId) => ({
+    line: "2 of 3 agents done; reviewer checking migrations",
+    runId,
+    at: T2,
+  });
+
+  it("prefers current progress while working or waiting, ignores older runs, and lets completed cards win", () => {
+    const working = shell("working", {
+      status: "running",
+      activityRunStatus: "running",
+      activeRunId: currentRun,
+      latestRunId: currentRun,
+      activityDescription: "Raw provider text",
+      progress: progress(currentRun),
+    });
+    expect(threadWorkingLine(working)).toBe("2 of 3 agents done; reviewer checking migrations");
+
+    const waiting = shell(
+      "waiting",
+      {
+        status: "completed",
+        activeRunId: null,
+        latestRunId: currentRun,
+        pendingBackgroundTasks: [subagentTask],
+        progress: progress(currentRun),
+      },
+      { latestRun: run("completed", T0), pendingBackgroundTasks: [subagentTask] },
+    );
+    expect(threadWorkingLine(waiting)).toBe("2 of 3 agents done; reviewer checking migrations");
+
+    const stale = shell("stale", {
+      status: "running",
+      activityRunStatus: "running",
+      activeRunId: currentRun,
+      latestRunId: currentRun,
+      activityDescription: "Raw provider text",
+      progress: progress(olderRun),
+    });
+    expect(threadWorkingLine(stale)).toBe("Raw provider text");
+
+    const completed = shell(
+      "completed",
+      {
+        status: "completed",
+        activeRunId: null,
+        latestRunId: currentRun,
+        progress: progress(currentRun),
+      },
+      { latestRun: run("completed", T2), card: card() },
+    );
+    expect(threadWorkingLine(completed)).toBeNull();
+    expect(threadCardRowLine(completed.card, { needsYou: false })).toBe("Line");
+  });
+});
+
 describe("threadAwaitingAsk", () => {
   const latest = (role: "user" | "assistant", id = "message") => ({
     ...shell("t").source,

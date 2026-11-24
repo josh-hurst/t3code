@@ -11,6 +11,7 @@
     "pr-content": "node --env-file-if-exists=../.env pr-content/run.ts",
     "voice-cleanup": "node --env-file-if-exists=../.env voice-cleanup/run.ts",
     "reply-summaries": "node --env-file-if-exists=../.env reply-summaries/run.ts",
+    "thread-progress": "node --env-file-if-exists=../.env thread-progress/run.ts",
     "project-changelog": "node --env-file-if-exists=../.env project-changelog/run.ts",
     "topic-regroup": "node --env-file-if-exists=../.env topic-regroup/run.ts",
     "test-signal": "node --env-file-if-exists=../.env test-signal/run.ts",

@@ -4,8 +4,10 @@ import type {
   OrchestrationV2ProviderGoal,
   OrchestrationV2ProviderSession,
   ThreadId,
+  ThreadProgress,
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell, ThreadStructure } from "@t3tools/client-runtime/state/shell";
+import { subagentProgressLine } from "@t3tools/client-runtime/state/subagent-display";
 import {
   presentPendingBackgroundWork,
   presentProviderGoal,
@@ -201,6 +203,7 @@ export function backgroundWorkNowItem(
     readonly threadId: ThreadId;
     readonly tasks: ReadonlyArray<OrchestrationV2PendingBackgroundTask>;
     readonly turnItems: ThreadStructure["turnItems"];
+    readonly progress?: ThreadProgress | null | undefined;
     readonly stopDisabled: boolean;
     readonly stopping: boolean;
     readonly onStop: () => Promise<void>;
@@ -219,6 +222,8 @@ export function backgroundWorkNowItem(
       (candidate) => (candidate.nativeItemRef?.nativeId || candidate.id) === itemKey,
     );
     const subagent = item?.type === "subagent" ? item : undefined;
+    const summaryProgress =
+      subagent === undefined ? null : subagentProgressLine(input.progress, subagent.subagentId);
     return {
       task,
       label:
@@ -231,7 +236,7 @@ export function backgroundWorkNowItem(
         ) : (
           task.label
         ),
-      activity: subagent?.progress?.replace(/\s+/gu, " ").trim() || null,
+      activity: summaryProgress ?? (subagent?.progress?.replace(/\s+/gu, " ").trim() || null),
       startedAtMs: item?.startedAt ? DateTime.toEpochMillis(item.startedAt) : null,
       updatedAtMs: subagent ? DateTime.toEpochMillis(subagent.updatedAt) : 0,
     };
@@ -291,6 +296,7 @@ export function backgroundWorkNowItem(
           threadId={input.threadId}
           tasks={input.tasks}
           turnItems={input.turnItems}
+          progress={input.progress}
           onOpenThread={onOpenThread}
         />
         <InlineButton disabled={input.stopDisabled} onClick={() => void input.onStop()}>

@@ -1,6 +1,7 @@
 import { applyThreadPullRequestLinkUpdate } from "../threadPullRequests.ts";
 import {
   applyOrchestrationV2ThreadCard,
+  applyOrchestrationV2ThreadProgress,
   applyOrchestrationV2ThreadVisit,
   isQueuedProviderThreadPlaceholder,
 } from "@t3tools/contracts";
@@ -339,6 +340,11 @@ export function applyOrchestrationV2ProjectionEvent(
       return {
         ...projection,
         thread: applyOrchestrationV2ThreadCard(projection.thread, event.payload),
+      };
+    case "thread.progress-updated":
+      return {
+        ...projection,
+        thread: applyOrchestrationV2ThreadProgress(projection.thread, event.payload),
       };
     // Contents are held beside the thread, not on it.
     case "thread.entries-updated":

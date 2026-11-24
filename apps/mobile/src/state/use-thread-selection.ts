@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   EnvironmentId,
   ThreadId,
+  threadProgressSummary,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
   type ScopedProjectRef,
@@ -111,6 +112,7 @@ function threadDetailToShell(
     deletedAt: thread.deletedAt,
     // Read by the snooze rules: a question in a reply wakes a held thread.
     card: thread.card ?? null,
+    progress: thread.progress ? threadProgressSummary(thread.progress) : null,
     followUp: thread.followUp ?? null,
     standingCheck: thread.standingCheck === true,
   });
