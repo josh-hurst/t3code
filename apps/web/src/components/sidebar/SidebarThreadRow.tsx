@@ -742,7 +742,7 @@ type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   // "folder" is a one-line row inside a boring sidebar project folder;
   // "folder-multiline" adds the card's environment and PR line under it.
-  // "compact" is the Settling shelf's one-line row: project, title and time.
+  // "compact" ends Recent for threads about to settle: project and countdown, then the title.
   variant: "card" | "slim" | "compact" | "folder" | "folder-multiline";
   navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
@@ -1352,7 +1352,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       ref={isRegeneratingTitle ? observeVisibleAnimation : undefined}
       className={cn(
         "min-w-0 flex-1 text-start transition-opacity motion-reduce:transition-none",
-        props.tide ? "text-row-title" : "text-sm",
+        props.tide ? (variant === "compact" ? "text-xs" : "text-row-title") : "text-sm",
         brightTitle
           ? "truncate font-medium text-foreground"
           : shouldRecede && !props.tide
@@ -1374,7 +1374,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               : cn(
                   "truncate group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
                   // Every tier stays above the secondary-label lines under the title.
-                  shouldRecede
+                  shouldRecede || variant === "compact"
                     ? "text-foreground/80"
                     : props.isActive ||
                         isWoke ||
@@ -1930,8 +1930,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(
                   rowSurfaceClassName,
-                  "flex flex-col justify-center px-3",
-                  isCompactRow ? "min-h-7 py-1" : "min-h-9 py-2",
+                  "flex min-h-9 flex-col justify-center px-3",
+                  isCompactRow ? "py-1" : "py-2",
                 )}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
@@ -1941,24 +1941,20 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             }
           >
             <TideRowBody
-              project={null}
-              time={timeSlot}
-              title={
+              project={
                 isCompactRow && projectName !== null ? (
-                  <>
-                    <span className="flex max-w-2/5 shrink-0 text-xs text-foreground/60">
-                      <TideProject
-                        project={props.project}
-                        name={projectName}
-                        changesProjectKey={props.projectChangesKey ?? null}
-                      />
-                    </span>
-                    {title}
-                  </>
-                ) : (
-                  title
-                )
+                  <span className="flex min-w-0 flex-1 items-center">
+                    <TideProject
+                      project={props.project}
+                      name={projectName}
+                      changesProjectKey={props.projectChangesKey ?? null}
+                    />
+                  </span>
+                ) : null
               }
+              time={timeSlot}
+              dense={isCompactRow}
+              title={title}
               titleTrailing={
                 <>
                   {draftIndicator}

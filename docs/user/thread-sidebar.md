@@ -85,7 +85,7 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 Pin a thread from its menu to keep it above your active work.
 
 On web and desktop, the rest of the sidebar files itself. Below your pins come
-**Needs you**, **Recent**, **Working**, **Settling**, **Later**, and **History**, and each section
+**Needs you**, **Recent**, **Working**, **Later**, and **History**, and each section
 keeps its own order, so there is nothing to arrange by hand. Dragging still pins, unpins,
 settles, un-settles, and wakes a thread; a thread you drop below the pins goes to Needs
 you or Recent, wherever it belongs. An older thread can land under **more** in Recent.
@@ -356,17 +356,17 @@ does not count, so a project you leave for another keeps its threads longer. A s
 you left for other work in the project scores low within the hour; a long one you wrote in
 often stays in Recent for much longer.
 
-When the chance is low, the thread moves from Recent to **Settling**, below Working. Its rows
-are one line each: project, title, and how long until the thread settles if you do nothing
+When the chance is low, the thread moves to the end of Recent, under **About to settle**. Its
+rows show only the project, the title, and how long until the thread settles if you do nothing
 more. Work in other threads brings that time forward. The thread you are likeliest to come
 back to is at the top and the surest to leave is at the bottom. Nothing settles this way in
 its first three hours. At three hours quiet, a thread whose chance is low settles if you have
 worked in its project since and it is not a long one. One that misses that settles once its
 chance is close to none, or after a day if it is still low, and never later than the setting.
-A thread you wrote in more than 16 times waits for the setting unless its project published. Write in a thread to take it back to Recent. The classic sidebar has no Settling section, and its
-threads settle by the same rule.
+A thread you wrote in more than 16 times waits for the setting unless its project published. Write in a thread to put it back among your recent threads. **Clear** settles these rows too.
+The classic sidebar has no About to settle rows, and its threads settle by the same rule.
 
-A thread with a pull request keeps the full wait and is not listed in Settling. Something its
+A thread with a pull request keeps the full wait and is not listed under About to settle. Something its
 summary lists for you to check, commit, or publish does not hold it, but a question you have
 not read keeps it from settling on its own, and a thread stays at least two hours after you
 open it to read one.

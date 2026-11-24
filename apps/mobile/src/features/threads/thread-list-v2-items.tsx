@@ -556,12 +556,32 @@ export const ThreadListV2SectionHeader = memo(function ThreadListV2SectionHeader
 }) {
   const gt = useGT();
   const onClear = props.onClear;
-  const label =
-    props.title === "By meaning"
-      ? gt("By meaning")
-      : props.title === "Settling"
-        ? gt("Settling", { $context: "thread list section" })
-        : props.title;
+  if (props.title === "About to settle") {
+    const sidebarPane = props.pane === "sidebar";
+    const muted = sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-muted";
+    // Labels Recent's last rows rather than starting a section, so it sits small inside Recent.
+    return (
+      <View
+        className={cn("flex-row items-center gap-1.5 pt-3 pb-1", sidebarPane ? "px-3" : "px-9")}
+      >
+        <SymbolView
+          name="timer"
+          size={11}
+          tintColorClassName={
+            sidebarPane ? "accent-drawer-foreground-muted" : "accent-foreground-muted"
+          }
+          type="monochrome"
+        />
+        <Text className={cn("flex-1 text-xs font-t3-medium", muted)}>
+          {gt("About to settle", {
+            $context: "label above Recent threads that will settle soon",
+          })}
+        </Text>
+        <Text className={cn("text-xs tabular-nums", muted)}>{props.count}</Text>
+      </View>
+    );
+  }
+  const label = props.title === "By meaning" ? gt("By meaning") : props.title;
   return (
     <ThreadListV2Section
       label={label}
@@ -1006,7 +1026,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly cardLine?: string | null;
   /** A slim row's project, on its own line above the title. */
   readonly projectLine?: string | null;
-  /** A Settling row: the project, title and time on one line, and nothing under them. */
+  /** An about-to-settle row: title and countdown, then the project, and no status line. */
   readonly compact?: boolean;
   /** The self-filing list, where card rows share the slim rows' anatomy. */
   readonly selfFiling?: boolean;
@@ -2320,34 +2340,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         >
           <View className="flex-row items-center gap-2">
             {unreadDot}
-            {props.compact === true && projectLine ? (
-              <View className="max-w-[40%] shrink-0 flex-row items-center gap-1.5">
-                {props.project ? (
-                  <ProjectFavicon
-                    environmentId={thread.environmentId}
-                    faviconPath={props.project.faviconPath}
-                    projectIcon={props.project.projectIcon}
-                    size={Math.round(metadataTypography.fontSize * fontScale)}
-                    projectTitle={props.project.title}
-                    workspaceRoot={props.project.workspaceRoot}
-                  />
-                ) : null}
-                <Text
-                  className={cn(
-                    "shrink text-xs",
-                    selected
-                      ? selectedThreadRowColors.mutedForegroundClassName
-                      : rowAppearance.tertiaryForegroundClassName,
-                  )}
-                  numberOfLines={1}
-                >
-                  {projectLine}
-                </Text>
-              </View>
-            ) : null}
             <Text
               className={cn(
-                "min-w-0 flex-1 text-base",
+                "min-w-0 flex-1",
+                props.compact === true ? "text-sm" : "text-base",
                 showsDone ? "font-t3-semibold" : "font-t3-medium",
                 selected
                   ? selectedThreadRowColors.foregroundClassName
@@ -2389,7 +2385,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               {providerNameLabel}
             </Text>
           ) : null}
-          {projectLine && props.compact !== true ? projectFooter : null}
+          {projectLine ? projectFooter : null}
           {props.searchMatch ? (
             <ThreadSearchMatchExcerpt
               sidebar={sidebarPane}

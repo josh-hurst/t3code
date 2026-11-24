@@ -2079,12 +2079,12 @@ describe("self-filing list", () => {
       "trail-older",
       // A finished run that owes a commit waits in Recent.
       "finished-owing",
-      "[v2-working-shelf]",
-      "working",
-      // Unlikely to be written in again, the surest last.
-      "[Settling]",
+      // Unlikely to be written in again: Recent ends with them, the surest last.
+      "[About to settle]",
       "settling-likelier",
       "settling-surest",
+      "[v2-working-shelf]",
+      "working",
       "[Later]",
       "snoozed",
       "[History]",

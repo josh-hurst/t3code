@@ -63,14 +63,7 @@ import {
 
 const MAX_HISTORY_ROWS = 15;
 
-type PopoverSection =
-  | "pinned"
-  | "needsYou"
-  | "trail"
-  | "working"
-  | "settling"
-  | "snoozed"
-  | "settled";
+type PopoverSection = "pinned" | "needsYou" | "trail" | "working" | "snoozed" | "settled";
 
 interface PopoverThreadRow {
   readonly key: string;
@@ -206,11 +199,17 @@ export function MenuBarPopover({ onClose }: { readonly onClose: () => void }) {
       section: "working" as const,
       groupLabel: null,
     })),
-    settling: settlingThreads.map((thread) => ({
+    // The threads the server expects to settle end Recent, under their own label.
+    settling: settlingThreads.map((thread, index) => ({
       key: threadKeyOf(thread),
       thread,
-      section: "settling" as const,
-      groupLabel: null,
+      section: "trail" as const,
+      groupLabel:
+        index === 0
+          ? gt("About to settle", {
+              $context: "label above Recent threads that will settle soon",
+            })
+          : null,
     })),
     later: snoozedThreads.map((thread) => ({
       key: threadKeyOf(thread),
@@ -467,11 +466,6 @@ export function MenuBarPopover({ onClose }: { readonly onClose: () => void }) {
       id: "working",
       label: gt("Working", { $context: "sidebar section" }),
       rows: orderedRows.filter((row) => row.section === "working"),
-    },
-    {
-      id: "settling",
-      label: gt("Settling", { $context: "sidebar section" }),
-      rows: orderedRows.filter((row) => row.section === "settling"),
     },
     {
       id: "snoozed",

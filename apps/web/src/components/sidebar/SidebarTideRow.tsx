@@ -134,8 +134,8 @@ export function TideProject(props: {
 }
 
 /**
- * A thread row's first line: the project and its pull request, with any off-main branch at the
- * right. A plain function, so a row with none of them passes no line at all.
+ * A thread row's first line: the project, any off-main branch beside it, then its pull request.
+ * A plain function, so a row with none of them passes no line at all.
  */
 export function tideRowMeta(props: {
   project: ProjectFaviconProject | null;
@@ -157,20 +157,15 @@ export function tideRowMeta(props: {
           <TideProjectName name={props.name} changesProjectKey={props.changesProjectKey ?? null} />
         </span>
       ) : null}
-      {props.pullRequest}
       {props.branch !== null ? (
-        <span
-          className={cn(
-            "flex min-w-0 items-center gap-1",
-            (props.name !== null || props.pullRequest) && "ml-auto",
-          )}
-        >
+        <span className="flex min-w-0 items-center gap-1">
           <GitBranchIcon aria-hidden className="size-3 shrink-0" />
           <span className="flex min-w-0">
             <MiddleTruncate value={props.branch} showTitle={false} />
           </span>
         </span>
       ) : null}
+      {props.pullRequest}
     </>
   );
 }
@@ -186,6 +181,8 @@ export function TideRowBody(props: {
   // The time and, on hover, the row's actions in its place.
   time: ReactNode;
   title: ReactNode;
+  /** A shorter title line, for rows that should take little room. */
+  dense?: boolean;
   unreadCompletion?: boolean;
   titleTrailing?: ReactNode;
   label: ReactNode | null;
@@ -212,7 +209,11 @@ export function TideRowBody(props: {
         </div>
       ) : null}
       <div
-        className={cn("flex h-5 min-w-0 items-center gap-1.5", props.project !== null && "mt-0.5")}
+        className={cn(
+          "flex min-w-0 items-center gap-1.5",
+          props.dense ? "h-4" : "h-5",
+          props.project !== null && !props.dense && "mt-0.5",
+        )}
       >
         {props.unreadCompletion ? (
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-success" />

@@ -324,6 +324,7 @@ import {
   SidebarDragBoundary,
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
+  SidebarSettlingLabel,
 } from "./sidebar/SidebarListMarkers";
 
 function sameSidebarProviderEntries(
@@ -387,7 +388,6 @@ const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
 // The self-filing layout opens Working and Later by default, so it keeps its own state.
 const FILED_WORKING_EXPANDED_KEY = "t3code:sidebar:filed-working-expanded";
-const SETTLING_SHELF_EXPANDED_KEY = "t3code:sidebar:settling-expanded";
 const FILED_LATER_EXPANDED_KEY = "t3code:sidebar:filed-later-expanded";
 const TRAIL_EXPANDED_KEY = "t3code:sidebar:trail-expanded";
 const TRAIL_GROUP_BY_PROJECT_KEY = "t3code:sidebar:trail-group-by-project";
@@ -540,11 +540,6 @@ function useSidebarThreads(input: {
   const [workingShelfExpanded, setWorkingShelfExpanded] = useLocalStorage(
     tide ? FILED_WORKING_EXPANDED_KEY : WORKING_SHELF_EXPANDED_KEY,
     tide,
-    Schema.Boolean,
-  );
-  const [settlingShelfExpanded, setSettlingShelfExpanded] = useLocalStorage(
-    SETTLING_SHELF_EXPANDED_KEY,
-    true,
     Schema.Boolean,
   );
   const [trailExpanded, setTrailExpanded] = useLocalStorage(
@@ -730,9 +725,7 @@ function useSidebarThreads(input: {
   const visibleWorkingThreads = nest(
     workingShelfExpanded ? workingThreads : routeThreadOnly(workingThreads, routeRowThreadKey),
   );
-  const visibleSettlingThreads = nest(
-    settlingShelfExpanded ? settlingThreads : routeThreadOnly(settlingThreads, routeRowThreadKey),
-  );
+  const visibleSettlingThreads = nest(settlingThreads);
   const projectFolders =
     folderGroups === null
       ? null
@@ -865,8 +858,6 @@ function useSidebarThreads(input: {
     toggleWorkingShelf: () => setWorkingShelfExpanded((value) => !value),
     settlingThreads,
     visibleSettlingThreads,
-    settlingShelfExpanded,
-    toggleSettlingShelf: () => setSettlingShelfExpanded((value) => !value),
     projectFolders,
     toggleProjectFolder: (group: SidebarProjectSnapshot) => {
       const keys = sidebarFolderExpansionKeys(group);
@@ -1704,8 +1695,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     toggleWorkingShelf,
     settlingThreads,
     visibleSettlingThreads,
-    settlingShelfExpanded,
-    toggleSettlingShelf,
     projectFolders,
     toggleProjectFolder,
     needsYouKeys,
@@ -2558,11 +2547,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       items.push({ kind: "marker", marker: "working-header" });
       items.push(...rowsOf(visibleWorkingThreads, "working"));
     };
-    const pushSettling = () => {
-      if (settlingThreads.length === 0) return;
-      items.push({ kind: "marker", marker: "settling-header" });
-      items.push(...rowsOf(visibleSettlingThreads, "settling"));
-    };
     // The new layout draws Working below the Trail, so the Trail sits right under Needs you.
     if (!tide) pushWorking();
     const pushLater = () => {
@@ -2580,8 +2564,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       if (trailCounts !== null && trailCounts.moreToday + trailCounts.earlier > 0) {
         items.push({ kind: "marker", marker: "trail-more" });
       }
+      // Threads the server expects to settle end Recent, under their own label.
+      if (settlingThreads.length > 0) {
+        items.push({ kind: "marker", marker: "settling-header" });
+        items.push(...rowsOf(visibleSettlingThreads, "settling"));
+      }
       pushWorking();
-      pushSettling();
       pushLater();
     }
     items.push({ kind: "marker", marker: "settled-header" });
@@ -2630,7 +2618,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const listMotionPass = { layoutKey: listMotionLayoutKey, animate: listMotionAnimate };
   const shelfExpansionKey = [
     workingShelfExpanded,
-    settlingShelfExpanded,
     snoozedShelfExpanded,
     settledShelfExpanded,
     trailExpanded,
@@ -3666,9 +3653,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     );
     if (target) void navigateToThread(scopeThreadRef(target.environmentId, target.id));
   };
+  const recentThreads = [...trailThreads, ...settlingThreads];
   const clearTrail = () => {
     // Includes rows under the Trail's expander, which `settleThreads` cannot see.
-    const cleared = trailThreadsToClear(trailThreads, routeRowThreadKey).filter(
+    const cleared = trailThreadsToClear(recentThreads, routeRowThreadKey).filter(
       (thread) =>
         serverConfigs.has(thread.environmentId) &&
         readEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope),
@@ -4416,7 +4404,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             navigationParent={
                               folderRow ??
                               (section === "working" ||
-                              section === "settling" ||
                               section === "snoozed" ||
                               section === "settled"
                                 ? `shelf:${section}`
@@ -4563,11 +4550,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       const firstShelfMarker =
                         workingThreads.length > 0
                           ? "working-header"
-                          : settlingThreads.length > 0
-                            ? "settling-header"
-                            : snoozedThreads.length > 0
-                              ? "snoozed-header"
-                              : "settled-header";
+                          : snoozedThreads.length > 0
+                            ? "snoozed-header"
+                            : "settled-header";
                       const listKeys = sidebarListItems.map((item) =>
                         item.kind === "thread" && item.section === "active" ? item.key : "",
                       );
@@ -4707,17 +4692,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             break;
                           case "settling-header":
                             items.push(
-                              <SidebarSectionHeader
-                                key="settling-shelf-header"
-                                marker="settling-header"
-                                first={startsShelves}
-                                tide={tide}
-                                label={gt("Settling", { $context: "sidebar section" })}
+                              <SidebarSettlingLabel
+                                key="settling-header"
+                                label={gt("About to settle", {
+                                  $context: "label above Recent threads that will settle soon",
+                                })}
                                 count={settlingThreads.length}
-                                toggle={{
-                                  expanded: settlingShelfExpanded,
-                                  onToggle: toggleSettlingShelf,
-                                }}
                               />,
                             );
                             break;
@@ -4745,13 +4725,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             items.push(
                               <SidebarTrailHeader
                                 key="trail-header"
-                                count={trailThreads.length}
+                                count={recentThreads.length}
                                 groupByProject={trailGroupByProject}
                                 onToggleGroupByProject={
                                   groupingAffectsRows ? toggleTrailGroupByProject : null
                                 }
                                 onClear={
-                                  trailThreadsToClear(trailThreads, routeRowThreadKey).length > 0
+                                  trailThreadsToClear(recentThreads, routeRowThreadKey).length > 0
                                     ? clearTrail
                                     : null
                                 }

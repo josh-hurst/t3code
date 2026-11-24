@@ -434,7 +434,7 @@ export interface ThreadListV2Item {
   readonly projectLine: string | null;
   /** A row in the self-filing list's Needs you, which tints its card as on web. */
   readonly needsYou?: boolean;
-  /** A Settling row: its project, title and time on one line. */
+  /** An about-to-settle row: title and countdown, then the project, and no status line. */
   readonly compact?: boolean;
   readonly isLast: boolean;
 }
@@ -557,7 +557,7 @@ export interface ThreadListV2SectionHeaderListItem {
     | "v2-trail-header"
     | "v2-settling-header"
     | "v2-semantic-header";
-  readonly title: "Needs you" | "Recent" | "Settling" | "By meaning";
+  readonly title: "Needs you" | "Recent" | "About to settle" | "By meaning";
   readonly count: number;
   /** What the header's Clear settles; on the item so a recycled cell never settles an old set. */
   readonly clearThreads: ReadonlyArray<EnvironmentThreadShell> | null;
@@ -913,16 +913,22 @@ export function buildThreadListV2ListItems(input: {
     }
   };
   if (tide === null) pushLater();
-  if (tide !== null && trailHeaderIndex !== null && tide.trailCount > 0) {
+  const settlingStart = tide !== null && tide.settlingCount > 0 ? settlingHeaderIndex : null;
+  if (
+    tide !== null &&
+    (settlingStart !== null || (trailHeaderIndex !== null && tide.trailCount > 0))
+  ) {
     result.push({
       type: "v2-section-header",
       key: "v2-trail-header",
       title: "Recent",
-      count: tide.trailCount,
+      count: tide.trailCount + tide.settlingCount,
       clearThreads: tide.trailClearThreads.length > 0 ? tide.trailClearThreads : null,
       disabled: shelfDisabled,
     });
-    result.push(...threadItems.slice(trailHeaderIndex, trailEnd));
+    if (trailHeaderIndex !== null) {
+      result.push(...threadItems.slice(trailHeaderIndex, trailEnd));
+    }
     if (tide.trailMore !== null) {
       result.push({
         type: "v2-trail-more",
@@ -932,20 +938,21 @@ export function buildThreadListV2ListItems(input: {
         disabled: shelfDisabled,
       });
     }
-  }
-  if (tide !== null) {
-    pushWorking();
-    if (settlingHeaderIndex !== null && tide.settlingCount > 0) {
+    // Threads the server expects to settle end Recent, under their own label.
+    if (settlingStart !== null) {
       result.push({
         type: "v2-section-header",
         key: "v2-settling-header",
-        title: "Settling",
+        title: "About to settle",
         count: tide.settlingCount,
         clearThreads: null,
         disabled: shelfDisabled,
       });
-      result.push(...threadItems.slice(settlingHeaderIndex, settlingEnd));
+      result.push(...threadItems.slice(settlingStart, settlingEnd));
     }
+  }
+  if (tide !== null) {
+    pushWorking();
     pushLater();
   }
   if (settledShelfHeaderIndex !== null && settledCount > 0) {
@@ -1525,10 +1532,9 @@ export function buildThreadListV2Items(input: {
     trailHeaderIndex,
     trailCount: tideZones?.trail.length ?? 0,
     trailMore: tideZones?.trailMore ?? null,
-    trailClearThreads:
-      tideZones?.trail.filter(
-        (thread) => `${thread.environmentId}:${thread.id}` !== selectedThreadKey,
-      ) ?? [],
+    trailClearThreads: [...(tideZones?.trail ?? []), ...(tideZones?.settling ?? [])].filter(
+      (thread) => `${thread.environmentId}:${thread.id}` !== selectedThreadKey,
+    ),
     settlingHeaderIndex,
     settlingCount: tideZones?.settling.length ?? 0,
     nextSnoozeWakeAt,

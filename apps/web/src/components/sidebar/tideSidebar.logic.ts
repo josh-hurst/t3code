@@ -179,8 +179,8 @@ export function tideRenderedOrder<T>(sections: {
     ...sections.pinned,
     ...sections.needsYou,
     ...sections.trail,
-    ...sections.working,
     ...sections.settling,
+    ...sections.working,
     ...sections.later,
     ...sections.history,
   ];
