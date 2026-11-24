@@ -18,14 +18,14 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ThreadEntryStore from "./ThreadEntryStore.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 
-const RUNS_SINCE_REGROUP_DUE = 5;
+const RUNS_SINCE_REGROUP_DUE = 10;
 const SETTLED_REGROUP_EVERY_MS = 24 * 60 * 60 * 1000;
 const IDLE_MS = 10 * 60 * 1000;
 
 /**
  * Whether an idle candidate (ten minutes without a reply, long, with runs not yet regrouped) is
- * due. Five new runs make it due; fewer only once the thread is settled and not regrouped in the
- * last day, so a thread the owner checks hourly does not pay three calls after every message.
+ * due. Ten new runs make it due; fewer only once the thread is settled and not regrouped in the
+ * last day, so a thread the owner checks hourly does not keep paying for regroups.
  */
 export function regroupDue(input: {
   readonly state: ThreadContentsState;

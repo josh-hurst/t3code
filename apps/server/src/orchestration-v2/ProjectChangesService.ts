@@ -6,6 +6,7 @@ import {
   type ProjectChangesResult,
   ProjectId,
   RunId,
+  type SummarizeProjectChangesInput,
   type SummarizeProjectChangesResult,
   ThreadEntryId,
   ThreadEntryRun,
@@ -25,9 +26,11 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
+  buildIncrementalProjectChangelogPrompt,
   buildProjectChangelogPrompt,
   changelogFolders,
   CHANGELOG_COMMITS_MAX,
+  parseIncrementalProjectChangelog,
   parseProjectChangelog,
 } from "../textGeneration/ProjectChangelog.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
@@ -74,16 +77,15 @@ const decodeThreads = Schema.decodeUnknownEffect(
     }),
   ),
 );
-const decodeCheckpoints = Schema.decodeUnknownEffect(
-  Schema.Array(
-    Schema.Struct({
-      threadId: ThreadId,
-      runId: RunId,
-      capturedAt: IsoDateTime,
-      paths: Schema.fromJsonString(Schema.Array(Schema.String)),
-    }),
-  ),
+const CheckpointRows = Schema.Array(
+  Schema.Struct({
+    threadId: ThreadId,
+    runId: RunId,
+    capturedAt: IsoDateTime,
+    paths: Schema.fromJsonString(Schema.Array(Schema.String)),
+  }),
 );
+const decodeCheckpoints = Schema.decodeUnknownEffect(CheckpointRows);
 const decodeEntries = Schema.decodeUnknownEffect(
   Schema.Array(
     Schema.Struct({
@@ -180,12 +182,12 @@ export class ProjectChangesService extends Context.Service<
       readonly projectId: ProjectId;
     }) => Effect.Effect<ProjectChangesResult, ProjectChangesError>;
     /**
-     * Writes the changelog of each period that has none, a model call apiece, a few per call.
-     * Does nothing while reply summaries are off. The count of periods written.
+     * Writes the changelog of each period that has none, of `periodKeys` when given, a model call
+     * apiece, a few per call. Does nothing while reply summaries are off. The count written.
      */
-    readonly summarize: (input: {
-      readonly projectId: ProjectId;
-    }) => Effect.Effect<SummarizeProjectChangesResult, ProjectChangesError>;
+    readonly summarize: (
+      input: SummarizeProjectChangesInput,
+    ) => Effect.Effect<SummarizeProjectChangesResult, ProjectChangesError>;
   }
 >()("t3/orchestration-v2/ProjectChangesService") {}
 
@@ -250,23 +252,11 @@ const make = Effect.gen(function* () {
     }));
   });
 
-  const loadEvidence = Effect.fn("ProjectChangesService.loadEvidence")(function* (
+  const readCheckpoints = Effect.fn("ProjectChangesService.readCheckpoints")(function* (
     projectId: ProjectId,
-    workspaceRoot: string,
     since: string,
-    nowIso: string,
   ) {
-    const threads = yield* decodeThreads(
-      yield* sql`
-        SELECT
-          thread_id AS "threadId",
-          json_extract(payload_json, '$.lineage.parentThreadId') AS "parentThreadId",
-          json_extract(payload_json, '$.worktreePath') AS "worktreePath"
-        FROM orchestration_v2_projection_threads
-        WHERE project_id = ${projectId}
-      `,
-    );
-    const checkpoints = yield* decodeCheckpoints(
+    return yield* decodeCheckpoints(
       yield* sql`
         SELECT
           c.thread_id AS "threadId",
@@ -284,34 +274,16 @@ const make = Effect.gen(function* () {
           AND json_array_length(c.payload_json, '$.files') > 0
       `,
     );
-    // Top-level threads only: a subagent's edits count for its parent's topic.
-    const entries = yield* decodeEntries(
-      yield* sql`
-        SELECT
-          e.entry_id AS id,
-          e.thread_id AS "threadId",
-          e.title,
-          e.outcome,
-          t.title AS "threadTitle",
-          e.start_message_id AS "startMessageId",
-          e.runs_json AS runs
-        FROM tide_thread_entries e
-        JOIN orchestration_v2_projection_threads t
-          ON t.thread_id = e.thread_id AND t.deleted_at IS NULL
-        WHERE t.project_id = ${projectId}
-          AND e.status = 'active'
-          AND e.ended_at >= ${since}
-          AND json_extract(t.payload_json, '$.lineage.parentThreadId') IS NULL
-      `,
-    );
-    const runs = yield* decodeRuns(
-      yield* sql`
-        SELECT r.run_id AS "runId", r.requested_at AS "requestedAt"
-        FROM orchestration_v2_projection_runs r
-        JOIN orchestration_v2_projection_threads t ON t.thread_id = r.thread_id
-        WHERE t.project_id = ${projectId} AND r.requested_at >= ${since}
-      `,
-    );
+  }, NodeSqliteClient.readOnly);
+
+  /**
+   * What each run with a checkpoint did, from what was kept or else from its turn items. The runs
+   * read fresh come back in `toKeep`, for the caller to store.
+   */
+  const readRunWork = Effect.fn("ProjectChangesService.readRunWork")(function* (
+    workspaceRoot: string,
+    checkpoints: typeof CheckpointRows.Type,
+  ) {
     const changedRuns = new Map<
       RunId,
       { threadId: ThreadId; capturedAt: string; paths: string[] }
@@ -414,6 +386,55 @@ const make = Effect.gen(function* () {
         named: [...kept.commandFileNames],
       };
     });
+    return { runWork, toKeep };
+  }, NodeSqliteClient.readOnly);
+
+  const loadEvidence = Effect.fn("ProjectChangesService.loadEvidence")(function* (
+    projectId: ProjectId,
+    workspaceRoot: string,
+    since: string,
+    nowIso: string,
+  ) {
+    const threads = yield* decodeThreads(
+      yield* sql`
+        SELECT
+          thread_id AS "threadId",
+          json_extract(payload_json, '$.lineage.parentThreadId') AS "parentThreadId",
+          json_extract(payload_json, '$.worktreePath') AS "worktreePath"
+        FROM orchestration_v2_projection_threads
+        WHERE project_id = ${projectId}
+      `,
+    );
+    const checkpoints = yield* readCheckpoints(projectId, since);
+    // Top-level threads only: a subagent's edits count for its parent's topic.
+    const entries = yield* decodeEntries(
+      yield* sql`
+        SELECT
+          e.entry_id AS id,
+          e.thread_id AS "threadId",
+          e.title,
+          e.outcome,
+          t.title AS "threadTitle",
+          e.start_message_id AS "startMessageId",
+          e.runs_json AS runs
+        FROM tide_thread_entries e
+        JOIN orchestration_v2_projection_threads t
+          ON t.thread_id = e.thread_id AND t.deleted_at IS NULL
+        WHERE t.project_id = ${projectId}
+          AND e.status = 'active'
+          AND e.ended_at >= ${since}
+          AND json_extract(t.payload_json, '$.lineage.parentThreadId') IS NULL
+      `,
+    );
+    const runs = yield* decodeRuns(
+      yield* sql`
+        SELECT r.run_id AS "runId", r.requested_at AS "requestedAt"
+        FROM orchestration_v2_projection_runs r
+        JOIN orchestration_v2_projection_threads t ON t.thread_id = r.thread_id
+        WHERE t.project_id = ${projectId} AND r.requested_at >= ${since}
+      `,
+    );
+    const { runWork, toKeep } = yield* readRunWork(workspaceRoot, checkpoints);
     const publishes = yield* readPublishes(projectId, since, nowIso);
     return {
       touches: assembleTouches({
@@ -448,6 +469,19 @@ const make = Effect.gen(function* () {
       FROM json_each(${yield* encodeKeptRunWork(rows)})
     `;
     yield* sql`DELETE FROM tide_run_work WHERE captured_at < ${since}`;
+  });
+
+  const scope = yield* Effect.scope;
+  const warmed = yield* Ref.make<ReadonlySet<ProjectId>>(new Set());
+  /** Keeps what new runs did ahead of the first Changes view, one project at a time. */
+  const warmRunWork = Effect.fn("ProjectChangesService.warmRunWork")(function* (
+    targets: ReadonlyArray<{ readonly projectId: ProjectId; readonly cwd: string }>,
+    since: string,
+  ) {
+    for (const { projectId, cwd } of targets) {
+      const { toKeep } = yield* readRunWork(cwd, yield* readCheckpoints(projectId, since));
+      if (toKeep.length > 0) yield* keepRunWork(toKeep, since);
+    }
   });
 
   const statusArgs = [
@@ -485,6 +519,7 @@ const make = Effect.gen(function* () {
         `,
       );
       const since = DateTime.formatIso(DateTime.subtract(now, { days: HISTORY_DAYS }));
+      const checkouts: Array<{ projectId: ProjectId; cwd: string }> = [];
       const value = yield* Effect.forEach(
         active,
         ({ projectId }) =>
@@ -492,6 +527,7 @@ const make = Effect.gen(function* () {
             const project = yield* projects.getById(projectId);
             if (Option.isNone(project)) return [];
             const cwd = project.value.workspaceRoot;
+            checkouts.push({ projectId, cwd });
             const [status, remotes] = yield* Effect.all(
               [run(cwd, "status", statusArgs), run(cwd, "remotes", ["remote"])],
               { concurrency: 2 },
@@ -521,6 +557,17 @@ const make = Effect.gen(function* () {
         { concurrency: 4 },
       ).pipe(Effect.map((rows) => rows.flat()));
       yield* Ref.set(countsHeld, { atMs: nowMs, value });
+      const cold = yield* Ref.modify(warmed, (done) => {
+        const todo = checkouts.filter((checkout) => !done.has(checkout.projectId));
+        return [todo, new Set([...done, ...todo.map((checkout) => checkout.projectId)])];
+      });
+      if (cold.length > 0) {
+        // Once per project per server start, off the request: a view then reads only kept rows.
+        yield* warmRunWork(cold, since).pipe(
+          Effect.ignoreCause({ log: true }),
+          Effect.forkIn(scope),
+        );
+      }
       return value;
     },
     Effect.mapError(failed("counts")),
@@ -677,7 +724,7 @@ const make = Effect.gen(function* () {
   const summarize: ProjectChangesService["Service"]["summarize"] = Effect.fn(
     "ProjectChangesService.summarize",
   )(
-    function* ({ projectId }) {
+    function* ({ projectId, periodKeys }) {
       const settings = yield* serverSettings.getSettings;
       if (settings.threadReplySummariesEnabled !== true) return { summarized: 0 };
       const project = yield* projects.getById(projectId);
@@ -696,8 +743,9 @@ const make = Effect.gen(function* () {
           readDigests(projectId),
         ]);
         const periods = changePeriods({ ownCommits: own.commits, publishedAtMs });
+        const wanted = periodKeys === undefined ? null : new Set(periodKeys);
         const missing = periods
-          .filter((period) => !digests.has(period.key))
+          .filter((period) => !digests.has(period.key) && (wanted?.has(period.key) ?? true))
           .slice(0, SUMMARIZE_PERIODS_MAX);
         // Providers run in a working directory; a changelog must not read the checkout.
         const scratch = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-changelog-" });
@@ -735,13 +783,23 @@ const make = Effect.gen(function* () {
             files: commit.files.length,
             folders: changelogFolders(commit.files),
           }));
+          const newCommits = commits.filter((commit) => !coveredByEarlier.has(commit.sha));
+          const useIncremental =
+            earlier !== undefined &&
+            earlier.items.length > 0 &&
+            newCommits.length > 0 &&
+            newCommits.length < commits.length / 2;
           const generated = yield* textGeneration.generateTranscriptionPostProcessing({
             cwd: scratch,
-            prompt: buildProjectChangelogPrompt(commits),
+            prompt: useIncremental
+              ? buildIncrementalProjectChangelogPrompt(earlier, newCommits)
+              : buildProjectChangelogPrompt(commits),
             modelSelection: settings.threadReplySummaryModelSelection,
           });
           // The prompt numbers these commits, so the reply's numbers index the same list.
-          const parsed = parseProjectChangelog(generated.transcription, commits);
+          const parsed = useIncremental
+            ? parseIncrementalProjectChangelog(generated.transcription, earlier, newCommits)
+            : parseProjectChangelog(generated.transcription, commits);
           if (parsed === null) return null;
           // Commits past the cap were never shown to the model; they still belong in the list.
           const uncounted = period.commits.slice(0, -CHANGELOG_COMMITS_MAX);

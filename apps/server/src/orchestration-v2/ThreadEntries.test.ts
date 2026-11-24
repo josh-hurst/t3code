@@ -195,10 +195,10 @@ describe("contentsForPrompt and fileRun", () => {
       entry(2, "Second", [3, 55]),
       entry(1, "First", [1, 2], { open: [{ kind: "verify", text: "Check it", runId: runId(1) }] }),
       entry(3, "Retired", [4], { status: "retired", mergedInto: entryId(1) }),
-      ...Array.from({ length: 40 }, (_, index) => entry(10 + index, `Many ${index}`, [10 + index])),
+      ...Array.from({ length: 20 }, (_, index) => entry(10 + index, `Many ${index}`, [10 + index])),
     ];
     const shown = contentsForPrompt(contents(entries, [2]));
-    expect(shown.contents.entries).toHaveLength(40);
+    expect(shown.contents.entries).toHaveLength(20);
     // The cap leaves out the two that ended first; "Second" started first of those left.
     expect(shown.contents.entries[0]).toEqual({
       ref: "e1",

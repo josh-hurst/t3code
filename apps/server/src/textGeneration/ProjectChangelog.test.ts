@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  buildIncrementalProjectChangelogPrompt,
   buildProjectChangelogPrompt,
   changelogFolders,
+  parseIncrementalProjectChangelog,
   parseProjectChangelog,
 } from "./ProjectChangelog.ts";
 
@@ -56,5 +58,56 @@ describe("the changelog prompt", () => {
     ]);
     expect(prompt).toContain("1. Store: coin prices [2 files: Shop]\n   Why.\n   More.");
     expect(prompt).toContain("2. Ranked queue [1 files: Ranked]");
+  });
+
+  it("builds and merges incremental changelog updates onto an existing digest", () => {
+    const existing = {
+      items: [
+        { title: "Premium store", summary: "Coins replace gems", shas: ["aaa", "bbb"] },
+        { title: "Ranked queue", summary: "Pairs by device", shas: ["ccc"] },
+      ],
+      labels: { aaa: "Coin prices", bbb: "Drop gem shop", ccc: "Device pairing" },
+    };
+    const prompt = buildIncrementalProjectChangelogPrompt(existing, [
+      { sha: "ddd", subject: "Fix coin rounding", body: "", files: 1, folders: ["Shop"] },
+      { sha: "eee", subject: "Add leaderboards", body: "", files: 3, folders: ["Board"] },
+      { sha: "fff", subject: "Misc tweak", body: "", files: 1, folders: ["Misc"] },
+    ]);
+    expect(prompt).toContain("c1 | Premium store | Coins replace gems");
+    expect(prompt).toContain("1. Fix coin rounding [1 files: Shop]");
+    expect(prompt).not.toContain("Drop gem shop");
+
+    const merged = parseIncrementalProjectChangelog(
+      [
+        "update: c1 | Premium store | Coins replace gems; fixed rounding | 1",
+        "change: Leaderboards | Global and friend boards | 2",
+        "commit: 1 | Fix coin rounding",
+        "commit: 2 | Global and friend boards",
+      ].join("\n"),
+      existing,
+      [{ sha: "ddd" }, { sha: "eee" }, { sha: "fff" }],
+    );
+    expect(merged).toEqual({
+      items: [
+        { title: "Leaderboards", summary: "Global and friend boards", shas: ["eee"] },
+        {
+          title: "Premium store",
+          summary: "Coins replace gems; fixed rounding",
+          shas: ["aaa", "bbb", "ddd"],
+        },
+        { title: "Ranked queue", summary: "Pairs by device", shas: ["ccc"] },
+        { title: "Other commits", summary: "", shas: ["fff"] },
+      ],
+      labels: {
+        aaa: "Coin prices",
+        bbb: "Drop gem shop",
+        ccc: "Device pairing",
+        ddd: "Fix coin rounding",
+        eee: "Global and friend boards",
+      },
+    });
+    expect(
+      parseIncrementalProjectChangelog("Nothing useful.", existing, [{ sha: "ddd" }]),
+    ).toBeNull();
   });
 });

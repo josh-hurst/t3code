@@ -17,12 +17,12 @@ import type {
   ThreadProgressPromptSubagent,
 } from "../textGeneration/ThreadProgress.ts";
 
-export const THREAD_PROGRESS_RING_BUFFER_MAX = 12;
+export const THREAD_PROGRESS_RING_BUFFER_MAX = 8;
 const THREAD_PROGRESS_ACTIVITY_LINE_MAX = 160;
 const THREAD_PROGRESS_SUBAGENT_TASK_MAX = 300;
-export const THREAD_PROGRESS_INITIAL_DELAY_MS = 20_000;
-export const THREAD_PROGRESS_REFRESH_INTERVAL_MS = 60_000;
-export const THREAD_PROGRESS_SIGNIFICANT_INTERVAL_MS = 15_000;
+export const THREAD_PROGRESS_INITIAL_DELAY_MS = 30_000;
+export const THREAD_PROGRESS_REFRESH_INTERVAL_MS = 180_000;
+export const THREAD_PROGRESS_SIGNIFICANT_INTERVAL_MS = 45_000;
 const THREAD_PROGRESS_MAX_IN_FLIGHT = 2;
 
 export interface ProgressActivityEntry {
@@ -353,10 +353,14 @@ export function applyDomainEventToThreadProgress(
 
       const digested = digestTurnItem(event.payload);
       const key = digested.key ?? `item:${event.payload.id}`;
+      // Streaming prose updates the ring buffer for the next refresh, but does not schedule one on its own.
+      const wakes = !(
+        event.payload.type === "assistant_message" && event.payload.status === "running"
+      );
       let woke = false;
 
       if (trackedParent !== undefined && digested.line !== null) {
-        if (upsertRingBuffer(trackedParent.mainActivity, key, digested.line)) {
+        if (upsertRingBuffer(trackedParent.mainActivity, key, digested.line) && wakes) {
           woke = markDirty(trackedParent) || woke;
         }
       }
@@ -382,7 +386,7 @@ export function applyDomainEventToThreadProgress(
           }
           if (changed) {
             subagent.lastActivityAtMs = nowMs;
-            woke = markDirty(parent) || woke;
+            if (wakes) woke = markDirty(parent) || woke;
           }
         }
       }
@@ -399,11 +403,13 @@ export function applyDomainEventToThreadProgress(
       if (event.payload.role !== "assistant") return { wakeup: false };
       const digest = assistantDigest(event.payload.text);
       if (digest === null) return { wakeup: false };
+      // Streaming text deltas keep the buffer fresh without continually scheduling refreshes.
+      const wakes = !event.payload.streaming;
       let woke = false;
 
       if (trackedParent !== undefined) {
         if (upsertRingBuffer(trackedParent.mainActivity, `message:${event.payload.id}`, digest)) {
-          woke = markDirty(trackedParent) || woke;
+          if (wakes) woke = markDirty(trackedParent) || woke;
         }
       }
 
@@ -416,7 +422,7 @@ export function applyDomainEventToThreadProgress(
           upsertRingBuffer(subagent.activity, `message:${event.payload.id}`, digest)
         ) {
           subagent.lastActivityAtMs = nowMs;
-          woke = markDirty(parent) || woke;
+          if (wakes) woke = markDirty(parent) || woke;
         }
       }
 

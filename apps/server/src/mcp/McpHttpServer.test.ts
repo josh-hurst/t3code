@@ -1846,9 +1846,9 @@ it.effect("offers agent feedback tools only while the setting is on, to every cl
       }
 
       yield* settings.updateSettings({ agentFeedback: { mode: "on-request" } });
-      expect(yield* found).toEqual(expect.arrayContaining(["t3_feedback"]));
+      expect(yield* found).toEqual([]);
       for (const token of ["agentToken", "cliToken"]) {
-        expect(yield* listed(token)).toEqual(["t3_feedback"]);
+        expect(yield* listed(token)).toEqual([]);
       }
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),

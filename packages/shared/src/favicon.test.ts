@@ -1,12 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { faviconUrlForOrigin, toolActivityFaviconUrl } from "./favicon.ts";
+import { faviconUrlForOrigin, sanitizeExternalIconUrl, toolActivityFaviconUrl } from "./favicon.ts";
 
 describe("faviconUrlForOrigin", () => {
-  it("sends only the public hostname and requested size, never the port", () => {
-    expect(faviconUrlForOrigin("https://github.com:8443/pingdotgg/t3code?private=query", 64)).toBe(
-      "https://www.google.com/s2/favicons?domain=github.com&sz=64",
-    );
+  it("never sends origins to third-party favicon proxy services", () => {
+    expect(
+      faviconUrlForOrigin("https://github.com:8443/pingdotgg/t3code?private=query", 64),
+    ).toBeNull();
   });
 
   // regression: #5838 no favicon request for missing or non-http origins
@@ -16,6 +16,20 @@ describe("faviconUrlForOrigin", () => {
       expect(faviconUrlForOrigin(origin)).toBeNull();
     },
   );
+});
+
+describe("sanitizeExternalIconUrl", () => {
+  it("blocks Google favicon tracker URLs while allowing direct icon URLs", () => {
+    expect(
+      sanitizeExternalIconUrl("https://www.google.com/s2/favicons?domain=firecrawl.dev&sz=64"),
+    ).toBeNull();
+    expect(
+      sanitizeExternalIconUrl("https://t0.gstatic.com/faviconV2?client=SOCIAL&url=https://a.test"),
+    ).toBeNull();
+    expect(sanitizeExternalIconUrl("https://example.com/icon.png")).toBe(
+      "https://example.com/icon.png",
+    );
+  });
 });
 
 describe("toolActivityFaviconUrl", () => {
@@ -28,7 +42,7 @@ describe("toolActivityFaviconUrl", () => {
     );
   });
 
-  it("accepts provider-supplied image URLs but rejects extension URLs", () => {
+  it("accepts provider-supplied image URLs but rejects extension and Google favicon proxy URLs", () => {
     expect(
       toolActivityFaviconUrl(
         { pageUrl: "https://example.com/docs", faviconUrl: "https://example.com/icon.png" },
@@ -38,6 +52,15 @@ describe("toolActivityFaviconUrl", () => {
     expect(
       toolActivityFaviconUrl(
         { pageUrl: "https://example.com/docs", faviconUrl: "chrome-extension://example/_favicon/" },
+        "light",
+      ),
+    ).toBe("https://example.com/favicon.ico");
+    expect(
+      toolActivityFaviconUrl(
+        {
+          pageUrl: "https://example.com/docs",
+          faviconUrl: "https://www.google.com/s2/favicons?domain=example.com&sz=64",
+        },
         "light",
       ),
     ).toBe("https://example.com/favicon.ico");

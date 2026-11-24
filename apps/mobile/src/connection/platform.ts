@@ -190,9 +190,9 @@ const layerCapabilities = Layer.effectContext(
           bearerToken: Effect.succeedNone,
         }),
       ),
-      // The relay device id already persists in secure storage; analytics only sends its hash.
+      // Client analytics device reporting is disabled in this fork.
       Context.add(ClientCapabilities.AnalyticsDevice, {
-        id: storage.loadOrCreateAgentAwarenessDeviceId.pipe(Effect.option),
+        id: Effect.succeedNone,
       }),
       Context.add(
         ClientCapabilities.RelayDeviceIdentity,

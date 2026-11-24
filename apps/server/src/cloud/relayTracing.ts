@@ -1,35 +1,13 @@
-import {
-  nodeProcessRuntimeAttributes,
-  processServiceInstanceId,
-} from "@t3tools/shared/observability";
+import { nodeProcessRuntimeAttributes } from "@t3tools/shared/observability";
 import * as RelayTracing from "@t3tools/shared/relayTracing";
-import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
-import * as ServerConfig from "../config.ts";
-import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
-import { resolveRelayClientTracingConfig } from "./publicConfig.ts";
-
-const relayClientTracingConfig = resolveRelayClientTracingConfig();
-
-/** Relay traces leave the machine for T3 Connect, so a policy with `telemetry: false` stops them. */
+/** Relay trace export is disabled in this fork. */
 export const relayLayer = (
-  resource: Omit<RelayTracing.RelayClientTracingResource, "serviceInstanceId">,
-  tracingConfig = relayClientTracingConfig,
-) =>
-  Layer.unwrap(
-    Effect.gen(function* () {
-      const config = yield* ServerConfig.ServerConfig;
-      const policy = yield* ManagedPolicy.ManagedPolicy;
-      return RelayTracing.layer(
-        ManagedPolicy.deniedBy(policy, "telemetry") === undefined ? tracingConfig : null,
-        {
-          ...resource,
-          serviceInstanceId: processServiceInstanceId(config.otelEnvironment.resourceAttributes),
-        },
-      );
-    }),
-  );
+  _resource: Omit<RelayTracing.RelayClientTracingResource, "serviceInstanceId">,
+  _tracingConfig: RelayTracing.RelayClientTracingConfig | null = null,
+) => Layer.succeed(RelayTracing.RelayClientTracer, Option.none());
 
 export const layerHeadlessRelayClient = relayLayer({
   serviceName: "t3code-server",

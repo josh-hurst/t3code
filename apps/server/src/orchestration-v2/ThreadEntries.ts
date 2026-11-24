@@ -31,7 +31,7 @@ import type {
 const GO_AHEAD =
   /^(yes+|yeah|yep|sure|ok(ay)?|k|do (it|that)|go ahead|fix (it|that)|add (it|that|them)|build it|again|published|nice|looks? good|that'?s fine|check that|done)\b[\s\w,.!?]*$/i;
 const GO_AHEAD_WORDS_MAX = 4;
-const PROMPT_ENTRIES_MAX = 40;
+const PROMPT_ENTRIES_MAX = 20;
 const OWNER_TEXT_START_CHARS = 170;
 const OWNER_TEXT_MID_RUN_CHARS = 100;
 const OPEN_ITEM_SHARED_WORDS = 0.6;
@@ -120,7 +120,7 @@ export function compareEntries(left: ThreadEntry, right: ThreadEntry): number {
   return entrySeq(left.id) - entrySeq(right.id);
 }
 
-/** The 40 most recently worked-on active entries, in order of first appearance, as `e1`, `e2`, … */
+/** The 20 most recently worked-on active entries, in order of first appearance, as `e1`, `e2`, … */
 export function contentsForPrompt(contents: ThreadContents): {
   readonly contents: ThreadCardContents;
   readonly refToId: ReadonlyMap<string, ThreadEntryId>;

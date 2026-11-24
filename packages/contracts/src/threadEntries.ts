@@ -281,6 +281,13 @@ export const ProjectChangePeriod = Schema.Struct({
 });
 export type ProjectChangePeriod = typeof ProjectChangePeriod.Type;
 
+export const SummarizeProjectChangesInput = Schema.Struct({
+  projectId: ProjectId,
+  /** The periods the viewer has reached; without them the newest periods are written first. */
+  periodKeys: Schema.optional(Schema.Array(Schema.String)),
+});
+export type SummarizeProjectChangesInput = typeof SummarizeProjectChangesInput.Type;
+
 export const SummarizeProjectChangesResult = Schema.Struct({ summarized: NonNegativeInt });
 export type SummarizeProjectChangesResult = typeof SummarizeProjectChangesResult.Type;
 

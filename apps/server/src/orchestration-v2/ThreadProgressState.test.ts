@@ -154,6 +154,7 @@ function assistantMessageEvent(
   threadId: ThreadId,
   messageId: string,
   text: string,
+  streaming = true,
 ): OrchestrationV2DomainEvent {
   return {
     id: nextEventId(),
@@ -168,7 +169,7 @@ function assistantMessageEvent(
       role: "assistant",
       text,
       attachments: [],
-      streaming: true,
+      streaming,
       createdAt: T0,
       updatedAt: T0,
       createdBy: "agent",
@@ -249,7 +250,7 @@ describe("ThreadProgressState", () => {
     expect(state.threads.size).toBe(0);
   });
 
-  it("replaces ring buffer entries in place for the same item/message and caps at 12", () => {
+  it("replaces ring buffer entries in place for the same item/message and caps at 8", () => {
     const state = createThreadProgressState();
     applyDomainEventToThreadProgress(
       state,
@@ -289,7 +290,7 @@ describe("ThreadProgressState", () => {
       { key: "message:m1", line: "assistant: Checking auth middleware and its tests" },
     ]);
 
-    // Updating the same command item replaces in place; 15 distinct items cap to 12.
+    // Updating the same command item replaces in place; 15 distinct items cap to 8.
     applyDomainEventToThreadProgress(
       state,
       commandItemEvent(child1Id, "cmd-0", "vp test", "running"),
@@ -310,7 +311,7 @@ describe("ThreadProgressState", () => {
 
     const subagent = state.threads.get(parentId)!.subagents.get(sub1Id)!;
     expect(subagent.activity).toHaveLength(THREAD_PROGRESS_RING_BUFFER_MAX);
-    expect(subagent.activity[0]!.key).toBe("item:cmd-3");
+    expect(subagent.activity[0]!.key).toBe("item:cmd-7");
     expect(subagent.activity.at(-1)!.line).toBe("command_execution: echo step-14");
   });
 
@@ -399,7 +400,7 @@ describe("ThreadProgressState", () => {
     expect(snapshot.promptInput.subagents[2]!.todo).toEqual({ done: 1, total: 3 });
   });
 
-  it("enforces 20s initial delay, 60s normal refresh, 15s significant refresh, dirty gate, and 2-in-flight cap", () => {
+  it("enforces initial delay, normal refresh, significant refresh, streaming gate, dirty gate, and 2-in-flight cap", () => {
     const state = createThreadProgressState();
     applyDomainEventToThreadProgress(
       state,
@@ -412,27 +413,46 @@ describe("ThreadProgressState", () => {
       1_000,
     );
 
-    // Not due before 20 s.
+    // Not due before initial delay.
     expect(dueThreadIds(state, THREAD_PROGRESS_INITIAL_DELAY_MS - 1)).toEqual([]);
     expect(nextDueAtMs(state)).toBe(THREAD_PROGRESS_INITIAL_DELAY_MS);
     expect(dueThreadIds(state, THREAD_PROGRESS_INITIAL_DELAY_MS)).toEqual([parentId]);
 
     // After generating, nothing is due without new activity (no heartbeat).
     expect(beginGeneration(state, parentId)).toBe(true);
-    finishGeneration(state, parentId, 20_000);
+    finishGeneration(state, parentId, 30_000);
     expect(dueThreadIds(state, 500_000)).toEqual([]);
     expect(nextDueAtMs(state)).toBeNull();
 
-    // Ordinary activity waits 60 s from lastGeneratedAt.
+    // Streaming prose updates the buffer without marking dirty; a finished message marks dirty.
+    expect(
+      applyDomainEventToThreadProgress(
+        state,
+        assistantMessageEvent(child1Id, "m-stream", "Still writing...", true),
+        31_000,
+      ),
+    ).toEqual({ wakeup: false });
+    expect(dueThreadIds(state, 500_000)).toEqual([]);
+    expect(
+      applyDomainEventToThreadProgress(
+        state,
+        assistantMessageEvent(child1Id, "m-stream", "Finished analysis", false),
+        32_000,
+      ),
+    ).toEqual({ wakeup: true });
+    expect(beginGeneration(state, parentId)).toBe(true);
+    finishGeneration(state, parentId, 30_000);
+
+    // Ordinary activity waits THREAD_PROGRESS_REFRESH_INTERVAL_MS from lastGeneratedAt.
     applyDomainEventToThreadProgress(
       state,
       commandItemEvent(child1Id, "cmd-1", "vp test", "running"),
-      25_000,
+      35_000,
     );
-    expect(dueThreadIds(state, 20_000 + THREAD_PROGRESS_REFRESH_INTERVAL_MS - 1)).toEqual([]);
-    expect(dueThreadIds(state, 20_000 + THREAD_PROGRESS_REFRESH_INTERVAL_MS)).toEqual([parentId]);
+    expect(dueThreadIds(state, 30_000 + THREAD_PROGRESS_REFRESH_INTERVAL_MS - 1)).toEqual([]);
+    expect(dueThreadIds(state, 30_000 + THREAD_PROGRESS_REFRESH_INTERVAL_MS)).toEqual([parentId]);
 
-    // A subagent ending marks significant -> due 15 s after lastGeneratedAt.
+    // A subagent ending marks significant -> due THREAD_PROGRESS_SIGNIFICANT_INTERVAL_MS after lastGeneratedAt.
     applyDomainEventToThreadProgress(
       state,
       subagentEvent({
@@ -441,10 +461,10 @@ describe("ThreadProgressState", () => {
         status: "completed",
         childThreadId: child2Id,
       }),
-      26_000,
+      36_000,
     );
-    expect(dueThreadIds(state, 20_000 + THREAD_PROGRESS_SIGNIFICANT_INTERVAL_MS - 1)).toEqual([]);
-    expect(dueThreadIds(state, 20_000 + THREAD_PROGRESS_SIGNIFICANT_INTERVAL_MS)).toEqual([
+    expect(dueThreadIds(state, 30_000 + THREAD_PROGRESS_SIGNIFICANT_INTERVAL_MS - 1)).toEqual([]);
+    expect(dueThreadIds(state, 30_000 + THREAD_PROGRESS_SIGNIFICANT_INTERVAL_MS)).toEqual([
       parentId,
     ]);
 
@@ -459,15 +479,15 @@ describe("ThreadProgressState", () => {
       subagentEvent({ id: NodeId.make("p3-sub"), threadId: parent3Id, status: "running" }),
       0,
     );
-    const firstBatch = dueThreadIds(state, 40_000);
+    const firstBatch = dueThreadIds(state, 100_000);
     expect(firstBatch).toHaveLength(2);
     for (const id of firstBatch) beginGeneration(state, id);
-    expect(dueThreadIds(state, 100_000)).toEqual([]);
+    expect(dueThreadIds(state, 200_000)).toEqual([]);
     expect(nextDueAtMs(state)).toBeNull();
 
     // Finishing one frees a slot for the 3rd thread.
-    finishGeneration(state, firstBatch[0]!, 41_000);
-    expect(dueThreadIds(state, 41_000)).toHaveLength(1);
+    finishGeneration(state, firstBatch[0]!, 101_000);
+    expect(dueThreadIds(state, 101_000)).toHaveLength(1);
   });
 
   it("marks dirty on a new run id and drops tracking on archive or delete", () => {

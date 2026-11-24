@@ -55,7 +55,13 @@ function commitFile(dir: string, filename: string, content: string, message: str
   return git(dir, ["rev-parse", "HEAD"]);
 }
 
-function makeLayer(projects: ReadonlyMap<ProjectId, string>) {
+function makeLayer(
+  projects: ReadonlyMap<ProjectId, string>,
+  options?: {
+    readonly summariesEnabled?: boolean;
+    readonly generate?: TextGeneration.TextGeneration["Service"]["generateTranscriptionPostProcessing"];
+  },
+) {
   const layerDatabase = SqlitePersistence.layerMemory;
   const layerChanges = ProjectChangesService.layer.pipe(
     Layer.provide(
@@ -82,8 +88,14 @@ function makeLayer(projects: ReadonlyMap<ProjectId, string>) {
             ),
           ),
         ),
-        ServerSettings.layerTest({}),
-        Layer.mock(TextGeneration.TextGeneration)({}),
+        ServerSettings.layerTest({
+          threadReplySummariesEnabled: options?.summariesEnabled ?? false,
+        }),
+        Layer.mock(TextGeneration.TextGeneration)(
+          options?.generate === undefined
+            ? {}
+            : { generateTranscriptionPostProcessing: options.generate },
+        ),
         NodeServices.layer,
       ),
     ),
@@ -282,6 +294,78 @@ describe("ProjectChangesService", () => {
           yield* sql`DELETE FROM orchestration_v2_projection_turn_items`;
           assert.deepEqual((yield* service.read({ projectId })).uncommitted.topics, expected);
         }).pipe(Effect.provide(makeLayer(new Map([[projectId, repo]]))));
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live(
+    "updates an open period's changelog incrementally when an earlier digest covers most commits",
+    () =>
+      Effect.gen(function* () {
+        const fsService = yield* FileSystem.FileSystem;
+        const repo = yield* fsService.makeTempDirectoryScoped({ prefix: "t3-project-changes-" });
+        const now = yield* DateTime.now;
+        const at = (seconds: number) => DateTime.formatIso(DateTime.add(now, { seconds }));
+        initRepo(repo);
+        const sha1 = commitFile(repo, "a.ts", "1", "Add store", at(-300));
+        const sha2 = commitFile(repo, "b.ts", "2", "Add cart", at(-240));
+        const sha3 = commitFile(repo, "c.ts", "3", "Add receipts", at(-180));
+
+        const projectId = ProjectId.make("project:incremental");
+        const prompts: Array<string> = [];
+        const layer = makeLayer(new Map([[projectId, repo]]), {
+          summariesEnabled: true,
+          generate: ({ prompt }) => {
+            prompts.push(prompt);
+            if (prompts.length === 1) {
+              return Effect.succeed({
+                transcription: [
+                  "change: Storefront | Added store, cart and receipts | 1, 2, 3",
+                  "commit: 1 | Store page",
+                  "commit: 2 | Cart flow",
+                  "commit: 3 | Receipts",
+                ].join("\n"),
+              });
+            }
+            return Effect.succeed({
+              transcription: [
+                "update: c1 | Storefront | Added store, cart, receipts and refunds | 1",
+                "commit: 1 | Refund button",
+              ].join("\n"),
+            });
+          },
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ProjectChangesService.ProjectChangesService;
+          const first = yield* service.summarize({ projectId });
+          assert.strictEqual(first.summarized, 1);
+
+          const sha4 = commitFile(repo, "d.ts", "4", "Add refunds", at(-60));
+          const second = yield* service.summarize({ projectId });
+          assert.strictEqual(second.summarized, 1);
+
+          assert.lengthOf(prompts, 2);
+          assert.include(prompts[1], "<existing_changes>");
+          assert.include(prompts[1], "Add refunds");
+          assert.notInclude(prompts[1], "Add store");
+          assert.notInclude(prompts[1], "Add cart");
+
+          const result = yield* service.read({ projectId });
+          const period = result.periods?.[0];
+          assert.deepEqual(period?.items, [
+            {
+              title: "Storefront",
+              summary: "Added store, cart, receipts and refunds",
+              shas: [sha1, sha2, sha3, sha4],
+            },
+          ]);
+          assert.deepEqual(period?.labels, {
+            [sha1]: "Store page",
+            [sha2]: "Cart flow",
+            [sha3]: "Receipts",
+            [sha4]: "Refund button",
+          });
+        }).pipe(Effect.provide(layer));
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

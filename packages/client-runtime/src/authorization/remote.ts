@@ -9,13 +9,10 @@ import {
   type AuthWebSocketTicketUse,
 } from "@t3tools/contracts";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
-import { hashTelemetryId } from "@t3tools/shared/telemetryId";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
-import * as ClientCapabilities from "../platform/capabilities.ts";
 import {
   executeEnvironmentHttpRequest,
   makeEnvironmentHttpApiGroupClient,
@@ -48,70 +45,15 @@ export interface ClientOwnerParams {
   readonly device?: string;
 }
 
-/**
- * Tells the environment, for analytics, which T3 Connect account and device
- * are connecting, so it can count the environment as theirs.
- */
-export const readClientOwnerParams = Effect.gen(function* () {
-  const session = yield* Effect.serviceOption(ClientCapabilities.CloudSession);
-  const account = Option.isSome(session) ? yield* session.value.identity : Option.none();
-  const device = yield* (yield* ClientCapabilities.AnalyticsDevice).id;
-  return {
-    ...(Option.isSome(account) ? { connect: hashTelemetryId(account.value.accountId) } : {}),
-    ...(Option.isSome(device) ? { device: hashTelemetryId(device.value) } : {}),
-  } satisfies ClientOwnerParams;
-});
+/** Client analytics owner and device reporting is disabled in this fork. */
+export const readClientOwnerParams = Effect.succeed<ClientOwnerParams>({});
 
 export const appendClientConnectionParams = (
-  url: URL,
-  clientMetadata: AuthClientPresentationMetadata | undefined,
-  connectionMethod?: ClientConnectionMethod,
-  owners?: ClientOwnerParams,
-): void => {
-  if (clientMetadata?.surface) {
-    url.searchParams.set("clientSurface", clientMetadata.surface);
-  }
-  if (clientMetadata?.appVersion) {
-    url.searchParams.set("clientAppVersion", clientMetadata.appVersion);
-  }
-  if (clientMetadata?.deviceType) {
-    const deviceType =
-      clientMetadata.deviceType === "mobile"
-        ? "phone"
-        : clientMetadata.deviceType === "desktop" || clientMetadata.deviceType === "tablet"
-          ? clientMetadata.deviceType
-          : "unknown";
-    url.searchParams.set("clientDeviceType", deviceType);
-  }
-  if (clientMetadata?.os) {
-    url.searchParams.set("clientOs", clientMetadata.os);
-  }
-  if (clientMetadata?.surface === "web") {
-    if (clientMetadata.webDeployment) {
-      url.searchParams.set("clientWebDeployment", clientMetadata.webDeployment);
-    }
-    if (clientMetadata.browser) {
-      url.searchParams.set("clientBrowser", clientMetadata.browser);
-    }
-  }
-  if (clientMetadata?.surface === "mobile") {
-    if (clientMetadata.osMajorVersion !== undefined) {
-      url.searchParams.set("clientOsMajorVersion", String(clientMetadata.osMajorVersion));
-    }
-    if (clientMetadata.deviceModel) {
-      url.searchParams.set("clientDeviceModel", clientMetadata.deviceModel);
-    }
-  }
-  if (connectionMethod) {
-    url.searchParams.set("connectionMethod", connectionMethod);
-  }
-  if (owners?.connect) {
-    url.searchParams.set("clientOwner", owners.connect);
-  }
-  if (owners?.device) {
-    url.searchParams.set("clientDevice", owners.device);
-  }
-};
+  _url: URL,
+  _clientMetadata: AuthClientPresentationMetadata | undefined,
+  _connectionMethod?: ClientConnectionMethod,
+  _owners?: ClientOwnerParams,
+): void => {};
 
 export const exchangeRemoteDpopAccessToken = Effect.fn(
   "clientRuntime.authorization.exchangeRemoteDpopAccessToken",

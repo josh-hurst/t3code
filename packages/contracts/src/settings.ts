@@ -1638,7 +1638,7 @@ export const ServerSettings = Schema.Struct({
   semanticSearchEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Unattended re-checks an agent may chain on one thread before it must report. 0 turns them off. */
   laterRecheckLimit: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 10 })).pipe(
-    Schema.withDecodingDefault(Effect.succeed(3)),
+    Schema.withDecodingDefault(Effect.succeed(0)),
   ),
   /** Separate from the text generation model: cards run after every run, so they default to a cheap one. */
   threadReplySummaryModelSelection: ModelSelection.pipe(

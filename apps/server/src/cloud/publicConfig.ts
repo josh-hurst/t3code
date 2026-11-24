@@ -4,7 +4,6 @@ import {
   DEFAULT_HOSTED_APP_URL,
 } from "@t3tools/shared/connectAuth";
 import { clerkFrontendApiUrlFromPublishableKey } from "@t3tools/shared/relayAuth";
-import { isRelayTracingEnabled } from "@t3tools/shared/otelEnvironment";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import * as Config from "effect/Config";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -42,15 +41,6 @@ function readBuildTimeValue(value: string | undefined): string {
   return typeof value === "undefined" ? "" : value.trim();
 }
 
-function normalizeSecureUrl(value: string): string | null {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
 const buildTimeRelayUrl =
   typeof __T3CODE_BUILD_RELAY_URL__ === "undefined"
     ? ""
@@ -83,22 +73,16 @@ const buildTimeRelayClientTracing = {
   ),
 } as const;
 
+// Relay OTLP trace export is disabled in this fork.
 export function resolveRelayClientTracingConfig(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-  fallback = buildTimeRelayClientTracing,
-) {
-  if (!isRelayTracingEnabled(env)) {
-    return null;
-  }
-
-  const tracesUrl = env.T3CODE_RELAY_CLIENT_OTLP_TRACES_URL?.trim() || fallback.tracesUrl;
-  const tracesDataset =
-    env.T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET?.trim() || fallback.tracesDataset;
-  const tracesToken = env.T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN?.trim() || fallback.tracesToken;
-  const normalizedTracesUrl = normalizeSecureUrl(tracesUrl);
-  return normalizedTracesUrl && tracesDataset && tracesToken
-    ? { tracesUrl: normalizedTracesUrl, tracesDataset, tracesToken }
-    : null;
+  _env: Readonly<Record<string, string | undefined>> = process.env,
+  _fallback = buildTimeRelayClientTracing,
+): {
+  readonly tracesUrl: string;
+  readonly tracesDataset: string;
+  readonly tracesToken: string;
+} | null {
+  return null;
 }
 
 export function makeRelayUrlConfig(fallback = buildTimeRelayUrl) {

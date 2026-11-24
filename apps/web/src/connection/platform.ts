@@ -53,7 +53,6 @@ import {
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
 import { isHostedStaticApp } from "../hostedPairing";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
-import { randomUUID } from "../lib/utils";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { acknowledgeRpcRequest, trackRpcRequestSent } from "../rpc/requestLatencyState";
 import {
@@ -348,19 +347,9 @@ export const prepareDesktopSshEnvironment = Effect.fn("web.connectionPlatform.ss
   },
 );
 
-const ANALYTICS_DEVICE_ID_KEY = "t3code:analytics-device-id";
-
-// Lives as long as this browser profile's site data. Storage can be blocked, which only drops the id.
+// Persistent browser analytics device tracking is disabled in this fork.
 const analyticsDevice = {
-  id: Effect.sync(
-    Option.liftThrowable(() => {
-      const existing = window.localStorage.getItem(ANALYTICS_DEVICE_ID_KEY);
-      if (existing) return existing;
-      const created = randomUUID();
-      window.localStorage.setItem(ANALYTICS_DEVICE_ID_KEY, created);
-      return created;
-    }),
-  ),
+  id: Effect.succeedNone,
 };
 
 const layerCapabilities = Layer.effectContext(

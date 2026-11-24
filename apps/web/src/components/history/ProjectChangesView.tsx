@@ -98,15 +98,20 @@ function TopicList(props: {
   );
 }
 
-function Section(props: {
+function Section({
+  onElement,
+  ...props
+}: {
   title: string;
   note: string;
+  /** Called with the section's element, as a ref callback. */
+  onElement?: ((node: HTMLElement | null) => () => void) | undefined;
   /** A publish: its title is drawn in green with a rule across, so publishes stand out. */
   published?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <section aria-label={props.title}>
+    <section ref={onElement} aria-label={props.title}>
       {props.published ? (
         <div className="mt-3 mb-0.5 flex items-center gap-3 px-2 text-xs">
           <h2 className="shrink-0 font-medium text-success-foreground">{props.title}</h2>
@@ -303,9 +308,67 @@ function sectionTitle(
   return from === to ? from : `${from} – ${to}`;
 }
 
+function scrollParentOf(node: HTMLElement): HTMLElement | null {
+  for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
+    if (/auto|scroll/.test(getComputedStyle(parent).overflowY)) return parent;
+  }
+  return null;
+}
+
+/**
+ * Keys of the periods whose section has come within a screen of view. One reached stays wanted,
+ * so scrolling back up asks for nothing new. Without IntersectionObserver every period is wanted.
+ */
+function useReachedPeriods() {
+  const [reached, setReached] = useState<ReadonlySet<string> | null>(() =>
+    typeof IntersectionObserver === "undefined" ? null : new Set(),
+  );
+  const [refFor] = useState(() => {
+    if (typeof IntersectionObserver === "undefined") return () => undefined;
+    const keyOf = new WeakMap<Element, string>();
+    let observer: IntersectionObserver | undefined;
+    // The margin must sit on the pane that scrolls: with the viewport as root, that pane clips it away.
+    const observerFor = (node: HTMLElement) => {
+      if (observer !== undefined) return observer;
+      observer = new IntersectionObserver(
+        (entries) => {
+          const keys = entries.flatMap((entry) => {
+            const key = entry.isIntersecting ? keyOf.get(entry.target) : undefined;
+            return key === undefined ? [] : [key];
+          });
+          if (keys.length === 0) return;
+          setReached((held) =>
+            held === null || keys.every((key) => held.has(key))
+              ? held
+              : new Set([...held, ...keys]),
+          );
+        },
+        { root: scrollParentOf(node), rootMargin: "0px 0px 100% 0px" },
+      );
+      return observer;
+    };
+    const refs = new Map<string, (node: HTMLElement | null) => () => void>();
+    return (key: string) => {
+      let ref = refs.get(key);
+      if (ref === undefined) {
+        ref = (node) => {
+          if (node === null) return () => undefined;
+          keyOf.set(node, key);
+          const observer = observerFor(node);
+          observer.observe(node);
+          return () => observer.unobserve(node);
+        };
+        refs.set(key, ref);
+      }
+      return ref;
+    };
+  });
+  return { reached, refFor };
+}
+
 /**
  * The owner's commits as a changelog: a few changes per publish, each saying what changed.
- * A period not yet summarized lists its commits and asks the server to write its changelog.
+ * A period not yet summarized lists its commits; once scrolled near, the server writes its changelog.
  */
 function Changelog(props: {
   environmentId: EnvironmentId;
@@ -323,23 +386,26 @@ function Changelog(props: {
   const canSummarize = useAtomValue(
     threadEntryAtoms.summarizeProjectChanges.permissionAtom(environmentId),
   );
-  const missing = props.periods
-    .filter((period) => period.items === null || period.stale === true)
-    .map((period) => period.key)
-    .join("\n");
+  const { reached, refFor } = useReachedPeriods();
+  const unwritten = (period: ProjectChangePeriod | null) =>
+    period !== null &&
+    (period.items === null || period.stale === true) &&
+    (reached === null || reached.has(period.key));
+  const wanted = props.periods.filter(unwritten).map((period) => period.key);
+  const missing = wanted.join("\n");
   // The set of missing periods the server has answered for; until then they read "summarizing".
   const [answered, setAnswered] = useState<string | null>(null);
   const summarizing = missing !== "" && canSummarize && answered !== missing;
   const requestSummaries = useEffectEvent(() => {
     const askedFor = missing;
-    void summarize({ environmentId, input: { projectId } }).then((result) => {
+    void summarize({ environmentId, input: { projectId, periodKeys: wanted } }).then((result) => {
       setAnswered(askedFor);
       if (result._tag === "Success" && result.value.summarized > 0) {
         refreshEntries([environmentId]);
       }
     });
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the server to write the changelog of periods that have none; a server with summaries off writes none, so this never repeats
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the server to write the changelog of reached periods that have none; a server with summaries off writes none, so this never repeats
   useEffect(() => {
     if (missing !== "" && canSummarize) requestSummaries();
   }, [missing, canSummarize]);
@@ -370,17 +436,14 @@ function Changelog(props: {
         return (
           <Section
             key={section.key}
+            onElement={period === null ? undefined : refFor(period.key)}
             title={sectionTitle(section, {
               everPublished: props.changes.publishes.length > 0,
               now: props.now,
               timestampFormat: props.timestampFormat,
             })}
             published={section.publishedAt !== null}
-            note={
-              (period?.items === null || period?.stale === true) && summarizing
-                ? `${count} · summarizing…`
-                : count
-            }
+            note={unwritten(period) && summarizing ? `${count} · summarizing…` : count}
           >
             <ul className="flex flex-col">
               {period === null

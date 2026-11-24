@@ -1,6 +1,6 @@
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { type ToolActivityIcon } from "@t3tools/contracts";
-import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
+import { sanitizeExternalIconUrl, toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
 import { use, useState } from "react";
 import { T3Wordmark } from "../T3Wordmark";
@@ -103,11 +103,12 @@ export function ToolActivityIconView(props: {
     );
   }
   if (props.icon._tag === "themed-logo") {
-    const src =
+    const src = sanitizeExternalIconUrl(
       resolvedTheme === "dark"
         ? (props.icon.logoUrlDark ?? props.icon.logoUrl)
-        : props.icon.logoUrl;
-    return (
+        : props.icon.logoUrl,
+    );
+    return src ? (
       <ToolActivityImageIcon
         key={src}
         cacheKey={src}
@@ -116,6 +117,8 @@ export function ToolActivityIconView(props: {
         className={props.className}
         muted={props.muted}
       />
+    ) : (
+      <WorkEntryIcon name={props.fallbackName} className={fallbackClassName} />
     );
   }
   return (

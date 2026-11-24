@@ -140,7 +140,7 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("thread-contents.regroup"),
-    /** A mark is one model sample; idle and manual are three. */
+    /** Takes the coarsest of two model samples. */
     kind: Schema.Literals(["mark", "idle", "manual"]),
   }),
   Schema.Struct({

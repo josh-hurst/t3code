@@ -41,8 +41,8 @@ const settled = { settledAt: DateTime.makeUnsafe(hoursAgo(1)) };
 
 describe("regroupDue", () => {
   it.each([
-    ["five runs since the last regroup", state({ runsSinceRegroup: 5 }), shell({}), true],
-    ["four runs on a thread still in use", state({ runsSinceRegroup: 4 }), shell({}), false],
+    ["ten runs since the last regroup", state({ runsSinceRegroup: 10 }), shell({}), true],
+    ["nine runs on a thread still in use", state({ runsSinceRegroup: 9 }), shell({}), false],
     ["one run on a settled thread", state({}), shell(settled), true],
     ["one run, settled by hand", state({}), shell({ settledOverride: "settled" }), true],
     [
@@ -54,18 +54,18 @@ describe("regroupDue", () => {
     ["a settled thread never regrouped", state({ regroupedAt: null }), shell(settled), true],
     [
       "an active run",
-      state({ runsSinceRegroup: 8 }),
+      state({ runsSinceRegroup: 12 }),
       shell({ activeRunId: RunId.make("run:active") }),
       false,
     ],
-    ["a queued run", state({ runsSinceRegroup: 8 }), shell({ status: "queued" }), false],
+    ["a queued run", state({ runsSinceRegroup: 12 }), shell({ status: "queued" }), false],
     [
       "a run starting",
-      state({ runsSinceRegroup: 8 }),
+      state({ runsSinceRegroup: 12 }),
       shell({ activityRunStatus: "starting" }),
       false,
     ],
-    ["a missing thread", state({ runsSinceRegroup: 8 }), null, false],
+    ["a missing thread", state({ runsSinceRegroup: 12 }), null, false],
   ] as const)("%s", (_name, candidate, threadShell, due) => {
     assert.strictEqual(regroupDue({ state: candidate, shell: threadShell, nowMs }), due);
   });

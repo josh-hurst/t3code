@@ -1,4 +1,14 @@
-import { isPublicFaviconHost } from "./hostClassification.ts";
+function isThirdPartyFaviconTrackerUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  const path = url.pathname.toLowerCase();
+  if ((host === "google.com" || host.endsWith(".google.com")) && path.startsWith("/s2/favicons")) {
+    return true;
+  }
+  if ((host === "gstatic.com" || host.endsWith(".gstatic.com")) && path.startsWith("/favicon")) {
+    return true;
+  }
+  return false;
+}
 
 function faviconUrlForPage(rawUrl: string | null | undefined, _size = 32): string | null {
   if (!rawUrl || rawUrl.length > 4096) return null;
@@ -34,14 +44,21 @@ function themedFaviconUrlForPage(
   }
 }
 
-/** Accepts image URLs supplied by a trusted provider event. */
-function explicitFaviconUrl(rawUrl: string | null | undefined): string | null {
+/** Accepts image URLs supplied by a trusted provider event, blocking third-party favicon trackers. */
+export function sanitizeExternalIconUrl(rawUrl: string | null | undefined): string | null {
   if (!rawUrl || rawUrl.length > 4096) return null;
   try {
     const url = new URL(rawUrl);
-    return url.protocol === "http:" || url.protocol === "https:" || url.protocol === "data:"
-      ? url.href
-      : null;
+    if (url.protocol !== "http:" && url.protocol !== "https:" && url.protocol !== "data:") {
+      return null;
+    }
+    if (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      isThirdPartyFaviconTrackerUrl(url)
+    ) {
+      return null;
+    }
+    return url.href;
   } catch {
     return null;
   }
@@ -58,28 +75,20 @@ export function toolActivityFaviconUrl(
 ): string | null {
   if (appearance === "dark") {
     return (
-      explicitFaviconUrl(icon.faviconUrlDark) ??
+      sanitizeExternalIconUrl(icon.faviconUrlDark) ??
       themedFaviconUrlForPage(icon.pageUrl, "dark") ??
-      explicitFaviconUrl(icon.faviconUrl) ??
+      sanitizeExternalIconUrl(icon.faviconUrl) ??
       faviconUrlForPage(icon.pageUrl, size)
     );
   }
   return (
-    explicitFaviconUrl(icon.faviconUrl) ??
+    sanitizeExternalIconUrl(icon.faviconUrl) ??
     themedFaviconUrlForPage(icon.pageUrl, "light") ??
     faviconUrlForPage(icon.pageUrl, size)
   );
 }
 
-export function faviconUrlForOrigin(rawUrl: string | null | undefined, size = 32): string | null {
-  if (!rawUrl) return null;
-  try {
-    const url = new URL(rawUrl);
-    if (!url.hostname) return null;
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (!isPublicFaviconHost(url.hostname)) return null;
-    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(url.hostname)}&sz=${size}`;
-  } catch {
-    return null;
-  }
+// Third-party Google favicon proxy lookups are disabled in this fork to avoid leaking visited domains.
+export function faviconUrlForOrigin(_rawUrl: string | null | undefined, _size = 32): string | null {
+  return null;
 }

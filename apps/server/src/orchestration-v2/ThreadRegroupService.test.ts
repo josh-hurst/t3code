@@ -334,7 +334,7 @@ describe("ThreadRegroupService", () => {
   );
 
   it.effect(
-    "an idle regroup of a settled thread combines three samples, keeps the first entry's id and leaves the thread settled",
+    "an idle regroup of a settled thread combines two samples, keeps the first entry's id and leaves the thread settled",
     () =>
       Effect.gen(function* () {
         const harness = makeHarness();
@@ -352,7 +352,7 @@ describe("ThreadRegroupService", () => {
           const after = (yield* threads.getThreadRecords(threadId, [])).thread;
           assert.isNotNull(after.settledAt);
           assert.deepEqual(after.updatedAt, before.updatedAt);
-          assert.lengthOf(harness.regroupPrompts, 3);
+          assert.lengthOf(harness.regroupPrompts, 2);
           assert.include(harness.regroupPrompts[0], "r12 | Step 12 | Finished step 12\n</outline>");
           const contents = yield* readContents;
           assert.deepEqual(
@@ -569,8 +569,8 @@ describe("ThreadRegroupService", () => {
   );
 
   it.effect.each([
-    { name: "two samples are combined when the second fails", fail: [2], calls: 3, split: true },
-    { name: "a failing first call stops the regroup", fail: [1, 2, 3], calls: 1, split: false },
+    { name: "first sample is kept when the second fails", fail: [2], calls: 2, split: true },
+    { name: "a failing first call stops the regroup", fail: [1, 2], calls: 1, split: false },
     { name: "a thread of nine owner messages is not regrouped", owner: 9, calls: 0, split: false },
     { name: "nothing is regrouped with summaries off", enabled: false, calls: 0, split: false },
   ])("$name", ({ fail = [], owner, enabled, calls, split }) =>

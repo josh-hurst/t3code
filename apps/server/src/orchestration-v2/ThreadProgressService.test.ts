@@ -111,7 +111,7 @@ it.effect("records lines for a thread with a live subagent, then clears them whe
     );
     yield* Effect.gen(function* () {
       yield* Queue.offer(events, subagentEvent("running", 0));
-      yield* TestClock.adjust("20 seconds");
+      yield* TestClock.adjust("30 seconds");
       const recorded = yield* Queue.take(dispatched);
       assert.deepInclude(recorded, {
         type: "thread.progress.record",
@@ -122,7 +122,7 @@ it.effect("records lines for a thread with a live subagent, then clears them whe
         },
       });
 
-      yield* Queue.offer(events, subagentEvent("completed", 25_000));
+      yield* Queue.offer(events, subagentEvent("completed", 35_000));
       const cleared = yield* Queue.take(dispatched);
       assert.deepInclude(cleared, { type: "thread.progress.record", threadId, progress: null });
     }).pipe(Effect.provide(layer));

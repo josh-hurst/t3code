@@ -16,6 +16,11 @@ describe("resolveCloudPublicConfig", () => {
       resolveCloudPublicConfig({
         clerk: { publishableKey: "pk_test_example", jwtTemplate: "t3-relay" },
         relay: { url: "http://relay.example.test" },
+        observability: {
+          tracesUrl: "https://api.axiom.co/v1/traces",
+          tracesDataset: "mobile-traces",
+          tracesToken: "token",
+        },
       }),
     ).toEqual({
       clerk: {

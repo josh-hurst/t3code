@@ -23,9 +23,9 @@ import {
   THREAD_REGROUP_MIN_OWNER_RUNS,
 } from "./ThreadRegroup.ts";
 
-// Every regroup takes the coarsest of three: one sample alone splits a thread that the next
-// regroup would put back together.
-const SAMPLES = 3;
+// Every regroup takes the coarsest of two: one sample alone splits a thread that the next
+// regroup would put back together, while two reject unrepeated splits at 2/3 the cost of three.
+const SAMPLES = 2;
 // A stuck provider call must not hold the thread's cards, which wait behind this effect.
 const REGROUP_TIMEOUT = "90 seconds";
 

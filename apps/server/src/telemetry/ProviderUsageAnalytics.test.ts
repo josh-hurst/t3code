@@ -104,93 +104,38 @@ const settled = (runId: string, childrenRunning = false) => ({
 });
 
 describe("provider usage reporting", () => {
-  it.effect(
-    "records one request across a continuation, a child, a replay, and a late child",
-    () => {
-      const recorded: Array<readonly [string, unknown]> = [];
-      const layerTest = layer.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.mock(AnalyticsService.AnalyticsService)({
-              record: (event, properties) =>
-                Effect.sync(() => {
-                  recorded.push([event, properties]);
-                  return true;
-                }),
-            }),
-            Layer.mock(ProviderRegistry.ProviderRegistry)({
-              getProviders: Effect.succeed(providers),
-            }),
-          ),
+  it.effect("does not record provider turn or request telemetry events", () => {
+    const recorded: Array<readonly [string, unknown]> = [];
+    const layerTest = layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(AnalyticsService.AnalyticsService)({
+            record: (event, properties) =>
+              Effect.sync(() => {
+                recorded.push([event, properties]);
+                return true;
+              }),
+          }),
+          Layer.mock(ProviderRegistry.ProviderRegistry)({
+            getProviders: Effect.succeed(providers),
+          }),
         ),
-      );
-      return Effect.gen(function* () {
-        const analytics = yield* ProviderTurnAnalytics;
-        const root = context("run-a", "initial");
-        yield* analytics.runStarted({ runId: RunId.make("run-a"), driver: "codex", context: root });
-        const first = { driver: "codex", context: root };
-        const firstTurn = turn("root", complete(100, 10, { models: ["gpt-6-sol"] }));
-        yield* analytics.turnCompleted({ ...first, providerTurn: firstTurn });
-        yield* analytics.turnCompleted({ ...first, providerTurn: firstTurn });
-        yield* analytics.turnCompleted({
-          driver: "codex",
-          context: context("run-a", "continuation"),
-          providerTurn: turn("goal", complete(50, 5, { models: ["gpt-6-sol"] })),
-        });
-        yield* analytics.turnCompleted({
-          driver: "codex",
-          context: context("run-a", "native_child"),
-          providerTurn: turn("child", complete(20, 2)),
-        });
-        yield* analytics.runSettled(settled("run-a"));
-        yield* analytics.turnCompleted({
-          driver: "codex",
-          context: context("run-a", "native_child"),
-          providerTurn: turn("late-child", complete(7, 1)),
-        });
-        yield* analytics.runSettled(settled("run-a"));
-        yield* analytics.runStarted({
-          runId: RunId.make("run-b"),
-          driver: "codex",
-          context: context("run-b", "initial"),
-        });
-        yield* analytics.runSettled(settled("run-b"));
+      ),
+    );
+    return Effect.gen(function* () {
+      const analytics = yield* ProviderTurnAnalytics;
+      const root = context("run-a", "initial");
+      yield* analytics.runStarted({ runId: RunId.make("run-a"), driver: "codex", context: root });
+      yield* analytics.turnCompleted({
+        driver: "codex",
+        context: root,
+        providerTurn: turn("root", complete(100, 10, { models: ["gpt-6-sol"] })),
+      });
+      yield* analytics.runSettled(settled("run-a"));
 
-        const requests = recorded.filter(([event]) => event === "provider.request.completed");
-        expect(recorded.filter(([event]) => event === "provider.turn.completed")).toHaveLength(5);
-        expect(requests).toHaveLength(2);
-        // The whole payload: no run, turn, or thread ids, prompts, or raw model names.
-        expect(requests[0]?.[1]).toEqual({
-          reportVersion: 2,
-          provider: "codex",
-          requestKind: "user",
-          terminalStatus: "completed",
-          lifecycleObserved: true,
-          model: "gpt-6-sol",
-          effort: "xhigh",
-          serviceTier: "fast",
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          createdBy: "user",
-          creationSource: "web",
-          scheduled: false,
-          subagent: false,
-          providerTurns: 2,
-          continuations: 1,
-          steeringRestarts: 0,
-          usageStatus: "complete",
-          inputTokens: 150,
-          outputTokens: 15,
-          nativeChildTurns: 1,
-          childUsageStatus: "complete",
-          childInputTokens: 20,
-          childOutputTokens: 2,
-          durationMs: 8_000,
-        });
-        expect(requests[1]?.[1]).toMatchObject({ providerTurns: 0, usageStatus: "unavailable" });
-      }).pipe(Effect.provide(layerTest));
-    },
-  );
+      expect(recorded).toEqual([]);
+    }).pipe(Effect.provide(layerTest));
+  });
 
   it("keeps a request partial when its start, a steered segment, or a counter is missing", () => {
     const ledger = new RequestUsageLedger();

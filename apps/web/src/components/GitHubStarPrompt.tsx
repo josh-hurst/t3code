@@ -142,11 +142,13 @@ async function starRepository(environmentId: EnvironmentId) {
   return result._tag === "Success" && result.value;
 }
 
+const GITHUB_STAR_PROMPT_ENABLED = false as boolean;
+
 /**
- * Counts a sent prompt. After more than five, asks once per session for a star until dismissed,
- * unless the environment's GitHub account already starred the repo. Waits until the user is idle.
+ * Disabled in this fork so sending prompts never writes local tracking counters or queries GitHub.
  */
 export async function recordPromptSent(environmentId: EnvironmentId): Promise<void> {
+  if (!GITHUB_STAR_PROMPT_ENABLED) return;
   if (shownThisSession) return;
   try {
     if (getLocalStorageItem(DISMISSED_KEY, Schema.Boolean)) return;

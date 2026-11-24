@@ -44,19 +44,6 @@ function trimNonEmpty(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function normalizeSecureUrl(value: unknown): string | null {
-  const raw = trimNonEmpty(value);
-  if (raw === null) {
-    return null;
-  }
-  try {
-    const url = new URL(raw);
-    return url.protocol === "https:" ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
 export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig?.extra) {
   const iosPushRouterUrl = trimNonEmpty(extra?.relay?.iosPushRouterUrl);
   return {
@@ -68,10 +55,11 @@ export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig
       url: normalizeSecureRelayUrl(trimNonEmpty(extra?.relay?.url) ?? ""),
       ...(iosPushRouterUrl ? { iosPushRouterUrl } : {}),
     },
+    // OTLP trace export is disabled in this fork.
     observability: {
-      tracesUrl: normalizeSecureUrl(extra?.observability?.tracesUrl),
-      tracesDataset: trimNonEmpty(extra?.observability?.tracesDataset),
-      tracesToken: trimNonEmpty(extra?.observability?.tracesToken),
+      tracesUrl: null,
+      tracesDataset: null,
+      tracesToken: null,
     },
   } satisfies CloudPublicConfig;
 }

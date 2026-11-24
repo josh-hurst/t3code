@@ -70,6 +70,7 @@ import {
   RefreshOpenItemsInput,
   RefreshOpenItemsResult,
   ResolveOpenItemInput,
+  SummarizeProjectChangesInput,
   SummarizeProjectChangesResult,
   ThreadContentsTopic,
   ThreadEntriesUpdate,
@@ -5125,7 +5126,7 @@ export const OrchestrationV2RpcSchemas = {
   getOpenItemCounts: { input: Schema.Struct({}), output: OpenItemCountsResult },
   getProjectChanges: { input: GetProjectChangesInput, output: ProjectChangesResult },
   summarizeProjectChanges: {
-    input: GetProjectChangesInput,
+    input: SummarizeProjectChangesInput,
     output: SummarizeProjectChangesResult,
   },
   markPublished: { input: MarkPublishedInput, output: MarkPublishedResult },
