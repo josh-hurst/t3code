@@ -2091,6 +2091,20 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         : () => void router.navigate({ to: "/" });
   };
 
+  const updateAutoSettle = async (threadRef: ScopedThreadRef, enabled: boolean) => {
+    const result = await setThreadAutoSettle(threadRef, enabled);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: gt("Failed to update auto-settle"),
+          description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
+        }),
+      );
+    }
+  };
+  const keepThread = (threadRef: ScopedThreadRef) => void updateAutoSettle(threadRef, false);
   const attemptSettle = (
     threadRef: ScopedThreadRef,
     opts: { coSettlingKeys?: ReadonlySet<string> } = {},
@@ -3488,23 +3502,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           }
           case "auto-settle:enabled":
-          case "auto-settle:disabled": {
-            const result = await setThreadAutoSettle(
-              threadRef,
-              clicked.value === "auto-settle:enabled",
-            );
-            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-              const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: gt("Failed to update auto-settle"),
-                  description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
-                }),
-              );
-            }
+          case "auto-settle:disabled":
+            await updateAutoSettle(threadRef, clicked.value === "auto-settle:enabled");
             return;
-          }
           case "rename":
             startThreadRename(threadRef, thread.title);
             return;
@@ -4509,6 +4509,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
                             onContextMenu={handleThreadContextMenu}
                             onSettle={attemptSettle}
+                            onKeep={
+                              section === "settling" &&
+                              serverConfigs.get(thread.environmentId)?.environment.capabilities
+                                .threadAutoSettleOptOut === true
+                                ? keepThread
+                                : null
+                            }
                             onActionSweepStart={startActionSweep}
                             onUnsettle={attemptUnsettle}
                             onSnooze={attemptSnooze}

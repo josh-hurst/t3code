@@ -36,6 +36,7 @@ import {
   assembleTouches,
   buildProjectChanges,
   changePeriods,
+  collectRunWork,
   earlierChangelog,
   parseGitLogWithFiles,
   parseGitStatusPaths,
@@ -97,6 +98,15 @@ const decodeEntries = Schema.decodeUnknownEffect(
 );
 const decodeRuns = Schema.decodeUnknownEffect(
   Schema.Array(Schema.Struct({ runId: RunId, requestedAt: IsoDateTime })),
+);
+const decodeRunWork = Schema.decodeUnknownEffect(
+  Schema.Array(
+    Schema.Struct({
+      runId: RunId,
+      edited: Schema.NullOr(Schema.String),
+      command: Schema.NullOr(Schema.String),
+    }),
+  ),
 );
 const decodeProjectIds = Schema.decodeUnknownEffect(
   Schema.Array(Schema.Struct({ projectId: ProjectId })),
@@ -219,6 +229,7 @@ const make = Effect.gen(function* () {
 
   const loadEvidence = Effect.fn("ProjectChangesService.loadEvidence")(function* (
     projectId: ProjectId,
+    workspaceRoot: string,
     since: string,
     nowIso: string,
   ) {
@@ -278,12 +289,66 @@ const make = Effect.gen(function* () {
         WHERE t.project_id = ${projectId} AND r.requested_at >= ${since}
       `,
     );
+    // File edits and agent commands of each run that changed the checkout, its native
+    // subagents' included. The joins are pinned: a free planner scans every turn item for the subagent half.
+    const work = yield* decodeRunWork(
+      yield* sql`
+        WITH changed AS MATERIALIZED (
+          SELECT DISTINCT c.run_id, c.thread_id
+          FROM orchestration_v2_projection_checkpoints c
+          JOIN orchestration_v2_projection_threads t ON t.thread_id = c.thread_id
+          WHERE t.project_id = ${projectId}
+            AND c.run_id IS NOT NULL
+            AND c.captured_at >= ${since}
+            AND json_array_length(c.payload_json, '$.files') > 0
+        ), own AS MATERIALIZED (
+          SELECT
+            changed.run_id,
+            i.type,
+            CASE WHEN i.type = 'file_change' THEN i.payload_json END AS edit,
+            -- T3's own "Preparing workspace" step is a command no agent ran.
+            CASE
+              WHEN i.type = 'command_execution'
+                AND json_extract(i.payload_json, '$.nativeItemRef') IS NOT NULL
+              THEN json_extract(i.payload_json, '$.input')
+            END AS command
+          FROM changed
+          CROSS JOIN orchestration_v2_projection_turn_items i
+          WHERE i.run_id = changed.run_id AND i.type IN ('file_change', 'command_execution')
+          UNION ALL
+          SELECT
+            changed.run_id,
+            i.type,
+            CASE WHEN i.type = 'file_change' THEN i.payload_json END,
+            CASE
+              WHEN i.type = 'command_execution'
+                AND json_extract(i.payload_json, '$.nativeItemRef') IS NOT NULL
+              THEN json_extract(i.payload_json, '$.input')
+            END
+          FROM changed
+          CROSS JOIN orchestration_v2_projection_subagents s
+          CROSS JOIN orchestration_v2_projection_turn_items i
+          WHERE s.thread_id = changed.thread_id
+            AND s.run_id = changed.run_id
+            AND i.thread_id = s.child_thread_id
+            AND i.type IN ('file_change', 'command_execution')
+        )
+        SELECT run_id AS "runId", NULL AS edited, command FROM own WHERE command IS NOT NULL
+        UNION
+        SELECT run_id, json_extract(edit, '$.fileName'), NULL FROM own WHERE edit IS NOT NULL
+        UNION
+        SELECT own.run_id, json_extract(change.value, '$.path'), NULL
+        FROM own, json_each(own.edit, '$.changes') change
+        WHERE json_extract(change.value, '$.path') IS NOT NULL
+      `,
+    );
     const publishes = yield* readPublishes(projectId, since, nowIso);
     return {
       touches: assembleTouches({
         threads,
         entries,
         runStartedAtMs: new Map(runs.map((row) => [row.runId, Date.parse(row.requestedAt)])),
+        runWork: collectRunWork(work, workspaceRoot),
         checkpoints: checkpoints.map((checkpoint) => ({
           threadId: checkpoint.threadId,
           runId: checkpoint.runId,
@@ -464,7 +529,7 @@ const make = Effect.gen(function* () {
             logArgs(since, "%x1e%H%x1f%ct%x1f%an%x1f%ae%x1f%s", [`--max-count=${ALL_COMMITS_MAX}`]),
           ),
           readUnpushed(cwd, since),
-          loadEvidence(projectId, since, nowIso),
+          loadEvidence(projectId, cwd, since, nowIso),
           readDigests(projectId),
         ],
         { concurrency: "unbounded" },

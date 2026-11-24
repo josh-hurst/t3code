@@ -14,6 +14,73 @@ export interface ChangeTouch {
   readonly entryId: ThreadEntryId;
   readonly startMs: number;
   readonly endMs: number;
+  /** The run's own file edit named this path; otherwise a command of the run that could write named it. */
+  readonly wrote: boolean;
+}
+
+/** What a run did itself, with its native subagents: files it edited, names its commands could write. */
+export interface RunWork {
+  readonly editedPaths: ReadonlySet<string>;
+  readonly commandFileNames: ReadonlySet<string>;
+}
+
+const fileNameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+/** Programs that only read files, unless their output is redirected or `sed` edits in place. */
+const READERS = new Set(
+  "cat head tail less nl wc cut sort uniq diff stat file grep rg ls find tree jq sed cd git".split(
+    " ",
+  ),
+);
+const WORD_BREAK = /[\s'"`;|&<>(){}[\],=:]+/;
+const LAUNCHER = /^(?:\/\S*\/)?(?:ba|z)?sh$|^-l?c$/;
+
+/**
+ * The file names a command could have written: every word of each step that is not a plain read.
+ * Steps split at `&&`, `||`, `;`, `|` and line breaks, so a heredoc's lines are steps of their own.
+ */
+function commandWrittenFileNames(command: string): Array<string> {
+  const names: Array<string> = [];
+  for (const step of command.replaceAll("\\", "/").split(/&&|\|\||[;|\n]/)) {
+    const quiet = step.replace(/\d*>&\d|\d*>\s*\/dev\/null/g, " ");
+    const words = quiet.split(WORD_BREAK).filter((word) => word !== "");
+    const program = fileNameOf(words.find((word) => !LAUNCHER.test(word)) ?? "");
+    const writes = quiet.includes(">") || (program === "sed" && /\s-i/.test(quiet));
+    if (READERS.has(program) && !writes) continue;
+    for (const word of words) names.push(fileNameOf(word));
+  }
+  return names.filter((name) => name !== "");
+}
+
+/**
+ * Each run's work from its file edits and commands. Edited paths are made relative to the
+ * checkout, as checkpoints list them.
+ */
+export function collectRunWork(
+  rows: ReadonlyArray<{
+    readonly runId: RunId;
+    readonly edited: string | null;
+    readonly command: string | null;
+  }>,
+  workspaceRoot: string,
+): Map<RunId, RunWork> {
+  const root = `${workspaceRoot.replaceAll("\\", "/").replace(/\/+$/, "")}/`;
+  const work = new Map<RunId, { editedPaths: Set<string>; commandFileNames: Set<string> }>();
+  for (const row of rows) {
+    let entry = work.get(row.runId);
+    if (entry === undefined) {
+      entry = { editedPaths: new Set(), commandFileNames: new Set() };
+      work.set(row.runId, entry);
+    }
+    if (row.edited !== null) {
+      const path = row.edited.replaceAll("\\", "/");
+      if (path.startsWith(root)) entry.editedPaths.add(path.slice(root.length));
+    }
+    if (row.command !== null) {
+      for (const name of commandWrittenFileNames(row.command)) entry.commandFileNames.add(name);
+    }
+  }
+  return work;
 }
 
 export interface GitCommitFacts {
@@ -33,9 +100,9 @@ const RUN_END_SLACK_MS = 10 * 60 * 1_000;
 const iso = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
 
 /**
- * Which run changed which path, each under the topic its top-level thread was on. A subagent's
- * edits count for the topic its top-level thread was on when they were captured. Threads
- * working in their own worktree are left out: the list is about the project's root checkout.
+ * Which run changed which path, under the topic its top-level thread was on; worktrees are left out.
+ * A checkpoint lists all the checkout's changes since the thread's last, other sessions' included,
+ * so a path counts only when the run edited it or a command that could write named the file.
  */
 export function assembleTouches(input: {
   readonly threads: ReadonlyArray<{
@@ -50,6 +117,7 @@ export function assembleTouches(input: {
     readonly runs: ReadonlyArray<{ readonly runId: RunId; readonly second?: true | undefined }>;
   }>;
   readonly runStartedAtMs: ReadonlyMap<RunId, number>;
+  readonly runWork: ReadonlyMap<RunId, RunWork>;
   readonly checkpoints: ReadonlyArray<{
     readonly threadId: ThreadId;
     readonly runId: RunId;
@@ -88,13 +156,17 @@ export function assembleTouches(input: {
   for (const checkpoint of input.checkpoints) {
     const top = topOf(checkpoint.threadId);
     if ((threadOf.get(top)?.worktreePath ?? null) !== null) continue;
+    const work = input.runWork.get(checkpoint.runId);
+    if (work === undefined) continue;
     const entryId =
       entryOfRun.get(checkpoint.runId) ??
       (starts.get(top) ?? []).findLast((start) => start.atMs <= checkpoint.capturedAtMs)?.entryId;
     if (entryId === undefined) continue;
     const startMs = input.runStartedAtMs.get(checkpoint.runId) ?? checkpoint.capturedAtMs;
     for (const path of checkpoint.paths) {
-      touches.push({ path, entryId, startMs, endMs: checkpoint.capturedAtMs });
+      const wrote = work.editedPaths.has(path);
+      if (!wrote && !work.commandFileNames.has(fileNameOf(path))) continue;
+      touches.push({ path, entryId, startMs, endMs: checkpoint.capturedAtMs, wrote });
     }
   }
   return touches;
@@ -116,8 +188,8 @@ function tally(labels: ReadonlyArray<ThreadEntryId | null>): Array<ProjectChange
 /**
  * Git says exactly which files are uncommitted and which commits exist; this adds which topic
  * each belongs to. A file takes the topic of the last run that changed it since the file's
- * previous commit. That is a best guess: a run's record also lists files a concurrent session
- * changed in the same checkout, so totals are exact and labels are not.
+ * previous commit. That is a best guess: a script that only read a file a concurrent session
+ * changed still names it, so totals are exact and labels are not.
  */
 export function buildProjectChanges(input: {
   readonly touches: ReadonlyArray<ChangeTouch>;
@@ -133,15 +205,19 @@ export function buildProjectChanges(input: {
     else list.push(touch);
   }
   /**
-   * The last run to change `path` after `afterMs` that had begun by `untilMs`. A run that had
-   * finished by then, or did within minutes, wins over one still going: the run that commits
-   * its work ends soon after, while a long run beside it only saw the file change.
+   * The last run to change `path` after `afterMs` that had begun by `untilMs`. A run whose own
+   * edit named the file wins over one that only ran commands. Then a run that had finished by
+   * then, or did within minutes, wins over one still going: the run that commits its work ends
+   * soon after, while a long run beside it only saw the file change.
    */
   const labelOf = (path: string, afterMs: number, untilMs: number): ThreadEntryId | null => {
+    const inWindow = (touchesOf.get(path) ?? []).filter(
+      (touch) => touch.endMs > afterMs && touch.startMs <= untilMs,
+    );
+    const wrote = inWindow.filter((touch) => touch.wrote);
     let finished: ChangeTouch | null = null;
     let ongoing: ChangeTouch | null = null;
-    for (const touch of touchesOf.get(path) ?? []) {
-      if (touch.endMs <= afterMs || touch.startMs > untilMs) continue;
+    for (const touch of wrote.length > 0 ? wrote : inWindow) {
       if (touch.endMs <= untilMs + RUN_END_SLACK_MS) {
         if (finished === null || touch.endMs > finished.endMs) finished = touch;
       } else if (ongoing === null || touch.endMs > ongoing.endMs) {

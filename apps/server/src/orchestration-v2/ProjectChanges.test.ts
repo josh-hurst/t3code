@@ -7,6 +7,7 @@ import {
   buildProjectChanges,
   changePeriods,
   type ChangeTouch,
+  collectRunWork,
   earlierChangelog,
   type GitCommitFacts,
   parseGitLogWithFiles,
@@ -22,7 +23,8 @@ const touch = (
   path: string,
   startHour: number,
   endHour: number,
-): ChangeTouch => ({ path, entryId, startMs: startHour * HOUR, endMs: endHour * HOUR });
+  wrote = true,
+): ChangeTouch => ({ path, entryId, startMs: startHour * HOUR, endMs: endHour * HOUR, wrote });
 const commit = (
   sha: string,
   hour: number,
@@ -96,6 +98,12 @@ describe("buildProjectChanges", () => {
       commits: [commit("c1", 4, ["Shop.luau"])],
     });
     expect(changes.commits[0]?.topics).toEqual([{ entryId: store, files: 1 }]);
+    // A run that edited the file wins over a later one that only ran commands beside it.
+    const edited = build({
+      touches: [touch(store, "Shop.luau", 1, 2), touch(ranked, "Shop.luau", 3, 4, false)],
+      dirtyPaths: ["Shop.luau"],
+    });
+    expect(edited.uncommitted.topics).toEqual([{ entryId: store, files: 1 }]);
   });
 
   it("gives another author's commit no topic, though a run recorded its files", () => {
@@ -136,19 +144,58 @@ describe("assembleTouches", () => {
     runStartedAtMs: new Map([
       [run("lead-1"), 1 * HOUR],
       [run("lead-2"), 5 * HOUR],
+      [run("lead-3"), 7 * HOUR],
     ]),
+    runWork: collectRunWork(
+      [
+        { runId: run("lead-1"), edited: "/repo/Shop.luau", command: null },
+        { runId: run("lead-1"), edited: "/elsewhere/Thumbs.png", command: null },
+        // Reading or committing a file is not writing it; T3's own step is no command at all.
+        {
+          runId: run("lead-1"),
+          edited: null,
+          command: `/bin/zsh -lc "cd /repo && sed -n 1,9p Thumbs.png 2>/dev/null | head && git add Thumbs.png"`,
+        },
+        {
+          runId: run("worker-1"),
+          edited: null,
+          command: "python3 - <<'EOF'\np='src/Ranked.luau'\nEOF",
+        },
+        { runId: run("apart-1"), edited: null, command: "sed -i '' s/a/b/ Other.luau" },
+      ],
+      "/repo/",
+    ),
     checkpoints: [
-      { threadId: lead, runId: run("lead-1"), capturedAtMs: 2 * HOUR, paths: ["Shop.luau"] },
+      // Thumbs.png is another session's: lead-1 edited only Shop.luau and just read it.
+      {
+        threadId: lead,
+        runId: run("lead-1"),
+        capturedAtMs: 2 * HOUR,
+        paths: ["Shop.luau", "Thumbs.png"],
+      },
+      // A run that only talked changed nothing, whatever its checkpoint lists.
+      { threadId: lead, runId: run("lead-3"), capturedAtMs: 8 * HOUR, paths: ["Thumbs.png"] },
       // A subagent's run is filed nowhere; it counts for the topic its lead was on by then.
-      { threadId: worker, runId: run("worker-1"), capturedAtMs: 6 * HOUR, paths: ["Ranked.luau"] },
+      {
+        threadId: worker,
+        runId: run("worker-1"),
+        capturedAtMs: 6 * HOUR,
+        paths: ["src/Ranked.luau", "src/Generated.luau"],
+      },
       { threadId: apart, runId: run("apart-1"), capturedAtMs: 6 * HOUR, paths: ["Other.luau"] },
     ],
   });
 
   it("files a run under its first topic, a subagent under its lead's, and skips worktrees", () => {
     expect(touches).toEqual([
-      { path: "Shop.luau", entryId: store, startMs: 1 * HOUR, endMs: 2 * HOUR },
-      { path: "Ranked.luau", entryId: ranked, startMs: 6 * HOUR, endMs: 6 * HOUR },
+      { path: "Shop.luau", entryId: store, startMs: 1 * HOUR, endMs: 2 * HOUR, wrote: true },
+      {
+        path: "src/Ranked.luau",
+        entryId: ranked,
+        startMs: 6 * HOUR,
+        endMs: 6 * HOUR,
+        wrote: false,
+      },
     ]);
   });
 });

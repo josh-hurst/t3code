@@ -1548,6 +1548,15 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         direct: [
           ...direct,
           localized(CARD_MENU_ACTIONS[0]!),
+          ...(props.compact === true && props.autoSettleOptOutSupported
+            ? [
+                {
+                  id: "keep",
+                  title: gt("Keep", { $context: "verb, stop a thread from settling on its own" }),
+                  image: "timer",
+                },
+              ]
+            : []),
           ...(swipeActions.secondary === "snooze"
             ? [
                 {
@@ -1577,6 +1586,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     canShareWithGuest,
     canUnsettle,
     pinMenuItems,
+    props.autoSettleOptOutSupported,
+    props.compact,
     props.settlementSupported,
     reorderMenuItems,
     snoozePresetActions,
@@ -1606,7 +1617,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "pin") handlePin();
       if (nativeEvent.event === "unpin") handleUnpin();
       if (nativeEvent.event === "auto-settle:enabled") handleSetAutoSettle(true);
-      if (nativeEvent.event === "auto-settle:disabled") handleSetAutoSettle(false);
+      if (nativeEvent.event === "auto-settle:disabled" || nativeEvent.event === "keep") {
+        handleSetAutoSettle(false);
+      }
       if (nativeEvent.event === "arrange") appAtomRegistry.set(threadArrangementOpenAtom, true);
       if (nativeEvent.event === "move-up") handleMoveUp();
       if (nativeEvent.event === "move-down") handleMoveDown();

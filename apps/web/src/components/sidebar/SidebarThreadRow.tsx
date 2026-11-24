@@ -64,6 +64,7 @@ import {
   SquarePenIcon,
   TerminalIcon,
   TimerIcon,
+  TimerOffIcon,
   Undo2Icon,
   UserRoundIcon,
   XIcon,
@@ -810,6 +811,8 @@ type SidebarThreadRowProps = {
     source: ContextMenuSource,
   ) => void;
   onSettle: (threadRef: ScopedThreadRef) => void;
+  /** Turns auto-settle off for a thread about to settle; null where the row cannot. */
+  onKeep?: ((threadRef: ScopedThreadRef) => void) | null;
   onActionSweepStart: (
     threadRef: ScopedThreadRef,
     action: SidebarSweepAction,
@@ -1200,6 +1203,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     event.preventDefault();
     event.stopPropagation();
     onSettle(threadRef);
+  };
+  const handleKeepClick = (event: ReactMouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    props.onKeep?.(threadRef);
   };
   const startSweep = (action: SidebarSweepAction, event: ReactPointerEvent) => {
     if (!event.isPrimary || event.button !== 0) return;
@@ -1826,6 +1834,28 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           </TooltipPopup>
         </Tooltip>
       ) : null
+    ) : isCompactRow && props.onKeep ? (
+      <>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label={gt("Keep thread")}
+                onClick={handleKeepClick}
+                className={cn(actionClassName, "gap-1 text-xs")}
+              />
+            }
+          >
+            <TimerOffIcon className="size-3.5" />
+            <T context="verb, stop a thread from settling on its own">Keep</T>
+          </TooltipTrigger>
+          <TooltipPopup side="top">
+            <T>Never auto-settle this thread</T>
+          </TooltipPopup>
+        </Tooltip>
+        {settleButton}
+      </>
     ) : (
       settleButton
     );

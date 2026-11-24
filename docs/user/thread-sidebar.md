@@ -363,7 +363,8 @@ back to is at the top and the surest to leave is at the bottom. Nothing settles 
 its first three hours. At three hours quiet, a thread whose chance is low settles if you have
 worked in its project since and it is not a long one. One that misses that settles once its
 chance is close to none, or after a day if it is still low, and never later than the setting.
-A thread you wrote in more than 16 times waits for the setting unless its project published. Write in a thread to put it back among your recent threads. **Clear** settles these rows too.
+A thread you wrote in more than 16 times waits for the setting unless its project published. Write in a thread to put it back among your recent threads, or hover its row and choose
+**Keep** (on mobile, **Keep** in its menu) to turn auto-settle off for it. **Clear** settles these rows too.
 The classic sidebar has no About to settle rows, and its threads settle by the same rule.
 
 A thread with a pull request keeps the full wait and is not listed under About to settle. Something its
@@ -443,8 +444,10 @@ publish they landed in. A project never marked published gets one changelog per 
 are written by the summary model, one call per publish, when you open the view; with
 **Summarize latest reply** off, the commits are listed as they are.
 Threads working in their own worktrees are left out. File and commit counts come from Git.
-The topic a file sits under is the last thread known to have changed it, which can be wrong
-when several threads work in one checkout at once. The sidebar footer's [Changes](#changes-not-out-yet) button opens here.
+The topic a file sits under is the last thread that edited it or ran a command naming it; a
+thread that only talked, read or queried is never credited, and files no thread wrote that way
+sit under **No thread changed these**. It can still be wrong when several threads work in one
+checkout at once. The sidebar footer's [Changes](#changes-not-out-yet) button opens here.
 
 On mobile, **All** beside the thread list's History label opens the same History screen, with
 a project filter, Unpublished, search, **Mark published** (it asks first) and **Done**. Tap a
