@@ -4896,6 +4896,7 @@
   "02c0ae493e689f90": "Meta",
   "13300e8565fbd665": "{label} ({count})",
   "98ef1b41b5c80500": "Por significado",
+  "2621bd75fa50d8a3": "“{title}” concluída enquanto você estava fora",
   "f0ef397bc9639c7b": "{count, plural, one {{count} thread concluída enquanto você estava fora} other {{count} threads concluídas enquanto você estava fora}}",
   "f3739c47fb55c3b0": "Mostrar em History",
   "694e089caefce25f": "{count, plural, one {Mostrar mais {count} thread concluída} other {Mostrar mais {count} threads concluídas}}",

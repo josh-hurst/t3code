@@ -2553,6 +2553,7 @@
   "db8f17154d4f0cfa": "Aktiva",
   "e6bae2c967cf4414": "Recent",
   "9578dc3e84f82081": "Arbetar",
+  "2621bd75fa50d8a3": "Markerade ”{title}” som klar medan du var borta",
   "f0ef397bc9639c7b": "{count, plural, one {Markerade {count} tråd som klar medan du var borta} other {Markerade {count} trådar som klara medan du var borta}}",
   "f3739c47fb55c3b0": "Visa i History",
   "33b29a0f59128a96": "Ångra",

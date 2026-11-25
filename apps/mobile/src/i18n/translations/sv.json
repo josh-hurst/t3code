@@ -4902,6 +4902,7 @@
   "02c0ae493e689f90": "Mål",
   "13300e8565fbd665": "{label} ({count})",
   "98ef1b41b5c80500": "Efter innebörd",
+  "2621bd75fa50d8a3": "Markerade ”{title}” som klar medan du var borta",
   "f0ef397bc9639c7b": "{count, plural, one {Markerade {count} tråd som klar medan du var borta} other {Markerade {count} trådar som klara medan du var borta}}",
   "f3739c47fb55c3b0": "Visa i History",
   "694e089caefce25f": "{count, plural, one {Visa {count} klar tråd till} other {Visa {count} klara trådar till}}",

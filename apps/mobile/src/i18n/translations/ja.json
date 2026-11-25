@@ -4876,6 +4876,7 @@
   "02c0ae493e689f90": "ゴール",
   "13300e8565fbd665": "{label} ({count})",
   "98ef1b41b5c80500": "意味で一致",
+  "2621bd75fa50d8a3": "不在の間に「{title}」を対応済みにしました",
   "f0ef397bc9639c7b": "{count, plural, other {不在の間に {count} 件のスレッドを対応済みにしました}}",
   "f3739c47fb55c3b0": "History に表示",
   "694e089caefce25f": "{count, plural, other {対応済みのスレッドをさらに {count} 件表示}}",

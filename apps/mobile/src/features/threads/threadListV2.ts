@@ -693,7 +693,8 @@ export function threadListV2ListItemsAreEqual(
       return (
         previous.type === "v2-settled-away" &&
         previous.disabled === item.disabled &&
-        sameThreadKeys(previous.threads, item.threads)
+        sameThreadKeys(previous.threads, item.threads) &&
+        previous.threads.every((thread, index) => thread.title === item.threads[index]!.title)
       );
   }
 }

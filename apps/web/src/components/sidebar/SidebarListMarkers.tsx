@@ -115,7 +115,8 @@ export function SidebarDragBoundary(props: {
 /** Ends Recent after threads settled on their own while this window was not being looked at. */
 export function SidebarSettledAwayNotice(props: {
   label: string;
-  showLabel: string;
+  /** Shown on hover: the hint, then each settled thread's title when there are several. */
+  hoverLabel: string;
   undoLabel: string;
   onShow: () => void;
   onUndo: () => void;
@@ -131,7 +132,7 @@ export function SidebarSettledAwayNotice(props: {
         <InlineButton
           tone="muted"
           className="min-w-0 flex-1"
-          title={props.showLabel}
+          title={props.hoverLabel}
           onClick={props.onShow}
         >
           <span className="truncate">{props.label}</span>

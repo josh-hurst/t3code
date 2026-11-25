@@ -4904,6 +4904,7 @@
   "02c0ae493e689f90": "Goal",
   "13300e8565fbd665": "{label} ({count})",
   "98ef1b41b5c80500": "By meaning",
+  "2621bd75fa50d8a3": "Settled “{title}” while you were away",
   "f0ef397bc9639c7b": "{count, plural, one {Settled {count} while you were away} other {Settled {count} while you were away}}",
   "f3739c47fb55c3b0": "Show in History",
   "694e089caefce25f": "{count, plural, one {Show {count} more settled threads} other {Show {count} more settled threads}}",

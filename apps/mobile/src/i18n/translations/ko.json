@@ -4881,6 +4881,7 @@
   "02c0ae493e689f90": "목표",
   "13300e8565fbd665": "{label}({count})",
   "98ef1b41b5c80500": "의미별 일치",
+  "2621bd75fa50d8a3": "자리를 비운 동안 “{title}” 정리함",
   "f0ef397bc9639c7b": "{count, plural, other {자리를 비운 동안 스레드 {count}개 정리함}}",
   "f3739c47fb55c3b0": "History에서 보기",
   "694e089caefce25f": "{count, plural, other {정리된 스레드 {count}개 더 보기}}",

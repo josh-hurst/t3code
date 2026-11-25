@@ -4902,6 +4902,7 @@
   "02c0ae493e689f90": "Ziel",
   "13300e8565fbd665": "{label} ({count})",
   "98ef1b41b5c80500": "Nach Bedeutung",
+  "2621bd75fa50d8a3": "„{title}“ erledigt, während du weg warst",
   "f0ef397bc9639c7b": "{count, plural, one {{count} Thread erledigt, während du weg warst} other {{count} Threads erledigt, während du weg warst}}",
   "f3739c47fb55c3b0": "In History anzeigen",
   "694e089caefce25f": "{count, plural, one {{count} weiteren erledigten Thread anzeigen} other {{count} weitere erledigte Threads anzeigen}}",

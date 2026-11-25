@@ -376,7 +376,8 @@ Looking means at least 15 seconds with the window in front of you (on mobile, wi
 open), so a glance or a misclick does not hold a thread.
 
 When threads settle on their own while T3 Code is in the background or another window has
-focus, Recent ends with one line, such as **Settled 3 while you were away**. Click it to open
+focus, Recent ends with one line, such as **Settled 3 while you were away**. A single thread is
+named in the line; with several, hover it on web and desktop to see their titles. Click it to open
 History, or choose **Undo** to bring those threads back and keep them from settling again until
 they have new activity. Threads you settle yourself are never counted. The web and desktop apps
 remember when you last looked across a restart; the mobile app counts only while it stays open

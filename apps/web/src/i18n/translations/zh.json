@@ -2557,6 +2557,7 @@
   "db8f17154d4f0cfa": "活跃",
   "e6bae2c967cf4414": "Recent",
   "9578dc3e84f82081": "运行中",
+  "2621bd75fa50d8a3": "你离开期间已收尾“{title}”",
   "f0ef397bc9639c7b": "你离开期间已收尾 {count, plural, other {{count} 个会话}}",
   "f3739c47fb55c3b0": "在 History 中显示",
   "33b29a0f59128a96": "撤销",

@@ -4803,11 +4803,24 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             items.push(
                               <SidebarSettledAwayNotice
                                 key="settled-away"
-                                label={gt(
-                                  "{count, plural, one {Settled {count} while you were away} other {Settled {count} while you were away}}",
-                                  { count: settledAwayThreads.length },
-                                )}
-                                showLabel={gt("Show in History")}
+                                label={
+                                  settledAwayThreads.length === 1
+                                    ? gt("Settled “{title}” while you were away", {
+                                        title: settledAwayThreads[0]!.title,
+                                      })
+                                    : gt(
+                                        "{count, plural, one {Settled {count} while you were away} other {Settled {count} while you were away}}",
+                                        { count: settledAwayThreads.length },
+                                      )
+                                }
+                                hoverLabel={
+                                  settledAwayThreads.length === 1
+                                    ? gt("Show in History")
+                                    : [
+                                        gt("Show in History"),
+                                        ...settledAwayThreads.map((thread) => thread.title),
+                                      ].join("\n")
+                                }
                                 undoLabel={gt("Undo")}
                                 onShow={showSettledAway}
                                 onUndo={undoSettledAway}

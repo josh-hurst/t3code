@@ -2552,6 +2552,7 @@
   "db8f17154d4f0cfa": "활성",
   "e6bae2c967cf4414": "Recent",
   "9578dc3e84f82081": "작업 중",
+  "2621bd75fa50d8a3": "자리를 비운 동안 “{title}” 정리함",
   "f0ef397bc9639c7b": "{count, plural, other {자리를 비운 동안 스레드 {count}개 정리함}}",
   "f3739c47fb55c3b0": "History에서 보기",
   "33b29a0f59128a96": "실행 취소",

@@ -586,7 +586,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
       case "v2-settled-away":
         return (
           <ThreadListV2SettledAwayRow
-            count={item.threads.length}
+            titles={item.threads.map((thread) => thread.title)}
             disabled={item.disabled}
             onShow={() => {
               dismissSettledAway();

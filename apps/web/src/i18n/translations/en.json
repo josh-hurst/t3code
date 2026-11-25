@@ -2553,6 +2553,7 @@
   "db8f17154d4f0cfa": "Active",
   "e6bae2c967cf4414": "Recent",
   "9578dc3e84f82081": "Working",
+  "2621bd75fa50d8a3": "Settled “{title}” while you were away",
   "f0ef397bc9639c7b": "{count, plural, one {Settled {count} while you were away} other {Settled {count} while you were away}}",
   "f3739c47fb55c3b0": "Show in History",
   "33b29a0f59128a96": "Undo",

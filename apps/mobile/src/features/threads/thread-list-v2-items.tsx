@@ -621,7 +621,7 @@ export const ThreadListV2TrailMoreRow = memo(function ThreadListV2TrailMoreRow(p
 });
 
 export const ThreadListV2SettledAwayRow = memo(function ThreadListV2SettledAwayRow(props: {
-  readonly count: number;
+  readonly titles: ReadonlyArray<string>;
   readonly disabled?: boolean;
   readonly onShow: () => void;
   readonly onUndo: () => void;
@@ -629,15 +629,18 @@ export const ThreadListV2SettledAwayRow = memo(function ThreadListV2SettledAwayR
 }) {
   const gt = useGT();
   const sidebarPane = props.pane === "sidebar";
-  const label = gt(
-    "{count, plural, one {Settled {count} while you were away} other {Settled {count} while you were away}}",
-    { count: props.count },
-  );
+  const label =
+    props.titles.length === 1
+      ? gt("Settled “{title}” while you were away", { title: props.titles[0]! })
+      : gt(
+          "{count, plural, one {Settled {count} while you were away} other {Settled {count} while you were away}}",
+          { count: props.titles.length },
+        );
   return (
     <View className={cn("flex-row items-center gap-2 py-2.5", sidebarPane ? "px-3" : "px-9")}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={label}
+        accessibilityLabel={props.titles.length === 1 ? label : [label, ...props.titles].join(", ")}
         accessibilityHint={gt("Show in History")}
         disabled={props.disabled}
         onPress={props.onShow}

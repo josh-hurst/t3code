@@ -2553,6 +2553,7 @@
   "db8f17154d4f0cfa": "Aktiv",
   "e6bae2c967cf4414": "Recent",
   "9578dc3e84f82081": "In Arbeit",
+  "2621bd75fa50d8a3": "„{title}“ erledigt, während du weg warst",
   "f0ef397bc9639c7b": "{count, plural, one {{count} Thread erledigt, während du weg warst} other {{count} Threads erledigt, während du weg warst}}",
   "f3739c47fb55c3b0": "In History anzeigen",
   "33b29a0f59128a96": "Rückgängig",

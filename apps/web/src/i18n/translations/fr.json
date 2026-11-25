@@ -2553,6 +2553,7 @@
   "db8f17154d4f0cfa": "Actifs",
   "e6bae2c967cf4414": "Recent",
   "9578dc3e84f82081": "En cours",
+  "2621bd75fa50d8a3": "« {title} » clos pendant votre absence",
   "f0ef397bc9639c7b": "{count, plural, one {{count} fil clos pendant votre absence} other {{count} fils clos pendant votre absence}}",
   "f3739c47fb55c3b0": "Afficher dans History",
   "33b29a0f59128a96": "Annuler",

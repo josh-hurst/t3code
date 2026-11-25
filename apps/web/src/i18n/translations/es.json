@@ -2553,6 +2553,7 @@
   "db8f17154d4f0cfa": "Activos",
   "e6bae2c967cf4414": "Recent",
   "9578dc3e84f82081": "En curso",
+  "2621bd75fa50d8a3": "Se resolvió «{title}» mientras no estabas",
   "f0ef397bc9639c7b": "{count, plural, one {Se resolvió {count} hilo mientras no estabas} other {Se resolvieron {count} hilos mientras no estabas}}",
   "f3739c47fb55c3b0": "Mostrar en History",
   "33b29a0f59128a96": "Deshacer",
