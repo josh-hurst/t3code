@@ -79,7 +79,7 @@ Rules:
 - Every run number appears in at least one topic. A run appears in a second topic only when it gave a real result on both, such as a status check that reads two topics.
 - A short follow-up ("yes", "fix it", "how about now?", "published") and a background-task report belong to the topic of the work they follow.
 - General status checks ("how's it going?") across a thread with several topics form one topic of their own when there are several of them; a single one belongs to the topic its reply is mostly about. In a thread with one topic they belong to it.
-- Title: 2 to 6 words naming the whole job the way the user would search for it. Name the thing, not a part of it, an action or a result. Capitalize only the first word and names. No two topics share a title.
+- Title: 2 to 6 words naming the whole job the way the user would search for it. Name the thing, not a part of it, an action or a result. Name what the work makes, not the goal behind it: work that makes mockups, concepts, a plan, research or an answer and does not change the product is titled as that ("Checkout page mockups", never "Checkout redesign"). Capitalize only the first word and names. No two topics share a title.
 - Outcome: one line under 110 characters, result first.
 - open only when the topic's last run leaves work unfinished: changes not committed, not published or not tested, something the user must check, or a result still being waited for. A question or an offer of a next step does not make a topic open. A topic the user moved on from, or whose work a later run committed or published, is done.
 - List topics in the order they first appear.

@@ -1,4 +1,9 @@
-import { CommandId, type ModelSelection, type ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  nextAutoSettlePostpone,
+  type ModelSelection,
+  type ThreadId,
+} from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -654,10 +659,17 @@ export function createThreadEnvironmentAtoms<R, E>(
       snoozedUntil: null,
       snoozedAt: null,
     })),
-    setAutoSettle: optimistic.wrap(commands.setAutoSettle, (thread, input, now) => ({
-      ...thread,
-      autoSettleDisabledAt: input.enabled ? null : (thread.autoSettleDisabledAt ?? now),
-    })),
+    setAutoSettle: optimistic.wrap(commands.setAutoSettle, (thread, input, now) =>
+      input.postpone === true && input.enabled
+        ? {
+            ...thread,
+            autoSettlePostpone: nextAutoSettlePostpone(thread, DateTime.toEpochMillis(now)),
+          }
+        : {
+            ...thread,
+            autoSettleDisabledAt: input.enabled ? null : (thread.autoSettleDisabledAt ?? now),
+          },
+    ),
     pin: optimistic.wrap(commands.pin, (thread, input, now) => ({
       ...thread,
       pinnedAt: thread.pinnedAt ?? now,

@@ -151,6 +151,8 @@ export interface VisitThreadInput extends ThreadCommandInput {
   /** Counts toward search frecency; `searchQuery` is the palette query that picked it. */
   readonly opened?: boolean;
   readonly searchQuery?: string;
+  /** Sent on leaving: how long the thread was on screen, and looked at. */
+  readonly stay?: { readonly forMs: number; readonly lookedMs: number };
 }
 
 export type MarkThreadUnreadInput = ThreadCommandInput;
@@ -621,6 +623,8 @@ export const pinThread = Effect.fn("EnvironmentCommands.pinThread")(function* (
 
 export interface SetThreadAutoSettleInput extends ThreadCommandInput {
   readonly enabled: boolean;
+  /** With enabled, puts off settling instead of changing the switch. */
+  readonly postpone?: boolean;
 }
 export const setThreadAutoSettle = Effect.fn("EnvironmentCommands.setThreadAutoSettle")(function* (
   input: SetThreadAutoSettleInput,
@@ -630,6 +634,7 @@ export const setThreadAutoSettle = Effect.fn("EnvironmentCommands.setThreadAutoS
     commandId: yield* allocateCommandId(input),
     threadId: input.threadId,
     enabled: input.enabled,
+    ...(input.postpone ? { postpone: true } : {}),
   });
 });
 
@@ -866,6 +871,7 @@ export const visitThread = Effect.fn("EnvironmentCommands.visitThread")(function
     visitedAt: input.visitedAt,
     ...(input.opened ? { opened: true } : {}),
     ...(input.searchQuery ? { searchQuery: input.searchQuery } : {}),
+    ...(input.stay ? { stay: input.stay } : {}),
   });
 });
 

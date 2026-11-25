@@ -35,6 +35,7 @@ const STATUS_LOOK: Record<TideStatusTone, { icon: LucideIcon; className: string 
   completed: { icon: CircleCheckIcon, className: "text-success-foreground" },
   woke: { icon: AlarmClockIcon, className: "text-warning-foreground" },
   settling: { icon: TimerIcon, className: "text-error-foreground/60" },
+  "auto-settled": { icon: TimerIcon, className: "text-muted-foreground" },
 };
 
 /** The status word that leads a row's last line, with its icon, in its status colour. */
@@ -208,8 +209,6 @@ export function TideRowBody(props: {
   // The time and, on hover, the row's actions in its place.
   time: ReactNode;
   title: ReactNode;
-  /** A shorter title line, for rows that should take little room. */
-  dense?: boolean;
   unreadCompletion?: boolean;
   titleTrailing?: ReactNode;
   label: ReactNode | null;
@@ -239,7 +238,7 @@ export function TideRowBody(props: {
         className={cn(
           "flex min-w-0 items-center gap-1.5",
           "h-5",
-          props.project !== null && !props.dense && "mt-0.5",
+          props.project !== null && "mt-0.5",
         )}
       >
         {props.unreadCompletion ? (

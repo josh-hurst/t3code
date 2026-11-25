@@ -1,6 +1,8 @@
 // @effect-diagnostics globalDate:off -- Trail day groups use local calendar boundaries.
 import {
+  autoSettlePostponedUntil,
   isThreadSetAside,
+  nextAutoSettlePostpone,
   threadCardHasOpenAsk,
   threadProgressIsCurrent,
   type OrchestrationV2PendingRuntimeRequestSummary,
@@ -368,13 +370,16 @@ export function threadLaterStatusLabel(
 
 /** How long before its settle time a quiet thread's row says so. */
 export const AUTO_SETTLE_SOON_MS = 60 * 60 * 1_000;
-export const AUTO_SETTLE_SOON_WORD = "Settling soon";
+/** Inside this, the row counts the minutes down. */
+const AUTO_SETTLE_COUNTDOWN_MS = 30 * 60 * 1_000;
 
 type AutoSettleInput = Pick<
   EnvironmentThreadShell,
   "archivedAt" | "settledOverride" | "pinnedAt" | "latestRun" | "latestUserMessageAt"
 > &
-  Partial<Pick<EnvironmentThreadShell, "autoSettlePlan" | "autoSettleDisabledAt">>;
+  Partial<
+    Pick<EnvironmentThreadShell, "autoSettlePlan" | "autoSettleDisabledAt" | "autoSettlePostpone">
+  >;
 
 /**
  * When the server will settle a quiet thread, in epoch ms. Null without a plan, and once the
@@ -389,28 +394,12 @@ export function threadAutoSettleAt(thread: AutoSettleInput): number | null {
   const moved = [thread.latestUserMessageAt, run?.requestedAt, run?.startedAt, run?.completedAt]
     .map((value) => (value == null ? Number.NaN : Date.parse(value)))
     .some((atMs) => atMs > plan.basisAt);
-  return moved ? null : plan.at;
-}
-
-/**
- * The chance, 0 to 1, that the owner writes in the thread again, once the server lists it as
- * settling. Null otherwise, and whenever the plan no longer stands.
- */
-export function threadSettlingChance(thread: AutoSettleInput): number | null {
-  return threadAutoSettleAt(thread) === null ? null : (thread.autoSettlePlan?.returnChance ?? null);
-}
-
-/** Settling threads, the likeliest to be written in again first, so the surest sit last. */
-export function sortSettlingThreads<T extends SortKeyInput & AutoSettleInput>(
-  threads: readonly T[],
-): T[] {
-  return [...threads].sort(
-    (left, right) =>
-      (right.autoSettlePlan?.returnChance ?? 0) - (left.autoSettlePlan?.returnChance ?? 0) ||
-      (right.autoSettlePlan?.basisAt ?? 0) - (left.autoSettlePlan?.basisAt ?? 0) ||
-      left.id.localeCompare(right.id) ||
-      left.environmentId.localeCompare(right.environmentId),
-  );
+  if (moved) return null;
+  // A postpone shows at once, before the server works the plan out again.
+  const postpone = thread.autoSettlePostpone;
+  return postpone != null && postpone.at >= plan.basisAt
+    ? Math.max(plan.at, autoSettlePostponedUntil(postpone))
+    : plan.at;
 }
 
 /** "Settles in 3h". A time already past is held until the owner is back, which the server decides. */
@@ -419,17 +408,48 @@ export function threadAutoSettleLabel(atMs: number, options: { readonly now: str
   return when === "now" ? "Settles soon after your next message" : `Settles in ${when}`;
 }
 
-/** A Settling row's time: "in 3h", or "soon" once only the owner being away holds the thread. */
-export function threadSettlingTimeLabel(
+/**
+ * A quiet row's status inside `AUTO_SETTLE_SOON_MS` of its settle time: "Settling soon", then
+ * "Settling in 12 min". A time already past waits for the owner to be back, so it stays soon.
+ */
+export function threadSettlingStatus(
   atMs: number,
   options: { readonly now: string },
   resolve: MFunctionType = mFallback,
 ): string {
-  if (atMs <= Date.parse(options.now)) {
-    return resolve(msg("soon", { $context: "when a thread settles on its own" }));
+  const leftMs = atMs - Date.parse(options.now);
+  if (leftMs <= 0 || leftMs > AUTO_SETTLE_COUNTDOWN_MS) {
+    return resolve(msg("Settling soon", { $context: "thread status, about to settle on its own" }));
   }
-  const when = snoozeWakeLabel(DateTime.formatIso(DateTime.makeUnsafe(atMs)), options, resolve);
-  return resolve(msg("in {when}", { when, $context: "time until a thread settles on its own" }));
+  return resolve(
+    msg("Settling in {minutes} min", {
+      minutes: Math.ceil(leftMs / 60_000),
+      $context: "thread status, minutes until it settles on its own",
+    }),
+  );
+}
+
+/** The action that puts off a settle, with how long it holds: "Dismiss for 3 hours". */
+export function threadSettlePostponeLabel(
+  thread: Pick<EnvironmentThreadShell, "autoSettlePlan" | "autoSettlePostpone">,
+  resolve: MFunctionType = mFallback,
+): string {
+  // How long it holds depends only on how many came before, so any time gives the same answer.
+  const next = nextAutoSettlePostpone(thread, 0);
+  const hours = Math.round((autoSettlePostponedUntil(next) - next.at) / 3_600_000);
+  return hours < 24
+    ? resolve(
+        msg("{hours, plural, one {Dismiss for # hour} other {Dismiss for # hours}}", {
+          hours,
+          $context: "puts off a thread settling on its own",
+        }),
+      )
+    : resolve(
+        msg("{days, plural, one {Dismiss for # day} other {Dismiss for # days}}", {
+          days: Math.round(hours / 24),
+          $context: "puts off a thread settling on its own",
+        }),
+      );
 }
 
 /** Later, soonest first; rows with no time (set aside, standing checks) last, oldest hold first. */

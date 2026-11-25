@@ -489,7 +489,7 @@ export type OrchestrationV2LimitRecoveryUpdate = typeof OrchestrationV2LimitReco
  * When inactivity will settle a thread if nothing changes, as the server last worked it out.
  * `basisAt` is the thread activity it was worked out from, so later activity voids the plan.
  * Times are epoch milliseconds. A time already past means the thread is held while the owner is away.
- * `returnChance` (0 to 1) is set once the score will settle the thread within half an hour; clients list those apart.
+ * `returnChance` (0 to 1) is set once the score will settle the thread within half an hour.
  */
 export const OrchestrationV2AutoSettlePlan = Schema.Struct({
   at: Schema.Finite,
@@ -497,6 +497,36 @@ export const OrchestrationV2AutoSettlePlan = Schema.Struct({
   returnChance: Schema.optional(Schema.Finite),
 });
 export type OrchestrationV2AutoSettlePlan = typeof OrchestrationV2AutoSettlePlan.Type;
+
+/**
+ * The owner put off settling a quiet thread at `at` (epoch ms). It holds the thread for three
+ * hours, doubled for each `count` past the first, until the thread has new activity.
+ */
+export const OrchestrationV2AutoSettlePostpone = Schema.Struct({
+  at: Schema.Finite,
+  count: PositiveInt,
+});
+export type OrchestrationV2AutoSettlePostpone = typeof OrchestrationV2AutoSettlePostpone.Type;
+
+const AUTO_SETTLE_POSTPONE_FIRST_MS = 3 * 60 * 60 * 1_000;
+
+export function autoSettlePostponedUntil(postpone: OrchestrationV2AutoSettlePostpone): number {
+  return postpone.at + AUTO_SETTLE_POSTPONE_FIRST_MS * 2 ** (postpone.count - 1);
+}
+
+/** The postpone a dismiss at `nowMs` records: doubled while the plan's quiet stretch is the same. */
+export function nextAutoSettlePostpone(
+  thread: {
+    readonly autoSettlePostpone?: OrchestrationV2AutoSettlePostpone | null | undefined;
+    readonly autoSettlePlan?: OrchestrationV2AutoSettlePlan | null | undefined;
+  },
+  nowMs: number,
+): OrchestrationV2AutoSettlePostpone {
+  const previous = thread.autoSettlePostpone ?? null;
+  const basisAt = thread.autoSettlePlan?.basisAt;
+  const sameStretch = previous !== null && basisAt !== undefined && basisAt <= previous.at;
+  return { at: nowMs, count: sameStretch ? previous.count + 1 : 1 };
+}
 
 /**
  * `score` is an open count that halves every two weeks, as of `openedAt`.
@@ -598,6 +628,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettlePlan: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePlan)),
+  autoSettlePostpone: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePostpone)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** The thread the user nested this one under; settling that thread settles this one too. */
@@ -608,6 +639,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   opens: Schema.optional(LenientThreadOpens),
+  /** When the owner last looked at the thread long enough to mean it; a glance does not count. */
+  heldAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   card: Schema.optional(LenientThreadCard),
   progress: Schema.optional(LenientThreadProgress),
   followUp: Schema.optional(LenientThreadFollowUp),
@@ -652,10 +685,22 @@ export const OrchestrationV2AppThread = Schema.Struct({
 });
 export type OrchestrationV2AppThread = typeof OrchestrationV2AppThread.Type;
 
+/**
+ * How long the user had a thread on screen, sent when they leave it. `lookedMs` counts only the
+ * time the window was in front of them. Logged for the settle score; it changes no thread state.
+ */
+export const OrchestrationV2ThreadStay = Schema.Struct({
+  forMs: NonNegativeInt,
+  lookedMs: NonNegativeInt,
+});
+export type OrchestrationV2ThreadStay = typeof OrchestrationV2ThreadStay.Type;
+
 /** A visit changes read state only, so its event leaves the rest of the thread out. */
 export const OrchestrationV2ThreadVisit = Schema.Struct({
   lastVisitedAt: OrchestrationV2AppThread.fields.lastVisitedAt,
   opens: OrchestrationV2AppThread.fields.opens,
+  heldAt: OrchestrationV2AppThread.fields.heldAt,
+  stay: Schema.optional(OrchestrationV2ThreadStay),
 });
 export type OrchestrationV2ThreadVisit = typeof OrchestrationV2ThreadVisit.Type;
 
@@ -667,6 +712,7 @@ export function applyOrchestrationV2ThreadVisit<Thread extends OrchestrationV2Ap
     ...thread,
     lastVisitedAt: visit.lastVisitedAt,
     ...(visit.opens === undefined ? {} : { opens: visit.opens }),
+    ...(visit.heldAt === undefined ? {} : { heldAt: visit.heldAt }),
   };
 }
 
@@ -2569,6 +2615,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettlePlan: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePlan)),
+  autoSettlePostpone: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePostpone)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   nestedUnder: Schema.optional(Schema.NullOr(ThreadId)),
@@ -2743,12 +2790,14 @@ export const OrchestrationV2AppThreadJson = OrchestrationV2AppThread.mapFields((
   ),
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  heldAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   lastSnoozeWakeAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettlePlan: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePlan)),
+  autoSettlePostpone: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePostpone)),
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtcFromString).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -2776,6 +2825,8 @@ export type OrchestrationV2AppThreadJson = typeof OrchestrationV2AppThreadJson.T
 export const OrchestrationV2ThreadVisitJson = Schema.Struct({
   lastVisitedAt: OrchestrationV2AppThreadJson.fields.lastVisitedAt,
   opens: OrchestrationV2AppThreadJson.fields.opens,
+  heldAt: OrchestrationV2AppThreadJson.fields.heldAt,
+  stay: OrchestrationV2ThreadVisit.fields.stay,
 });
 
 export const OrchestrationV2RunJson = OrchestrationV2Run.mapFields((fields) => ({
@@ -3212,6 +3263,7 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettlePlan: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePlan)),
+  autoSettlePostpone: Schema.optional(Schema.NullOr(OrchestrationV2AutoSettlePostpone)),
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   titleRegeneration: Schema.optional(
     Schema.NullOr(
@@ -3632,6 +3684,8 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     enabled: Schema.Boolean,
+    // With enabled, puts off settling instead; older servers ignore it and change nothing.
+    postpone: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pin"),
@@ -3679,6 +3733,9 @@ export const OrchestrationV2Command = Schema.Union([
     // Older servers ignore both fields and only move the read watermark.
     opened: Schema.optional(Schema.Boolean),
     searchQuery: Schema.optional(Schema.String.check(Schema.isMaxLength(200))),
+    stay: Schema.optional(OrchestrationV2ThreadStay),
+    // Looked at long enough to mean it: holds the thread from settling early. A glance does not.
+    held: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.mark-unread"),

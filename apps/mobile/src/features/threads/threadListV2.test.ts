@@ -2058,17 +2058,14 @@ describe("self-filing list", () => {
         settledOverride: "settled",
         settledAt: NOW,
       }),
-      ...[
-        ["settling-surest", 0.03],
-        ["settling-likelier", 0.12],
-      ].map(([id, returnChance]) => ({
-        ...touched(String(id), localIso(7)),
+      {
+        ...touched("settling", localIso(7)),
         autoSettlePlan: {
-          at: Date.parse(localIso(7, 2)),
+          at: Date.parse(NOW) + 10 * 60_000,
           basisAt: Date.parse(localIso(7)),
-          returnChance: Number(returnChance),
+          returnChance: 0.03,
         },
-      })),
+      },
     ];
     const folders = [{ key: "folder", title: "Folder", projectRefs: [] }];
     const { layout, items } = build(threads, { projectFolders: folders });
@@ -2081,10 +2078,8 @@ describe("self-filing list", () => {
       "trail-older",
       // A finished run that owes a commit waits in Recent.
       "finished-owing",
-      // Unlikely to be written in again: Recent ends with them, the surest last.
-      "[About to settle]",
-      "settling-likelier",
-      "settling-surest",
+      // About to settle stays in Recent; its row says so.
+      "settling",
       "[v2-working-shelf]",
       "working",
       "[Later]",
@@ -2094,16 +2089,21 @@ describe("self-filing list", () => {
     ]);
     // Threads the server settled while the app was away end Recent, before Working.
     const away = names(build(threads, { projectFolders: folders }, false, true).items);
-    expect(away.slice(away.indexOf("settling-surest"), away.indexOf("working"))).toEqual([
-      "settling-surest",
+    expect(away.slice(away.indexOf("settling"), away.indexOf("working"))).toEqual([
+      "settling",
       "[v2-settled-away]",
       "[v2-working-shelf]",
     ]);
-    expect(
-      items.find((item) => item.key === "v2-thread:environment-1:settling-surest"),
-    ).toMatchObject({
-      item: { variant: "slim", cardLine: null, compact: true },
-    });
+    const settlingLabels = buildThreadListV2ListItems({
+      items: layout.items,
+      pendingTasks: [],
+      snoozeLabelNow: NOW,
+    }).flatMap((item) =>
+      item.type === "v2-thread" && item.settlingLabel !== undefined
+        ? [[item.item.thread.id, item.settlingLabel]]
+        : [],
+    );
+    expect(settlingLabels).toEqual([["settling", "Settling in 10 min"]]);
     expect(layout.folders).toEqual([]);
     expect(items.find((item) => item.key === "v2-thread:environment-1:trail-newer")).toMatchObject({
       // A publish is counted on the project, so the row is its outcome alone.

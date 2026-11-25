@@ -64,7 +64,6 @@ import {
   SquarePenIcon,
   TerminalIcon,
   TimerIcon,
-  TimerOffIcon,
   Undo2Icon,
   UserRoundIcon,
   XIcon,
@@ -86,7 +85,7 @@ import { useRightPanelStore } from "../../rightPanelStore";
 import { useOpenPrLink } from "../../lib/openPullRequestLink";
 import { useUiStateStore } from "../../uiStateStore";
 import { useThreadSelectionStore } from "../../threadSelectionStore";
-import { useNowMinute } from "../../hooks/useNowMinute";
+import { useNowMinute, useNowMinuteWhile } from "../../hooks/useNowMinute";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { vcsEnvironment, vcsBranchRevalidation } from "../../state/vcs";
 import { useSidebarLinkedIssueState } from "../../state/issues";
@@ -136,7 +135,6 @@ import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import {
   TideOwedLabel,
-  TideProject,
   TideRowBody,
   TideStatusLabel,
   tideProjectMenu,
@@ -147,10 +145,10 @@ import { SearchMatchHintLine, ThreadSearchMatchExcerpt } from "../ThreadSearchMa
 import type { SearchMatchHint } from "@t3tools/shared/paletteSearch";
 import {
   AUTO_SETTLE_SOON_MS,
-  AUTO_SETTLE_SOON_WORD,
   threadAutoSettleAt,
   threadAutoSettleLabel,
-  threadSettlingTimeLabel,
+  threadSettlePostponeLabel,
+  threadSettlingStatus,
   threadCardOpenItemLabel,
   threadLaterLabel,
   threadWorkingLine,
@@ -221,11 +219,40 @@ function AutoSettleNote(props: { atMs: number }) {
   return <>{threadAutoSettleLabel(props.atMs, { now: `${nowMinute}:00.000Z` })}</>;
 }
 
-/** A Settling row counts down to when it leaves, on the minute tick. */
-function SettlingTimeLabel(props: { atMs: number }) {
-  const nowMinute = useNowMinute();
-  const m = useMessages();
-  return <>{threadSettlingTimeLabel(props.atMs, { now: `${nowMinute}:00.000Z` }, m)}</>;
+/** "Settling soon" on a row opens a menu that puts the settle off. */
+function SettlingStatusMenu(props: {
+  word: string;
+  thread: Pick<SidebarThreadSummary, "autoSettlePlan" | "autoSettlePostpone">;
+  onPostpone: () => void;
+}) {
+  const messages = useMessages();
+  const [open, setOpen] = useState(false);
+  return (
+    <Menu open={open} onOpenChange={setOpen}>
+      <MenuTrigger
+        render={
+          <button
+            type="button"
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            className="cursor-pointer rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          />
+        }
+      >
+        <TideStatusLabel tone="settling">{props.word}</TideStatusLabel>
+      </MenuTrigger>
+      <MenuPopup side="bottom" align="start">
+        <MenuItem
+          onClick={(event) => {
+            event.stopPropagation();
+            props.onPostpone();
+          }}
+        >
+          {threadSettlePostponeLabel(props.thread, messages)}
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
 }
 
 /** A Later row's time as shown: "in 3h", or "now" and "due" as they are. */
@@ -745,8 +772,7 @@ type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   // "folder" is a one-line row inside a boring sidebar project folder;
   // "folder-multiline" adds the card's environment and PR line under it.
-  // "compact" ends Recent for threads about to settle: project and countdown, then the title.
-  variant: "card" | "slim" | "compact" | "folder" | "folder-multiline";
+  variant: "card" | "slim" | "folder" | "folder-multiline";
   navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
@@ -814,8 +840,8 @@ type SidebarThreadRowProps = {
     source: ContextMenuSource,
   ) => void;
   onSettle: (threadRef: ScopedThreadRef) => void;
-  /** Turns auto-settle off for a thread about to settle; null where the row cannot. */
-  onKeep?: ((threadRef: ScopedThreadRef) => void) | null;
+  /** Puts off settling a thread about to settle; null where the server cannot. */
+  onPostponeSettle?: ((threadRef: ScopedThreadRef) => void) | null;
   onActionSweepStart: (
     threadRef: ScopedThreadRef,
     action: SidebarSweepAction,
@@ -1109,6 +1135,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const settlingSoon = useDeadlinePassed(
     settlesAtMs === null ? null : settlesAtMs - AUTO_SETTLE_SOON_MS,
   );
+  const settlingMinute = useNowMinuteWhile(settlingSoon);
+  const settlingWord =
+    settlesAtMs !== null && settlingMinute !== null
+      ? threadSettlingStatus(settlesAtMs, { now: `${settlingMinute}:00.000Z` }, messages)
+      : null;
   const tideDone = tideLead?.lead?.kind === "status" && tideLead.lead.tone === "completed";
   const brightTitle = tideDone || (props.tide && props.needsYou);
   const tideText = tideLead?.text ?? null;
@@ -1206,11 +1237,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     event.preventDefault();
     event.stopPropagation();
     onSettle(threadRef);
-  };
-  const handleKeepClick = (event: ReactMouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    props.onKeep?.(threadRef);
   };
   const startSweep = (action: SidebarSweepAction, event: ReactPointerEvent) => {
     if (!event.isPrimary || event.button !== 0) return;
@@ -1385,7 +1411,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               : cn(
                   "truncate group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
                   // Every tier stays above the secondary-label lines under the title.
-                  shouldRecede || variant === "compact"
+                  shouldRecede
                     ? "text-foreground/80"
                     : props.isActive ||
                         isWoke ||
@@ -1658,13 +1684,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   if (props.tide) {
     const isCardRow = variant === "card";
-    const isCompactRow = variant === "compact";
-    // A row with nothing owed and no status of its own says when it is about to leave the list.
+    // A row with nothing owed and no status of its own says when it is about to leave the list,
+    // and a History row says the server settled it rather than you.
     const lead =
       tideLead?.lead ??
-      (settlingSoon
-        ? ({ kind: "status", tone: "settling", word: AUTO_SETTLE_SOON_WORD } as const)
-        : null);
+      (settlingWord !== null
+        ? ({ kind: "status", tone: "settling", word: settlingWord } as const)
+        : variantAction === "unsettle" && thread.autoSettledAt
+          ? ({
+              kind: "status",
+              tone: "auto-settled",
+              word: gt("Auto settled", { $context: "thread status, settled on its own" }),
+            } as const)
+          : null);
     const isRunning =
       lead?.kind === "status" && (lead.tone === "working" || lead.tone === "connecting");
     const label =
@@ -1692,6 +1724,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             <T>Dismiss Woke notification</T>
           </TooltipPopup>
         </Tooltip>
+      ) : lead.tone === "settling" && props.onPostponeSettle ? (
+        <SettlingStatusMenu
+          word={lead.word}
+          thread={thread}
+          onPostpone={() => props.onPostponeSettle?.(threadRef)}
+        />
       ) : (
         <TideStatusLabel tone={lead.tone}>
           {lead.word}
@@ -1707,9 +1745,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         </TideStatusLabel>
       );
     const timeContent =
-      isCompactRow && settlesAtMs !== null ? (
-        <SettlingTimeLabel atMs={settlesAtMs} />
-      ) : variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
+      variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
         <span className="inline-flex items-center gap-1">
           {/* The clock tells a wake time from an age at a glance. */}
           <AlarmClockIcon aria-hidden className="size-3" />
@@ -1837,28 +1873,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           </TooltipPopup>
         </Tooltip>
       ) : null
-    ) : isCompactRow && props.onKeep ? (
-      <>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                aria-label={gt("Keep thread")}
-                onClick={handleKeepClick}
-                className={cn(actionClassName, "gap-1 text-xs")}
-              />
-            }
-          >
-            <TimerOffIcon className="size-3.5" />
-            <T context="verb, stop a thread from settling on its own">Keep</T>
-          </TooltipTrigger>
-          <TooltipPopup side="top">
-            <T>Never auto-settle this thread</T>
-          </TooltipPopup>
-        </Tooltip>
-        {settleButton}
-      </>
     ) : (
       settleButton
     );
@@ -1953,18 +1967,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 aria-label={tideAccessibility.label}
                 aria-description={tideLead?.running ? (tideText ?? undefined) : undefined}
                 aria-current={tideAccessibility.current}
-                data-testid={
-                  isCardRow
-                    ? "sidebar-row-card"
-                    : isCompactRow
-                      ? "sidebar-row-compact"
-                      : "sidebar-row-slim"
-                }
+                data-testid={isCardRow ? "sidebar-row-card" : "sidebar-row-slim"}
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(
                   rowSurfaceClassName,
-                  "flex min-h-9 flex-col justify-center px-3",
-                  isCompactRow ? "py-1.5" : "py-2",
+                  "flex min-h-9 flex-col justify-center px-3 py-2",
                 )}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
@@ -1974,19 +1981,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             }
           >
             <TideRowBody
-              project={
-                isCompactRow && projectName !== null ? (
-                  <span className="flex min-w-0 flex-1 items-center">
-                    <TideProject
-                      project={props.project}
-                      name={projectName}
-                      projectMenu={tideProjectMenu(props)}
-                    />
-                  </span>
-                ) : null
-              }
+              project={null}
               time={timeSlot}
-              dense={isCompactRow}
               title={title}
               titleTrailing={
                 <>
@@ -1996,32 +1992,24 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   {pinIndicator}
                 </>
               }
-              label={isCompactRow ? null : label}
+              label={label}
               unreadCompletion={tideDone}
               text={
-                isCompactRow
-                  ? null
-                  : // Pinned rows without an outcome follow Thread row details.
-                    (tideText ??
-                    (isCardRow && !props.needsYou
-                      ? (messagePreview ??
-                        (showsBranch && metaBranch === null
-                          ? (checkoutThread.branch ?? null)
-                          : null))
-                      : null))
+                // Pinned rows without an outcome follow Thread row details.
+                tideText ??
+                (isCardRow && !props.needsYou
+                  ? (messagePreview ??
+                    (showsBranch && metaBranch === null ? (checkoutThread.branch ?? null) : null))
+                  : null)
               }
               maxLines={props.needsYou ? 3 : 2}
-              meta={
-                isCompactRow
-                  ? undefined
-                  : tideRowMeta({
-                      project: props.project,
-                      name: projectName,
-                      projectMenu: tideProjectMenu(props),
-                      pullRequest: prBadge,
-                      branch: metaBranch,
-                    })
-              }
+              meta={tideRowMeta({
+                project: props.project,
+                name: projectName,
+                projectMenu: tideProjectMenu(props),
+                pullRequest: prBadge,
+                branch: metaBranch,
+              })}
             />
             {isRegeneratingTitle ? (
               <span role="status" className="sr-only">

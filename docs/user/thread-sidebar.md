@@ -356,26 +356,24 @@ does not count, so a project you leave for another keeps its threads longer. A s
 you left for other work in the project scores low within the hour; a long one you wrote in
 often stays in Recent for much longer.
 
-In the last half hour before a thread settles on its own, it moves to the end of Recent, under
-**About to settle**. Its rows show only the project, the title, and how long until the thread
-settles if you do nothing more. A thread that will only settle at your auto-settle setting is
-not listed there. The thread you are likeliest to come
-back to is at the top and the surest to leave is at the bottom. Nothing settles this way in
-its first hour and a half. At an hour and a half quiet, a thread whose chance is low settles if you have
+Nothing settles this way in its first hour and a half. At an hour and a half quiet, a thread whose chance is low settles if you have
 worked in its project since and it is not a long one. One that misses that settles once its
 chance is close to none, and any thread you have read settles after a day quiet, since you
-almost never write in one again within the next day. Write in a thread to put it back among your recent threads, or hover its row and choose
-**Keep** (on mobile, **Keep** in its menu) to turn auto-settle off for it. **Clear** settles these rows too.
-The classic sidebar has no About to settle rows, and its threads settle by the same rule.
+almost never write in one again within the next day. A thread about to settle stays in its place in Recent; write in it to restart the wait, or
+click its **Settling soon** label (on mobile, open the row's menu) and choose **Dismiss** to put
+it off for three hours. Each dismiss before the thread's next activity doubles the wait. The
+classic sidebar settles threads by the same rule.
 
-A thread with a pull request keeps the full wait and is not listed under About to settle. Something its
+A thread with a pull request keeps the full wait. Something its
 summary lists for you to check, commit, or publish does not hold it, but a question you have
 not read keeps it from settling on its own, and a thread stays at least an hour and a half
-after you open it to read one.
+after you read one.
 
 Nothing settles early while you are away. After two hours without a message from you in
 any thread, early settling pauses, and it resumes an hour and a half after you next write. A
-thread you opened in the last hour and a half also waits.
+thread you looked at in the last hour and a half also waits, counted from when you left it.
+Looking means at least 15 seconds with the window in front of you (on mobile, with the app
+open), so a glance or a misclick does not hold a thread.
 
 When threads settle on their own while T3 Code is in the background or another window has
 focus, Recent ends with one line, such as **Settled 3 while you were away**. Click it to open
@@ -384,11 +382,12 @@ they have new activity. Threads you settle yourself are never counted. The web a
 remember when you last looked across a restart; the mobile app counts only while it stays open
 in the background.
 
-A thread within an hour of settling shows **Settling soon** in the thread list, and the
-open thread shows the time left with **Keep open**, which turns auto-settle off for that
+A thread within an hour of settling shows **Settling soon** in the thread list, then counts
+down in its last half hour, such as **Settling in 12 min**. The open thread shows the time left with **Keep open**, which turns auto-settle off for that
 thread. On web and desktop, a thread's hover card and its details panel show the time left
-at any point, and the details panel has the switch to turn it back on. **Un-settle thread**
-brings back one that went too early.
+at any point, and the details panel has the switch to turn it back on. In History, a thread
+that settled on its own says **Auto settled**; **Un-settle thread** brings back one that went
+too early.
 
 To keep one thread out of the settled shelf no matter how long it sits idle, open its menu,
 choose **Auto-settle behavior**, and pick **Never**. The current option is checked. Pick

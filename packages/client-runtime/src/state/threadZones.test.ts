@@ -18,7 +18,6 @@ import {
   createOpenThreadPlacementHold,
   sortLaterThreads,
   sortNeedsYouThreads,
-  sortSettlingThreads,
   sortTrailThreads,
   threadRecentAt,
   splitTrail,
@@ -33,8 +32,8 @@ import {
   threadLaterStatusLabel,
   threadRowLineText,
   threadRowProjectName,
-  threadSettlingChance,
-  threadSettlingTimeLabel,
+  threadSettlePostponeLabel,
+  threadSettlingStatus,
   threadStatusKind,
   threadStatusWord,
   threadWorkingLine,
@@ -493,26 +492,24 @@ describe("threadLaterLead", () => {
     ]) {
       expect(threadAutoSettleAt(quiet(stale))).toBeNull();
     }
-    // Listed as settling only with a chance on a plan that still stands, the surest thread last.
-    const plan = { at: Date.parse(T3), basisAt: Date.parse(T1) };
-    const listed = (id: string, returnChance: number, basisAt = plan.basisAt) => ({
-      ...quiet({ autoSettlePlan: { ...plan, basisAt, returnChance } }),
-      id: ThreadId.make(id),
+    // The last half hour counts down; before that, and once the time is past, it is soon.
+    const settlesAt = Date.parse(T3);
+    const before = (minutes: number) => new Date(settlesAt - minutes * 60_000).toISOString();
+    expect(threadSettlingStatus(settlesAt, { now: before(45) })).toBe("Settling soon");
+    expect(threadSettlingStatus(settlesAt, { now: before(30) })).toBe("Settling in 30 min");
+    expect(threadSettlingStatus(settlesAt, { now: before(0.5) })).toBe("Settling in 1 min");
+    expect(threadSettlingStatus(settlesAt, { now: before(-5) })).toBe("Settling soon");
+    // A postpone holds the thread at once; each one in the same quiet stretch doubles.
+    const postponed = quiet({
+      autoSettlePostpone: { at: Date.parse(T2), count: 1 },
     });
-    expect(threadSettlingChance(quiet())).toBeNull();
-    expect(threadSettlingChance(listed("a", 0.12))).toBe(0.12);
-    expect(threadSettlingChance({ ...listed("a", 0.12), latestUserMessageAt: T2 })).toBeNull();
+    expect(threadAutoSettleAt(postponed)).toBe(Date.parse(T2) + 3 * 3_600_000);
+    expect(threadSettlePostponeLabel(quiet())).toBe("Dismiss for 3 hours");
+    expect(threadSettlePostponeLabel(postponed)).toBe("Dismiss for 6 hours");
     expect(
-      sortSettlingThreads([
-        listed("sure", 0.02),
-        listed("older", 0.1, Date.parse(T0)),
-        listed("unsure", 0.14),
-        listed("newer", 0.1),
-      ]).map((thread) => thread.id),
-    ).toEqual(["unsure", "newer", "older", "sure"]);
+      threadSettlePostponeLabel(quiet({ autoSettlePostpone: { at: Date.parse(T2), count: 4 } })),
+    ).toBe("Dismiss for 2 days");
     expect(threadAutoSettleLabel(Date.parse(T3), { now: T1 })).toBe("Settles in 2h");
-    expect(threadSettlingTimeLabel(Date.parse(T3), { now: T1 })).toBe("in 2h");
-    expect(threadSettlingTimeLabel(Date.parse(T1), { now: T2 })).toBe("soon");
     expect(threadAutoSettleLabel(Date.parse(T1), { now: T2 })).toBe(
       "Settles soon after your next message",
     );

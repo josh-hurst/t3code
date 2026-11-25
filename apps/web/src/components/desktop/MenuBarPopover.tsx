@@ -11,7 +11,13 @@ import {
   resolveThreadActivityTimestamp,
   sortSettledThreads,
 } from "@t3tools/client-runtime/state/thread-sort";
-import { sortLaterThreads, threadRowProjectName } from "@t3tools/client-runtime/state/thread-zones";
+import {
+  AUTO_SETTLE_SOON_MS,
+  sortLaterThreads,
+  threadAutoSettleAt,
+  threadRowProjectName,
+  threadSettlingStatus,
+} from "@t3tools/client-runtime/state/thread-zones";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { nonMainlineBranchName } from "@t3tools/shared/git";
 import { useRouter } from "@tanstack/react-router";
@@ -57,7 +63,6 @@ import {
 import {
   arrangeTideActive,
   resolveTideRowLead,
-  splitTideSettling,
   tideRenderedOrder,
 } from "../sidebar/tideSidebar.logic";
 
@@ -152,10 +157,8 @@ export function MenuBarPopover({ onClose }: { readonly onClose: () => void }) {
   const settledThreads = nest(sortSettledThreads(settled).slice(0, MAX_HISTORY_ROWS));
   const isNeedsYou = (thread: EnvironmentThreadShell) =>
     sidebarThreadNeedsYou(thread, { includeCompleted: false });
-  const split = splitTideSettling(active, isNeedsYou);
-  const settlingThreads = nest(split.settling);
   const tideActive = arrangeTideActive({
-    active: split.active,
+    active,
     isNeedsYou,
     nowMs,
     trailExpanded: true,
@@ -198,18 +201,6 @@ export function MenuBarPopover({ onClose }: { readonly onClose: () => void }) {
       thread,
       section: "working" as const,
       groupLabel: null,
-    })),
-    // The threads the server expects to settle end Recent, under their own label.
-    settling: settlingThreads.map((thread, index) => ({
-      key: threadKeyOf(thread),
-      thread,
-      section: "trail" as const,
-      groupLabel:
-        index === 0
-          ? gt("About to settle", {
-              $context: "label above Recent threads that will settle soon",
-            })
-          : null,
     })),
     later: snoozedThreads.map((thread) => ({
       key: threadKeyOf(thread),
@@ -348,7 +339,24 @@ export function MenuBarPopover({ onClose }: { readonly onClose: () => void }) {
             }
           : undefined,
     });
-    const lead = tideLead.lead;
+    const settlesAtMs = section === "trail" ? threadAutoSettleAt(thread) : null;
+    // A row with nothing owed and no status of its own says when it is about to leave the list,
+    // and a History row says the server settled it rather than you.
+    const lead =
+      tideLead.lead ??
+      (settlesAtMs !== null && settlesAtMs - nowMs <= AUTO_SETTLE_SOON_MS
+        ? ({
+            kind: "status",
+            tone: "settling",
+            word: threadSettlingStatus(settlesAtMs, { now: nowIso }, resolveMessage),
+          } as const)
+        : section === "settled" && thread.autoSettledAt
+          ? ({
+              kind: "status",
+              tone: "auto-settled",
+              word: gt("Auto settled", { $context: "thread status, settled on its own" }),
+            } as const)
+          : null);
     const label =
       lead === null ? null : lead.kind === "owed" ? (
         <TideOwedLabel>{lead.word}</TideOwedLabel>

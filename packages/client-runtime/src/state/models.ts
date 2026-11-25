@@ -196,6 +196,9 @@ export interface EnvironmentThreadShell {
   readonly pinnedAt: string | null;
   readonly autoSettleDisabledAt?: string | null;
   readonly autoSettlePlan?: import("@t3tools/contracts").OrchestrationV2AutoSettlePlan | null;
+  readonly autoSettlePostpone?:
+    | import("@t3tools/contracts").OrchestrationV2AutoSettlePostpone
+    | null;
   readonly pinOrderKey: string | null;
   readonly activeOrderKey: string | null;
   /** The thread this one is nested under; settling that thread settles this one too. */
@@ -362,6 +365,7 @@ export function presentThreadShell(
     pinnedAt: nullableIso(thread.pinnedAt ?? null),
     autoSettleDisabledAt: nullableIso(thread.autoSettleDisabledAt ?? null),
     autoSettlePlan: thread.autoSettlePlan ?? null,
+    autoSettlePostpone: thread.autoSettlePostpone ?? null,
     pinOrderKey: thread.pinOrderKey ?? null,
     activeOrderKey: thread.activeOrderKey ?? null,
     ...(thread.nestedUnder ? { nestedUnder: thread.nestedUnder } : {}),

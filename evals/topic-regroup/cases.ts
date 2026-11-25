@@ -401,6 +401,35 @@ export const cases: ReadonlyArray<Case> = [
     pass: { topics: [4, 7], maxRepaired: 2, minF: 0.7 },
   },
   {
+    id: "mockups-not-a-redesign",
+    kind: "guard",
+    source:
+      "Report: a thread that only generated and scored UI mockups was titled as a redesign, so Changes listed a redesign as uncommitted",
+    runs: [
+      [
+        "Screenshot the pricing page and have the image models make 10 new layouts each. Conversion is terrible, we need it way higher",
+        "Generating 20 pricing page mockups across 10 directions",
+        "P",
+      ],
+      [null, "Reviewed 20 mockups; recommends the comparison table layout", "P"],
+      [
+        "put them all in one html page I can share",
+        "Built a shareable HTML gallery of the mockups",
+        "P",
+      ],
+      ["let me score each one 1-10 with notes", "Added scores and notes to the gallery", "P"],
+      ["my scores are in, do another round", "Round 2 generating 16 mockups from your scores", "P"],
+      [null, "Round 2 ready; 16 mockups to score", "P"],
+      [
+        "these lost all the urgency, push harder on conversion",
+        "Round 3 generating 12 bolder mockups",
+        "P",
+      ],
+      [null, "Round 3 ready; 9 of 12 rated 7 or higher", "P"],
+    ],
+    pass: { topics: 1, titleAvoids: /redesign|revamp|overhaul|conversion/i },
+  },
+  {
     id: "injection-in-outline",
     kind: "control",
     source:

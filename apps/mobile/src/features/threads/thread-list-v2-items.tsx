@@ -42,10 +42,9 @@ import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 import { canSnooze, threadAskUnread } from "@t3tools/client-runtime/state/thread-settled";
 import { nonMainlineBranchName } from "@t3tools/shared/git";
 import {
-  AUTO_SETTLE_SOON_MS,
-  threadAutoSettleAt,
   threadCardQuestionLabel,
   threadLaterLead,
+  threadSettlePostponeLabel,
   threadRowLineText,
   threadWorkingLine,
 } from "@t3tools/client-runtime/state/thread-zones";
@@ -68,7 +67,7 @@ import {
   ProviderInstanceIcon,
   providerInstanceNameLabel,
 } from "../../components/ProviderIcon";
-import { useDeadlinePassed, useNowAfter } from "../../lib/clock";
+import { useNowAfter } from "../../lib/clock";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { copyThreadReference } from "../../lib/copyThreadReference";
@@ -187,10 +186,17 @@ const DONE_STATUS_LABEL: StatusLabel = {
   iconTintClassName: "accent-adaptive-emerald-700-300",
   tint: STATUS_TINT.emerald,
 };
-// A quiet thread inside its last hour before it settles on its own.
-const SETTLING_STATUS_LABEL: StatusLabel = {
-  label: msg("Settling soon", { $context: "thread status, about to settle on its own" }),
+// A quiet thread inside its last hour before it settles on its own; the list sets its label.
+const SETTLING_STATUS_LOOK: Omit<StatusLabel, "label"> = {
   icon: "clock",
+  className: "text-foreground-muted",
+  iconTintClassName: "accent-foreground-muted",
+  tint: null,
+};
+// A History thread the server settled on its own, not the owner.
+const AUTO_SETTLED_STATUS_LABEL: StatusLabel = {
+  label: msg("Auto settled", { $context: "thread status, settled on its own" }),
+  icon: "timer",
   className: "text-foreground-muted",
   iconTintClassName: "accent-foreground-muted",
   tint: null,
@@ -556,31 +562,6 @@ export const ThreadListV2SectionHeader = memo(function ThreadListV2SectionHeader
 }) {
   const gt = useGT();
   const onClear = props.onClear;
-  if (props.title === "About to settle") {
-    const sidebarPane = props.pane === "sidebar";
-    const muted = sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-muted";
-    // Labels Recent's last rows rather than starting a section, so it sits small inside Recent.
-    return (
-      <View
-        className={cn("flex-row items-center gap-1.5 pt-3 pb-1", sidebarPane ? "px-3" : "px-9")}
-      >
-        <SymbolView
-          name="timer"
-          size={11}
-          tintColorClassName={
-            sidebarPane ? "accent-drawer-foreground-muted" : "accent-foreground-muted"
-          }
-          type="monochrome"
-        />
-        <Text className={cn("flex-1 text-xs font-t3-medium", muted)}>
-          {gt("About to settle", {
-            $context: "label above Recent threads that will settle soon",
-          })}
-        </Text>
-        <Text className={cn("text-xs tabular-nums", muted)}>{props.count}</Text>
-      </View>
-    );
-  }
   const label = props.title === "By meaning" ? gt("By meaning") : props.title;
   return (
     <ThreadListV2Section
@@ -1088,8 +1069,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly cardLine?: string | null;
   /** A slim row's project, on its own line above the title. */
   readonly projectLine?: string | null;
-  /** An about-to-settle row: title and countdown, then the project, and no status line. */
-  readonly compact?: boolean;
+  /** "Settling soon" or its countdown, in a quiet row's last hour before it settles. */
+  readonly settlingLabel?: string;
   /** The self-filing list, where card rows share the slim rows' anatomy. */
   readonly selfFiling?: boolean;
   /** A Needs you row, whose card takes the primary tint as on web. */
@@ -1129,7 +1110,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly onArchiveThread: (thread: EnvironmentThreadShell) => void;
   readonly onPinThread: (thread: EnvironmentThreadShell) => void;
   readonly onUnpinThread: (thread: EnvironmentThreadShell) => void;
-  readonly onSetThreadAutoSettle: (thread: EnvironmentThreadShell, enabled: boolean) => void;
+  readonly onSetThreadAutoSettle: (
+    thread: EnvironmentThreadShell,
+    enabled: boolean,
+    options?: { readonly postpone?: boolean },
+  ) => void;
   readonly settlementSupported: boolean;
   readonly snoozeSupported: boolean;
   readonly snoozePresets: ReadonlyArray<SnoozePresetSetting> | undefined;
@@ -1256,14 +1241,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
   const workingLabel = STATUS_LABEL_BY_STATUS[status];
   const showsWoke = status === "ready" && props.wokeAt !== null;
-  // Later and History rows are already put away, so only an active row says it is about to go.
-  const settlesAtMs =
-    status === "ready" && !snoozedRow && thread.settledOverride === null
-      ? threadAutoSettleAt(thread)
-      : null;
-  const settlingSoon = useDeadlinePassed(
-    settlesAtMs === null ? null : settlesAtMs - AUTO_SETTLE_SOON_MS,
-  );
+  const settlingLabel = status === "ready" ? props.settlingLabel : undefined;
+  const settling = settlingLabel !== undefined;
+  const settlingEntry = settling ? { ...SETTLING_STATUS_LOOK, label: settlingLabel } : undefined;
+  const autoSettled =
+    status === "ready" && thread.settledOverride === "settled" && Boolean(thread.autoSettledAt);
   const statusEntry =
     (status === "working" && workingLabel !== undefined && thread.goal?.status === "active"
       ? {
@@ -1271,16 +1253,16 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           label: msg("Goal", { $context: "thread status, working toward a goal" }),
         }
       : workingLabel) ??
-    // An unread question first, then Done; a question already read stays labelled below both.
-    (status === "ready" && threadAskUnread(thread)
-      ? QUESTION_STATUS_LABEL
-      : isUnread
-        ? DONE_STATUS_LABEL
-        : status === "ready" && threadCardHasOpenAsk(thread.card)
-          ? QUESTION_STATUS_LABEL
-          : settlingSoon
-            ? SETTLING_STATUS_LABEL
-            : undefined);
+    // Auto settled in History; then an unread question, then Done; a read question below both.
+    (autoSettled
+      ? AUTO_SETTLED_STATUS_LABEL
+      : status === "ready" && threadAskUnread(thread)
+        ? QUESTION_STATUS_LABEL
+        : isUnread
+          ? DONE_STATUS_LABEL
+          : status === "ready" && threadCardHasOpenAsk(thread.card)
+            ? QUESTION_STATUS_LABEL
+            : settlingEntry);
   const statusLabel = statusEntry && {
     ...statusEntry,
     label: statusEntry.label === null ? null : m(statusEntry.label),
@@ -1306,11 +1288,15 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     !showsWoke &&
     (variant === "card" || (!snoozedRow && thread.settledOverride !== "settled"));
   const hasLaterLead = snoozedRow && threadLaterLead(thread, { recheckLimit: null }) !== null;
-  const showsQuestion =
+  // Slim rows lead with a question, an about-to-settle countdown, or Auto settled in History.
+  const showsSlimStatus =
     props.selfFiling === true &&
     !showsDone &&
     !hasLaterLead &&
-    statusEntry === QUESTION_STATUS_LABEL;
+    statusEntry !== undefined &&
+    (statusEntry === QUESTION_STATUS_LABEL ||
+      statusEntry === settlingEntry ||
+      statusEntry === AUTO_SETTLED_STATUS_LABEL);
   const isRegeneratingTitle = thread.titleRegeneration != null;
   // List items keep marked text so they stay the same objects across a language switch.
   const timeLabel = props.timeLabel && m(props.timeLabel);
@@ -1392,6 +1378,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleUnpin = useCallback(() => onUnpinThread(thread), [onUnpinThread, thread]);
   const handleSetAutoSettle = useCallback(
     (enabled: boolean) => onSetThreadAutoSettle(thread, enabled),
+    [onSetThreadAutoSettle, thread],
+  );
+  const handlePostponeSettle = useCallback(
+    () => onSetThreadAutoSettle(thread, true, { postpone: true }),
     [onSetThreadAutoSettle, thread],
   );
   const handleMoveUp = useCallback(() => onMoveThread?.(thread, "up"), [onMoveThread, thread]);
@@ -1610,11 +1600,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         direct: [
           ...direct,
           localized(CARD_MENU_ACTIONS[0]!),
-          ...(props.compact === true && props.autoSettleOptOutSupported
+          ...(settling && props.autoSettleOptOutSupported
             ? [
                 {
-                  id: "keep",
-                  title: gt("Keep", { $context: "verb, stop a thread from settling on its own" }),
+                  id: "postpone-settle",
+                  title: threadSettlePostponeLabel(thread, m),
                   image: "timer",
                 },
               ]
@@ -1649,9 +1639,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     canUnsettle,
     pinMenuItems,
     props.autoSettleOptOutSupported,
-    props.compact,
     props.settlementSupported,
     reorderMenuItems,
+    settling,
     snoozePresetActions,
     snoozedRow,
     gt,
@@ -1679,9 +1669,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "pin") handlePin();
       if (nativeEvent.event === "unpin") handleUnpin();
       if (nativeEvent.event === "auto-settle:enabled") handleSetAutoSettle(true);
-      if (nativeEvent.event === "auto-settle:disabled" || nativeEvent.event === "keep") {
-        handleSetAutoSettle(false);
-      }
+      if (nativeEvent.event === "auto-settle:disabled") handleSetAutoSettle(false);
+      if (nativeEvent.event === "postpone-settle") handlePostponeSettle();
       if (nativeEvent.event === "arrange") appAtomRegistry.set(threadArrangementOpenAtom, true);
       if (nativeEvent.event === "move-up") handleMoveUp();
       if (nativeEvent.event === "move-down") handleMoveDown();
@@ -1751,6 +1740,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       handleSettle,
       handleSnooze,
       handleSetAutoSettle,
+      handlePostponeSettle,
       handleUnpin,
       handleUnsettle,
       handleUnsnooze,
@@ -2323,7 +2313,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           : DONE_STATUS_LABEL.className,
         label: gt("Done", { $context: "thread status, turn finished" }),
       }
-    : showsQuestion && statusLabel
+    : showsSlimStatus && statusLabel
       ? {
           icon: statusLabel.icon,
           iconTintClassName: selected
@@ -2430,7 +2420,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </Text>
             {slimTrailing}
           </View>
-          {props.compact === true ? null : slimLine || slimLead ? (
+          {slimLine || slimLead ? (
             // Takes the provider line's place.
             <View className="mt-0.5">
               <ThreadRowStatusLine

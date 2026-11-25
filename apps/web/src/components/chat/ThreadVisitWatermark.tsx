@@ -4,6 +4,7 @@ import { createThreadVisitTracker } from "@t3tools/client-runtime/state/thread-v
 import { type ScopedThreadRef } from "@t3tools/contracts";
 
 import { environmentCatalog } from "../../connection/catalog";
+import { windowLooking } from "../../lib/windowLooking";
 import { useUiStateStore } from "../../uiStateStore";
 import { environmentThreadShells, threadEnvironment } from "../../state/threads";
 
@@ -13,6 +14,7 @@ const threadVisitTracker = createThreadVisitTracker({
   visit: threadEnvironment.visit,
   markLocalVisit: (ref, visitedAt) =>
     useUiStateStore.getState().markThreadVisited(scopedThreadKey(ref), visitedAt),
+  looking: windowLooking,
 });
 
 // The visit watermark is the one part of the chat view that follows the

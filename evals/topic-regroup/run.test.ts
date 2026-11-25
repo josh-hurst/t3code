@@ -28,6 +28,7 @@ describe("grade", () => {
     ["runs kept together", [topic([1, 2, 3, 4])], 0, { together: [[1, 4]] }, true],
     ["runs pulled apart", [topic([1, 2]), topic([3, 4])], 0, { together: [[1, 4]] }, false],
     ["too many repairs", [topic([1, 2]), topic([3, 4])], 3, { maxRepaired: 2 }, false],
+    ["a title it must avoid", [topic([1, 2, 3, 4])], 0, { titleAvoids: /^T$/ }, false],
   ] as const)("judges %s", (_name, topics, repaired, pass, expected) => {
     expect(grade({ topics, runCount: 4, gold, repaired, pass }).pass).toBe(expected);
   });

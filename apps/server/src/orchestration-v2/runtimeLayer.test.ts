@@ -13237,7 +13237,12 @@ it.layer(Layer.fresh(layerSharedApplicationDataPlaneTest))("thread opens", (it) 
           worktreePath: null,
         });
         let visits = 0;
-        const visit = (input: { readonly opened?: boolean; readonly searchQuery?: string }) =>
+        const visit = (input: {
+          readonly opened?: boolean;
+          readonly searchQuery?: string;
+          readonly stay?: { readonly forMs: number; readonly lookedMs: number };
+          readonly held?: boolean;
+        }) =>
           orchestrator.dispatch({
             type: "thread.visit",
             commandId: CommandId.make(`runtime-layer-opened-visit-${++visits}`),
@@ -13250,9 +13255,15 @@ it.layer(Layer.fresh(layerSharedApplicationDataPlaneTest))("thread opens", (it) 
           orchestrator.getShellSnapshot(),
           (shell) => shell.threads.find((thread) => thread.id === threadId)?.opens ?? null,
         );
+        const heldAt = Effect.map(
+          orchestrator.getThreadProjection(threadId),
+          (projection) => projection.thread.heldAt ?? null,
+        );
         const start = DateTime.toEpochMillis(yield* DateTime.now);
 
         yield* visit({ opened: true, searchQuery: "  Upl " });
+        // An open alone is not a look, so it holds nothing.
+        assert.isNull(yield* heldAt);
         assert.deepEqual(yield* opens, {
           openedAt: start,
           score: 1,
@@ -13281,6 +13292,27 @@ it.layer(Layer.fresh(layerSharedApplicationDataPlaneTest))("thread opens", (it) 
           { query: "uploadthing docs", at: start + 60_000 },
           { query: "upl", at: start },
         ]);
+
+        // A look is timed by the server clock, like an open.
+        yield* visit({ held: true });
+        assert.deepEqual(yield* heldAt, yield* DateTime.now);
+
+        // Leaving logs the stay even when the watermark stays put, and a rebuild keeps one row.
+        yield* TestClock.adjust("4 seconds");
+        yield* visit({ stay: { forMs: 4_000, lookedMs: 3_000 } });
+        const sql = yield* SqlClient.SqlClient;
+        const stays = sql`SELECT thread_id, left_at, stay_ms, looked_ms FROM tide_thread_stays`;
+        const logged = [
+          {
+            thread_id: threadId,
+            left_at: DateTime.formatIso(yield* DateTime.now),
+            stay_ms: 4_000,
+            looked_ms: 3_000,
+          },
+        ];
+        assert.deepEqual(yield* stays, logged);
+        assert.isTrue((yield* (yield* ProjectionReplay.ProjectionReplay).rebuild).valid);
+        assert.deepEqual(yield* stays, logged);
       }),
   );
 });

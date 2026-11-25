@@ -13,7 +13,7 @@ import {
   runRanAfter,
   usageLimitBlockedRun,
 } from "@t3tools/shared/orchestrationV2ThreadError";
-import { threadIssueKeysEqual } from "@t3tools/contracts";
+import { nextAutoSettlePostpone, threadIssueKeysEqual } from "@t3tools/contracts";
 import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
 import {
@@ -4322,7 +4322,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
     }
-    if (!movesForward && opens === null) return;
+    const held = command.held === true;
+    if (!movesForward && opens === null && !held && command.stay === undefined) return;
     // Viewing a thread changes read state only. Loading its transcript, bumping
     // updatedAt, or copying the thread into the event makes a read receipt scale with it.
     yield* emit(
@@ -4336,6 +4337,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       payload: {
         lastVisitedAt: movesForward ? visitedAt.value : thread.lastVisitedAt,
         ...(opens ? { opens } : {}),
+        ...(held ? { heldAt: occurredAt } : {}),
+        ...(command.stay ? { stay: command.stay } : {}),
       },
     });
   });
@@ -5729,6 +5732,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         case "thread.auto-settle.plan":
           return { ...thread, autoSettlePlan: command.plan };
         case "thread.auto-settle.set": {
+          // Putting off a settle is not activity, so updatedAt stays.
+          if (command.postpone === true && command.enabled) {
+            return {
+              ...thread,
+              autoSettlePostpone: nextAutoSettlePostpone(thread, DateTime.toEpochMillis(now)),
+            };
+          }
           const unchanged = command.enabled === (thread.autoSettleDisabledAt == null);
           return {
             ...thread,

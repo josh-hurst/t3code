@@ -25,6 +25,17 @@ interface VisitedShell {
   readonly wokeAt?: string | null | undefined;
 }
 
+/** Whether the user can see the app right now: a focused window, or an app in the foreground. */
+export interface ThreadVisitLooking {
+  readonly current: () => boolean;
+  readonly subscribe: (onChange: () => void) => () => void;
+}
+
+/** Looking at a thread this long holds it from settling early; less is a glance. */
+const THREAD_HELD_AFTER_LOOKED_MS = 15_000;
+
+const ALWAYS_LOOKING: ThreadVisitLooking = { current: () => true, subscribe: () => () => {} };
+
 export interface ThreadVisitTrackerOptions {
   readonly threadShellAtom: (ref: ScopedThreadRef) => Atom.Atom<VisitedShell | null>;
   readonly sessionGenerationAtom: (environmentId: EnvironmentId) => Atom.Atom<number>;
@@ -38,6 +49,8 @@ export interface ThreadVisitTrackerOptions {
    * that keeps its own watermark for them records the visit here instead.
    */
   readonly markLocalVisit?: (ref: ScopedThreadRef, visitedAt: string) => void;
+  /** Without it, the whole stay counts as looked at. */
+  readonly looking?: ThreadVisitLooking;
 }
 
 /** The watermark an open sends: the thread's last visit, so opening alone marks nothing read. */
@@ -69,19 +82,48 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
       // A failed open waits for a new session, so streaming updates cannot spin on it.
       let openFailedGeneration: number | null = null;
       let active = true;
+      // Time looked at decides whether the visit holds the thread from settling early:
+      // a glance or a misclick does not. The server also logs each stay on leaving.
+      const looking = options.looking ?? ALWAYS_LOOKING;
+      const shownAtMs = Date.now();
+      let lookedMs = 0;
+      let lookingSinceMs: number | null = looking.current() ? shownAtMs : null;
+      const lookedUntil = (nowMs: number) =>
+        lookedMs + (lookingSinceMs === null ? 0 : nowMs - lookingSinceMs);
+      const stayUntil = (nowMs: number): NonNullable<VisitThreadInput["stay"]> => ({
+        forMs: Math.max(0, Math.round(nowMs - shownAtMs)),
+        lookedMs: Math.max(0, Math.round(lookedUntil(nowMs))),
+      });
+      // Pending once looked at long enough; sent with the first visit the server can take.
+      let heldPending = false;
+      let heldSent = false;
+      let heldTimer: ReturnType<typeof setTimeout> | undefined;
 
-      const sendVisit = (visitedAt: string, opened: boolean) => {
+      const sendVisit = (
+        visitedAt: string,
+        extra: {
+          readonly opened?: boolean;
+          readonly held?: boolean;
+          readonly stay?: NonNullable<VisitThreadInput["stay"]>;
+        } = {},
+      ) => {
         const generation = registry.get(sessionGenerationAtom);
         void runAtomCommand(
           registry,
           options.visit,
           {
             environmentId: ref.environmentId,
-            input: { threadId: ref.threadId, visitedAt, ...(opened ? { opened: true } : {}) },
+            input: {
+              threadId: ref.threadId,
+              visitedAt,
+              ...(extra.opened ? { opened: true } : {}),
+              ...(extra.held ? { held: true } : {}),
+              ...(extra.stay ? { stay: extra.stay } : {}),
+            },
           },
           { reportFailure: false },
         ).then((result) => {
-          if (!opened || !active || !AsyncResult.isFailure(result)) return;
+          if (!extra.opened || !active || !AsyncResult.isFailure(result)) return;
           openPending = true;
           openFailedGeneration = generation;
           sendPendingOpen();
@@ -94,21 +136,62 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
         if (!openPending || shell === null || shell.lastVisitedAt === undefined) return;
         if (openFailedGeneration === registry.get(sessionGenerationAtom)) return;
         openPending = false;
-        sendVisit(openVisitedAt(shell), true);
+        sendVisit(openVisitedAt(shell), { opened: true });
       };
+
+      // A failed hold is not retried: leaving after a long enough look holds the thread again.
+      const sendPendingHeld = () => {
+        if (!heldPending || shell === null || shell.lastVisitedAt === undefined) return;
+        heldPending = false;
+        heldSent = true;
+        sendVisit(openVisitedAt(shell), { held: true });
+      };
+
+      const armHeld = () => {
+        clearTimeout(heldTimer);
+        heldTimer = undefined;
+        if (heldPending || heldSent || lookingSinceMs === null) return;
+        heldTimer = setTimeout(
+          () => {
+            heldPending = true;
+            sendPendingHeld();
+          },
+          Math.max(0, THREAD_HELD_AFTER_LOOKED_MS - lookedUntil(Date.now())),
+        );
+      };
+      armHeld();
+      const stopLooking = looking.subscribe(() => {
+        const nowMs = Date.now();
+        if (!looking.current()) {
+          if (lookingSinceMs !== null) lookedMs += nowMs - lookingSinceMs;
+          lookingSinceMs = null;
+        } else if (lookingSinceMs === null) {
+          lookingSinceMs = nowMs;
+        }
+        armHeld();
+      });
 
       get.addFinalizer(() => {
         active = false;
-        if (shell === null || seenAt === null) return;
-        const seenAtMs = Date.parse(seenAt);
-        if (seenAtMs <= keepUnreadThroughMs) return;
+        stopLooking();
+        clearTimeout(heldTimer);
+        if (shell === null) return;
+        const seenAtMs = seenAt === null ? NaN : Date.parse(seenAt);
+        // Activity seen while here, unless a mark-unread made here keeps it unread.
+        const seen = seenAt !== null && !(seenAtMs <= keepUnreadThroughMs) ? seenAt : null;
         if (shell.lastVisitedAt === undefined) {
-          options.markLocalVisit?.(ref, seenAt);
+          if (seen !== null) options.markLocalVisit?.(ref, seen);
           return;
         }
         const lastVisitedAtMs = shell.lastVisitedAt ? Date.parse(shell.lastVisitedAt) : NaN;
-        if (!Number.isNaN(lastVisitedAtMs) && lastVisitedAtMs >= seenAtMs) return;
-        sendVisit(seenAt, false);
+        const marksRead = seen !== null && !(lastVisitedAtMs >= seenAtMs);
+        // The stay always goes; a watermark that does not move forward changes no read state.
+        // A long enough look holds the thread from when the user left, not when they arrived.
+        const stay = stayUntil(Date.now());
+        sendVisit(marksRead ? seen : openVisitedAt(shell), {
+          stay,
+          held: stay.lookedMs >= THREAD_HELD_AFTER_LOOKED_MS,
+        });
       });
 
       const onShell = (next: VisitedShell | null) => {
@@ -123,6 +206,7 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
 
         if (next.lastVisitedAt === undefined) return;
         sendPendingOpen();
+        sendPendingHeld();
         // A watermark that moved back is a mark-unread; leaving keeps it.
         const lastVisitedAtMs = next.lastVisitedAt ? Date.parse(next.lastVisitedAt) : NaN;
         const previousVisitedAtMs = previous?.lastVisitedAt

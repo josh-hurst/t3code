@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { nextAutoSettlePostpone, SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import {
@@ -479,22 +479,23 @@ describe("resolveAutoSettlementAt", () => {
     const unread = owes("ask", { lastVisitedAt: at(-idle - HOUR_MS) });
     expect(settles(unread)).toBeNull();
     expect(planned(unread)).toBeNull();
-    // Read an hour ago, three days in: the window has passed, and the open still buys 1.5 hours.
+    // Read an hour ago, three days in: the window has passed, and the look still buys 1.5 hours.
     const readLate = (kind: "verify" | "ask") => ({
       ...owes(kind),
-      ...quiet(3 * DAY_MS, { opens: { openedAt: NOW_MS - HOUR_MS, score: 1, picks: [] } }),
+      ...quiet(3 * DAY_MS, { heldAt: at(-HOUR_MS) }),
       card: owes(kind).card,
     });
     expect(settles(readLate("verify"))).toEqual(at(-3 * DAY_MS));
     expect(settles(readLate("ask"))).toBeNull();
     expect(planned(readLate("ask"))?.at).toBe(NOW_MS + HOUR_MS / 2);
 
-    // Opened an hour ago, or the owner came back an hour ago: 1.5 hours must pass first.
-    const opened = quiet(idle, {
-      opens: { openedAt: NOW_MS - HOUR_MS, score: 1, picks: [] },
-    });
-    expect(settles(opened)).toBeNull();
-    expect(planned(opened)?.at).toBe(NOW_MS + HOUR_MS / 2);
+    // Looked at an hour ago, or the owner came back an hour ago: 1.5 hours must pass first.
+    const held = quiet(idle, { heldAt: at(-HOUR_MS) });
+    expect(settles(held)).toBeNull();
+    expect(planned(held)?.at).toBe(NOW_MS + HOUR_MS / 2);
+    // A glance records an open but no look, so it holds nothing.
+    const glanced = quiet(idle, { opens: { openedAt: NOW_MS - HOUR_MS, score: 1, picks: [] } });
+    expect(settles(glanced)).toEqual(at(-idle));
     const justBack = { lastAtMs: NOW_MS, sinceAtMs: NOW_MS - HOUR_MS };
     expect(settles(quiet(idle), { presence: justBack })).toBeNull();
     expect(planned(quiet(idle), { presence: justBack })?.at).toBe(NOW_MS + HOUR_MS / 2);
@@ -549,6 +550,38 @@ describe("resolveAutoSettlementAt", () => {
     expect(
       ThreadSettlementService.resolveAutoSettlementAt({ ...input, autoSettleAfterDays: null }),
     ).toBeNull();
+  });
+
+  it("holds a postponed thread three hours, doubling each time, until new activity", () => {
+    const quietAt = at(-3 * DAY_MS);
+    const idle = shell({ latestRunCompletedAt: quietAt });
+    const plan = { at: NOW_MS, basisAt: DateTime.toEpochMillis(quietAt) };
+    const first = nextAutoSettlePostpone({ autoSettlePlan: plan }, NOW_MS);
+    const second = nextAutoSettlePostpone(
+      { autoSettlePlan: plan, autoSettlePostpone: first },
+      NOW_MS + HOUR_MS,
+    );
+    expect([first.count, second.count]).toEqual([1, 2]);
+    // New activity after the last postpone starts the doubling over.
+    expect(
+      nextAutoSettlePostpone(
+        { autoSettlePlan: { ...plan, basisAt: NOW_MS + 2 * HOUR_MS }, autoSettlePostpone: second },
+        NOW_MS + 3 * HOUR_MS,
+      ).count,
+    ).toBe(1);
+    const settlesAt = (thread: SettlementShell, nowMs: number) =>
+      ThreadSettlementService.resolveAutoSettlementAt({
+        thread,
+        pullRequest: null,
+        nowMs,
+        autoSettleAfterDays: 2,
+        autoSettleOnMerge: false,
+      });
+    const postponed = { ...idle, autoSettlePostpone: second };
+    // Six hours from the second postpone, not three.
+    expect(settlesAt(postponed, NOW_MS + 6 * HOUR_MS)).toBeNull();
+    expect(settlesAt(postponed, NOW_MS + 7 * HOUR_MS + 1)).toEqual(quietAt);
+    expect(settlesAt(idle, NOW_MS)).toEqual(quietAt);
   });
 
   it("anchors an empty thread's inactivity at its creation time", () => {

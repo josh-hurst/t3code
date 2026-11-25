@@ -157,6 +157,7 @@ interface HomeScreenProps {
   readonly onSetThreadAutoSettle: (
     thread: EnvironmentThreadShell,
     enabled: boolean,
+    options?: { readonly postpone?: boolean },
   ) => Promise<boolean>;
   readonly onMoveThread: (
     thread: EnvironmentThreadShell,
@@ -644,7 +645,7 @@ export function HomeScreen(props: HomeScreenProps) {
         variant={item.item.variant}
         cardLine={item.item.cardLine}
         projectLine={item.item.projectLine}
-        compact={item.item.compact === true}
+        settlingLabel={item.settlingLabel}
         selfFiling={tide}
         needsYou={item.item.needsYou === true}
         groupStart={item.groupStart}

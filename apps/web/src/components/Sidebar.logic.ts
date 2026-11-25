@@ -211,10 +211,9 @@ export function useRetainedValue<T>(key: string | null, value: T | null): T | nu
 export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
   args.isSorting ? defaultAnimateLayoutChanges(args) : false;
 
-// Snoozed rows cannot accept drops without a wake time. Working and settling rows only drag out
-// as chat context.
+// Snoozed rows cannot accept drops without a wake time. Working rows only drag out as chat context.
 
-export type SidebarSection = "pinned" | "active" | "working" | "settling" | "snoozed" | "settled";
+export type SidebarSection = "pinned" | "active" | "working" | "snoozed" | "settled";
 
 export function resolveSidebarThreadSection(input: {
   readonly snoozed: boolean;
@@ -235,7 +234,6 @@ export type SidebarListMarker =
   | "settled-placeholder"
   | "pinned-divider"
   | "working-header"
-  | "settling-header"
   | "settled-away"
   | "snoozed-header"
   | "trail-header"
@@ -261,7 +259,6 @@ function sectionBelowSidebarMarker(
 ): SidebarSection {
   if (marker === "pinned-divider" || marker === "trail-header") return "active";
   if (marker === "working-header") return "working";
-  if (marker === "settling-header") return "settling";
   if (marker === "snoozed-header") return "snoozed";
   if (marker === "settled-header") return "settled";
   return section;
@@ -313,7 +310,7 @@ export function resolveSidebarDropTarget(
   const moved = items.filter((_, index) => index !== activeIndex);
   moved.splice(overIndex, 0, items[activeIndex]!);
   const section = sectionAtSidebarSlot(moved, overIndex);
-  if (section === "working" || section === "settling" || section === "snoozed") return null;
+  if (section === "working" || section === "snoozed") return null;
   const pinnedOrder: string[] = [];
   const activeOrder: string[] = [];
   let currentSection: SidebarSection = "pinned";
@@ -448,7 +445,7 @@ export function resolveSidebarDropVerb(
   to: SidebarSection | null,
 ): SidebarDropVerb | null {
   if (to === null || to === from) return null;
-  if (to === "working" || to === "settling" || to === "snoozed") return null;
+  if (to === "working" || to === "snoozed") return null;
   if (to === "pinned") return "pin";
   if (to === "settled") return "settle";
   if (from === "pinned") return "unpin";
@@ -536,7 +533,7 @@ export function planSidebarThreadDrop(input: {
     activeKeysById,
     activeReorderableKeys,
   } = input;
-  if (activeSection === "working" || activeSection === "settling") return { kind: "none" };
+  if (activeSection === "working") return { kind: "none" };
   if (input.supportsSettlement === false && (target.section === "settled" || activeSettled)) {
     return { kind: "none" };
   }

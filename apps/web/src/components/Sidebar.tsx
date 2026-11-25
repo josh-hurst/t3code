@@ -316,7 +316,6 @@ import {
   arrangeTideHistory,
   needsYouElsewhere,
   nextNeedsYouKey,
-  splitTideSettling,
   tideRenderedOrder,
   trailThreadsToClear,
   type TideProjectOf,
@@ -331,7 +330,6 @@ import {
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
   SidebarSettledAwayNotice,
-  SidebarSettlingLabel,
 } from "./sidebar/SidebarListMarkers";
 
 function sameSidebarProviderEntries(
@@ -619,10 +617,6 @@ function useSidebarThreads(input: {
     ...threads.filter((thread) => !isNeedsYou(thread)),
   ];
   const needsYouKeys = new Set(partition.activeThreads.filter(isNeedsYou).map(threadShellKey));
-  const settlingSplit = tide
-    ? splitTideSettling(partition.activeThreads, isNeedsYou)
-    : { active: partition.activeThreads, settling: EMPTY_THREADS };
-  const settlingThreads = settlingSplit.settling;
   const needsYouOnTop = needsYouKeys.size > 0 && !needsYouInFolders;
   const arrangeTide = (active: readonly EnvironmentThreadShell[]) =>
     arrangeTideActive({
@@ -635,7 +629,7 @@ function useSidebarThreads(input: {
     });
   const tideActive = (() => {
     if (!tide) return null;
-    const arranged = arrangeTide(settlingSplit.active);
+    const arranged = arrangeTide(partition.activeThreads);
     const visibleTrail = nest(arranged.visibleTrail);
     const rehome = <Label,>(labels: ReadonlyMap<string, Label>) =>
       rehomeSidebarRowLabels(arranged.visibleTrail.map(threadShellKey), nestDepthByKey, labels);
@@ -736,7 +730,6 @@ function useSidebarThreads(input: {
   const visibleWorkingThreads = nest(
     workingShelfExpanded ? workingThreads : routeThreadOnly(workingThreads, routeRowThreadKey),
   );
-  const visibleSettlingThreads = nest(settlingThreads);
   const projectFolders =
     folderGroups === null
       ? null
@@ -771,7 +764,6 @@ function useSidebarThreads(input: {
           pinned: pinnedThreads,
           needsYou: tideActive.needsYou,
           working: visibleWorkingThreads,
-          settling: visibleSettlingThreads,
           later: visibleSnoozedThreads,
           trail: tideActive.visibleTrail,
           history: renderedSettledThreads,
@@ -790,7 +782,6 @@ function useSidebarThreads(input: {
     [pinnedThreads, "pinned"],
     [activeThreads, "active"],
     [workingThreads, "working"],
-    [settlingThreads, "settling"],
     [snoozedThreads, "snoozed"],
     [settledThreads, "settled"],
   ] as const) {
@@ -848,7 +839,6 @@ function useSidebarThreads(input: {
       ...pinnedThreads,
       ...activeThreads,
       ...workingThreads,
-      ...settlingThreads,
       ...snoozedThreads,
       ...settledThreads,
     ],
@@ -867,8 +857,6 @@ function useSidebarThreads(input: {
     toggleSnoozedShelf: () => setSnoozedShelfExpanded((value) => !value),
     workingShelfExpanded,
     toggleWorkingShelf: () => setWorkingShelfExpanded((value) => !value),
-    settlingThreads,
-    visibleSettlingThreads,
     settledAwayThreads,
     projectFolders,
     toggleProjectFolder: (group: SidebarProjectSnapshot) => {
@@ -1235,6 +1223,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     unpinThread,
     confirmAndUnpinThread,
     setThreadAutoSettle,
+    postponeThreadSettle,
     turnThreadIntoProject,
     reorderPinnedThread,
     reorderActiveThread,
@@ -1772,8 +1761,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     toggleSnoozedShelf,
     workingShelfExpanded,
     toggleWorkingShelf,
-    settlingThreads,
-    visibleSettlingThreads,
     settledAwayThreads,
     projectFolders,
     toggleProjectFolder,
@@ -2184,7 +2171,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       );
     }
   };
-  const keepThread = (threadRef: ScopedThreadRef) => void updateAutoSettle(threadRef, false);
+  const postponeSettle = (threadRef: ScopedThreadRef) => {
+    void (async () => {
+      const result = await postponeThreadSettle(threadRef);
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt("Failed to update auto-settle"),
+            description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
+          }),
+        );
+      }
+    })();
+  };
   const attemptSettle = (
     threadRef: ScopedThreadRef,
     opts: { coSettlingKeys?: ReadonlySet<string> } = {},
@@ -2348,7 +2349,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const isContextDrag =
     dragState?.contextDrag === true ||
     dragState?.activeSection === "working" ||
-    dragState?.activeSection === "settling" ||
     (folderBlocks !== null && dragState !== null && !isFolderSortDrag);
   // Folders have no Pinned or Active drop targets to show.
   const dragTargetSection =
@@ -2650,7 +2650,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       pinnedThreads.length +
         activeThreads.length +
         workingThreads.length +
-        settlingThreads.length +
         snoozedThreads.length +
         settledCount ===
         0
@@ -2687,11 +2686,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       items.push(...rowsOf(visibleTrailThreads, "active"));
       if (trailCounts !== null && trailCounts.moreToday + trailCounts.earlier > 0) {
         items.push({ kind: "marker", marker: "trail-more" });
-      }
-      // Threads the server expects to settle end Recent, under their own label.
-      if (settlingThreads.length > 0) {
-        items.push({ kind: "marker", marker: "settling-header" });
-        items.push(...rowsOf(visibleSettlingThreads, "settling"));
       }
       if (settledAwayThreads.length > 0) items.push({ kind: "marker", marker: "settled-away" });
       pushWorking();
@@ -3764,10 +3758,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     );
     if (target) void navigateToThread(scopeThreadRef(target.environmentId, target.id));
   };
-  const recentThreads = [...trailThreads, ...settlingThreads];
   const clearTrail = () => {
     // Includes rows under the Trail's expander, which `settleThreads` cannot see.
-    const cleared = trailThreadsToClear(recentThreads, routeRowThreadKey).filter(
+    const cleared = trailThreadsToClear(trailThreads, routeRowThreadKey).filter(
       (thread) =>
         serverConfigs.has(thread.environmentId) &&
         readEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope),
@@ -4397,7 +4390,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           pinnedThreads.length +
             activeThreads.length +
             workingThreads.length +
-            settlingThreads.length +
             snoozedThreads.length ===
             0 &&
           (settledCount === 0 || scopedProjectGroups.length > 0) ? (
@@ -4498,9 +4490,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             : "folder"
                           : isCard
                             ? "card"
-                            : section === "settling"
-                              ? "compact"
-                              : "slim";
+                            : "slim";
                         return (
                           <SortableThreadRow
                             key={threadKey}
@@ -4622,11 +4612,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
                             onContextMenu={handleThreadContextMenu}
                             onSettle={attemptSettle}
-                            onKeep={
-                              section === "settling" &&
+                            onPostponeSettle={
                               serverConfigs.get(thread.environmentId)?.environment.capabilities
-                                .threadAutoSettleOptOut === true
-                                ? keepThread
+                                .threadAutoSettlePostpone === true
+                                ? postponeSettle
                                 : null
                             }
                             onActionSweepStart={startActionSweep}
@@ -4810,17 +4799,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               />,
                             );
                             break;
-                          case "settling-header":
-                            items.push(
-                              <SidebarSettlingLabel
-                                key="settling-header"
-                                label={gt("About to settle", {
-                                  $context: "label above Recent threads that will settle soon",
-                                })}
-                                count={settlingThreads.length}
-                              />,
-                            );
-                            break;
                           case "settled-away":
                             items.push(
                               <SidebarSettledAwayNotice
@@ -4860,13 +4838,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             items.push(
                               <SidebarTrailHeader
                                 key="trail-header"
-                                count={recentThreads.length}
+                                count={trailThreads.length}
                                 groupByProject={trailGroupByProject}
                                 onToggleGroupByProject={
                                   groupingAffectsRows ? toggleTrailGroupByProject : null
                                 }
                                 onClear={
-                                  trailThreadsToClear(recentThreads, routeRowThreadKey).length > 0
+                                  trailThreadsToClear(trailThreads, routeRowThreadKey).length > 0
                                     ? clearTrail
                                     : null
                                 }

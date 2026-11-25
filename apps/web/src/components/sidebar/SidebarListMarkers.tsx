@@ -1,13 +1,7 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  ActivityIcon,
-  AlarmClockIcon,
-  HistoryIcon,
-  TimerIcon,
-  type LucideIcon,
-} from "lucide-react";
+import { ActivityIcon, AlarmClockIcon, HistoryIcon, type LucideIcon } from "lucide-react";
 import { type ReactNode, useLayoutEffect } from "react";
 import { cn } from "~/lib/utils";
 import { InlineButton } from "../ui/button";
@@ -114,23 +108,6 @@ export function SidebarDragBoundary(props: {
           />
         </div>
       ) : null}
-    </SortableSidebarMarker>
-  );
-}
-
-/** Labels Recent's last rows, the ones the server expects to settle on their own. */
-export function SidebarSettlingLabel(props: { label: string; count: number }) {
-  return (
-    <SortableSidebarMarker
-      marker="settling-header"
-      data-testid="sidebar-settling-header"
-      className="mx-0.5"
-    >
-      <div className="flex h-7 items-end gap-1.5 px-2.5 pb-1 text-xs font-medium text-sidebar-muted-foreground">
-        <TimerIcon aria-hidden className="size-3.5 shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{props.label}</span>
-        <span className="font-normal tabular-nums">{props.count}</span>
-      </div>
     </SortableSidebarMarker>
   );
 }

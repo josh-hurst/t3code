@@ -33,6 +33,9 @@ function setup(threadName: string, initial: Omit<Shell, "environmentId" | "id"> 
   );
   // Visits the server accepted; offline ones fail without reaching it.
   const visits: Array<VisitThreadInput> = [];
+  const stays: Array<VisitThreadInput["stay"]> = [];
+  let looking = true;
+  const lookingListeners = new Set<() => void>();
   const localVisits: Array<string> = [];
   let online = true;
   let pendingResult: Effect.Effect<void, string> | undefined;
@@ -48,18 +51,32 @@ function setup(threadName: string, initial: Omit<Shell, "environmentId" | "id"> 
           attempts.push(value.input);
           const pending = pendingResult;
           pendingResult = undefined;
-          if (online) visits.push(value.input);
+          const { stay, ...watermark } = value.input;
+          if (online) visits.push(watermark);
+          if (online && stay) stays.push(stay);
           if (pending) return pending;
           if (!online) return Effect.fail("disconnected");
           return Effect.void;
         }),
     },
     markLocalVisit: (_ref, visitedAt) => localVisits.push(visitedAt),
+    looking: {
+      current: () => looking,
+      subscribe: (onChange) => {
+        lookingListeners.add(onChange);
+        return () => lookingListeners.delete(onChange);
+      },
+    },
   });
   const registry = AtomRegistry.make();
   return {
     ref,
     visits,
+    stays,
+    setLooking: (value: boolean) => {
+      looking = value;
+      for (const listener of lookingListeners) listener();
+    },
     localVisits,
     attempts,
     deferNextVisit: () => {
@@ -92,7 +109,7 @@ function setup(threadName: string, initial: Omit<Shell, "environmentId" | "id"> 
   };
 }
 
-it("records the open without marking anything read, and marks it read on leaving", () => {
+it("records the open without marking anything read, holds after a real look, and marks it read on leaving", () => {
   using t = setup("thread-leave", {
     updatedAt: at(10),
     lastVisitedAt: at(0),
@@ -104,21 +121,37 @@ it("records the open without marking anything read, and marks it read on leaving
   // A reply landing while the thread is shown stays unread until the user moves on.
   t.update({ updatedAt: at(11) });
   t.update({ updatedAt: at(20), latestRun: { completedAt: at(20) } });
-  vi.advanceTimersByTime(60_000);
+  vi.advanceTimersByTime(10_000);
+  // Time with the window in the background is on screen but not looked at.
+  t.setLooking(false);
+  vi.advanceTimersByTime(15_000);
+  t.setLooking(true);
   expect(t.visits).toHaveLength(1);
+  // Fifteen seconds looked at holds the thread, without marking anything read.
+  vi.advanceTimersByTime(5_000);
+  expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(0), held: true }]);
+  vi.advanceTimersByTime(30_000);
+  expect(t.visits).toHaveLength(2);
 
   t.leave(unmount);
-  expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(20) }]);
+  expect(t.visits.slice(2)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(20), held: true }]);
+  expect(t.stays).toEqual([{ forMs: 60_000, lookedMs: 45_000 }]);
 });
 
-it("sends nothing on leaving a thread that had nothing new", () => {
+it("holds nothing after a glance, and leaves the watermark where it was when nothing was new", () => {
   using t = setup("thread-leave-read", {
     updatedAt: at(10),
     lastVisitedAt: at(10),
     latestRun: { completedAt: at(9) },
   });
-  t.leave(t.mount());
-  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(10), opened: true }]);
+  const unmount = t.mount();
+  vi.advanceTimersByTime(3_000);
+  t.leave(unmount);
+  expect(t.visits).toEqual([
+    { threadId: t.ref.threadId, visitedAt: at(10), opened: true },
+    { threadId: t.ref.threadId, visitedAt: at(10) },
+  ]);
+  expect(t.stays).toEqual([{ forMs: 3_000, lookedMs: 3_000 }]);
 });
 
 it("does not resend the open a palette pick already sent", () => {
@@ -134,7 +167,7 @@ it("keeps a mark-unread made on the open thread until new activity lands", () =>
   let unmount = t.mount();
   t.update({ lastVisitedAt: at(5) });
   t.leave(unmount);
-  expect(t.visits).toEqual([]);
+  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(5) }]);
 
   // An authoritative snapshot can briefly replace the row with an older one.
   unmount = t.mount();
@@ -143,7 +176,7 @@ it("keeps a mark-unread made on the open thread until new activity lands", () =>
   t.update({ updatedAt: at(10), lastVisitedAt: at(2) });
   t.update({ updatedAt: at(30) });
   t.leave(unmount);
-  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(30) }]);
+  expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(30) }]);
 });
 
 it("waits for the shell and records local visits for servers without tracking", () => {
@@ -249,11 +282,12 @@ it("retries rejected opens only once per connection generation", async () => {
     t.update({});
     await vi.advanceTimersByTimeAsync(0);
   }
-  expect(t.attempts).toHaveLength(1);
+  const opens = () => t.attempts.filter((attempt) => attempt.opened);
+  expect(opens()).toHaveLength(1);
   t.reconnect();
   await vi.advanceTimersByTimeAsync(0);
-  expect(t.attempts).toHaveLength(2);
+  expect(opens()).toHaveLength(2);
   t.update({ updatedAt: at(20), latestRun: { completedAt: at(20) } });
   await vi.advanceTimersByTimeAsync(30_000);
-  expect(t.attempts).toHaveLength(2);
+  expect(opens()).toHaveLength(2);
 });

@@ -471,7 +471,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             variant={item.item.variant}
             cardLine={item.item.cardLine}
             projectLine={item.item.projectLine}
-            compact={item.item.compact === true}
+            settlingLabel={item.settlingLabel}
             hasQueuedMessages={item.hasQueuedMessages}
             snoozed={item.item.snoozed}
             pinned={item.item.pinned}

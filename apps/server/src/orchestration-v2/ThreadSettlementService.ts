@@ -7,6 +7,7 @@ import { resolveProjectScripts, settleProjectScript } from "@t3tools/shared/proj
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import {
+  autoSettlePostponedUntil,
   CommandId,
   isCompactionCommandMessage,
   isOrchestrationV2WorkActive,
@@ -71,7 +72,7 @@ const HOUR_MS = 60 * 60 * 1_000;
 const DAY_MS = 24 * HOUR_MS;
 /** The owner counts as away once they have written nowhere for this long. */
 const AWAY_AFTER_MS = 2 * HOUR_MS;
-/** A thread settles early only this long after the owner came back, and after they last opened it. */
+/** A thread settles early only this long after the owner came back, and after they last held it. */
 const BACK_FOR_MS = 1.5 * HOUR_MS;
 
 /** When the owner last wrote in any thread, and when that unbroken stretch of writing began. */
@@ -356,10 +357,17 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
     snoozedUntilMs !== null && snoozedUntilMs <= input.nowMs ? snoozedUntilMs : null;
   const inactivityAtMs =
     latestMillis([activityAtMs, toMillis(thread.lastSnoozeWakeAt), timerWakeAtMs]) ?? activityAtMs;
-  // A question read only after the window passed stays two hours past the open that showed it.
+  // Held only by a look long enough to mean it: a glance or a misclick leaves the timer alone.
+  const heldUntilMs = (toMillis(thread.heldAt) ?? 0) + BACK_FOR_MS;
+  // The owner put it off: nothing settles it before then, until it has new activity.
+  const postpone = thread.autoSettlePostpone ?? null;
+  const postponedUntilMs =
+    postpone !== null && postpone.at >= activityAtMs ? autoSettlePostponedUntil(postpone) : 0;
+  // A question read only after the window passed stays past the look that read it.
   const windowAtMs = Math.max(
     inactivityAtMs + input.autoSettleAfterDays * DAY_MS,
-    threadCardHasOpenAsk(thread.card) ? (thread.opens?.openedAt ?? 0) + BACK_FOR_MS : 0,
+    threadCardHasOpenAsk(thread.card) ? heldUntilMs : 0,
+    postponedUntilMs,
   );
   const completedAtMs = toMillis(thread.latestRunCompletedAt);
   const visitedAtMs = toMillis(thread.lastVisitedAt);
@@ -390,13 +398,14 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
     afterMs = settleOutlookSettleAfterMs(input.activity, context);
   }
   // Settles on the score's schedule (first look at 1.5h, tighter bar until 24h, late bar from 24h),
-  // even before the thread is listed as settling, held behind opens, return from away and window.
+  // even before the thread is listed as settling, held behind looks, return from away and window.
   if (afterMs !== null) {
     atMs = Math.min(
       windowAtMs,
       Math.max(
         inactivityAtMs + afterMs,
-        (thread.opens?.openedAt ?? 0) + BACK_FOR_MS,
+        heldUntilMs,
+        postponedUntilMs,
         presence === null ? 0 : presence.sinceAtMs + BACK_FOR_MS,
       ),
     );
@@ -1100,6 +1109,8 @@ export const make = Effect.gen(function* () {
           presence = ownerPresenceAfter(presence, DateTime.toEpochMillis(event.payload.createdAt));
         }
         return Effect.void;
+      // Turning auto-settle off, back on, or putting it off changes the time clients show.
+      case "thread.auto-settle-set":
       case "thread.pull-request-link-updated":
       case "thread.pull-request-synced":
       case "thread.issue-synced":

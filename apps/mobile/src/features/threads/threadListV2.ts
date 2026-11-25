@@ -14,10 +14,10 @@ import {
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models";
 import {
+  AUTO_SETTLE_SOON_MS,
   hasUnseenCompletion as threadHasUnseenCompletion,
   sortLaterThreads,
   sortNeedsYouThreads,
-  sortSettlingThreads,
   sortTrailThreads,
   splitTrail,
   threadCardRowLine,
@@ -27,8 +27,7 @@ import {
   threadRecentAt,
   threadNeedsYou,
   threadAutoSettleAt,
-  threadSettlingChance,
-  threadSettlingTimeLabel,
+  threadSettlingStatus,
   trailMoreLabel,
 } from "@t3tools/client-runtime/state/thread-zones";
 import {
@@ -273,8 +272,6 @@ const EMPTY_TIDE_LAYOUT = {
   trailCount: 0,
   trailMore: null,
   trailClearThreads: [],
-  settlingHeaderIndex: null,
-  settlingCount: 0,
 } satisfies Partial<ThreadListV2Layout>;
 
 export const THREAD_LIST_V2_SETTLED_INITIAL_COUNT = 10;
@@ -434,8 +431,6 @@ export interface ThreadListV2Item {
   readonly projectLine: string | null;
   /** A row in the self-filing list's Needs you, which tints its card as on web. */
   readonly needsYou?: boolean;
-  /** An about-to-settle row: title and countdown, then the project, and no status line. */
-  readonly compact?: boolean;
   readonly isLast: boolean;
 }
 
@@ -469,9 +464,6 @@ export interface ThreadListV2Layout {
   readonly trailMore: { readonly moreToday: number; readonly earlier: number } | null;
   /** Every Trail thread, folded or not, except the open one. */
   readonly trailClearThreads: ReadonlyArray<EnvironmentThreadShell>;
-  /** Quiet threads the server expects not to be written in again, drawn below Working. */
-  readonly settlingHeaderIndex: number | null;
-  readonly settlingCount: number;
   /** Arm a timeout here to repartition at snooze expiry rather than the next minute tick. */
   readonly nextSnoozeWakeAt: string | null;
   /** Threads listed only because their messages match the search. */
@@ -488,6 +480,8 @@ export interface ThreadListV2ThreadListItem {
   readonly item: ThreadListV2Item;
   readonly snoozeWakeLabelText: string | undefined;
   readonly timeLabel: string;
+  /** "Settling soon" or its countdown, from the list's clock, in a quiet row's last hour. */
+  readonly settlingLabel: string | undefined;
   readonly snoozePresetMinute: string | undefined;
   readonly showTrailingDivider: boolean;
   /** First and last thread rows of a run, which round a grouped card's corners. */
@@ -557,7 +551,7 @@ export interface ThreadListV2SectionHeaderListItem {
     | "v2-trail-header"
     | "v2-settling-header"
     | "v2-semantic-header";
-  readonly title: "Needs you" | "Recent" | "About to settle" | "By meaning";
+  readonly title: "Needs you" | "Recent" | "By meaning";
   readonly count: number;
   /** What the header's Clear settles; on the item so a recycled cell never settles an old set. */
   readonly clearThreads: ReadonlyArray<EnvironmentThreadShell> | null;
@@ -626,9 +620,9 @@ export function threadListV2ListItemsAreEqual(
         previous.item.cardLine === item.item.cardLine &&
         previous.item.projectLine === item.item.projectLine &&
         previous.item.needsYou === item.item.needsYou &&
-        previous.item.compact === item.item.compact &&
         previous.snoozeWakeLabelText === item.snoozeWakeLabelText &&
         previous.timeLabel === item.timeLabel &&
+        previous.settlingLabel === item.settlingLabel &&
         previous.snoozePresetMinute === item.snoozePresetMinute &&
         previous.showTrailingDivider === item.showTrailingDivider &&
         previous.groupStart === item.groupStart &&
@@ -772,8 +766,6 @@ export function buildThreadListV2ListItems(input: {
     | "trailCount"
     | "trailMore"
     | "trailClearThreads"
-    | "settlingHeaderIndex"
-    | "settlingCount"
   > & { readonly trailExpanded: boolean };
   /** Settled by the server while the app was in the background; the self-filing list only. */
   readonly settledAway?: ReadonlyArray<EnvironmentThreadShell>;
@@ -792,7 +784,6 @@ export function buildThreadListV2ListItems(input: {
   // The self-filing list draws Working, then Later, after the Trail, so the Trail stops at the first.
   const trailStop =
     input.workingShelfHeaderIndex ??
-    input.tide?.settlingHeaderIndex ??
     input.snoozedShelfHeaderIndex ??
     input.settledShelfHeaderIndex ??
     input.items.length;
@@ -809,8 +800,8 @@ export function buildThreadListV2ListItems(input: {
       canSnooze(item.thread, { now: input.snoozeLabelNow })
         ? input.snoozeLabelNow
         : undefined;
-    // A Settling row counts down to when it leaves instead of saying when it was last written in.
-    const settlesAtMs = item.compact === true ? threadAutoSettleAt(item.thread) : null;
+    // Later and History rows are already put away, so only an active row says it is about to go.
+    const settlesAtMs = item.snoozed ? null : threadAutoSettleAt(item.thread);
     const move =
       item.variant === "card"
         ? input.moveAvailability?.get(`${item.thread.environmentId}:${item.thread.id}`)
@@ -820,15 +811,18 @@ export function buildThreadListV2ListItems(input: {
       key: `v2-thread:${item.thread.environmentId}:${item.thread.id}`,
       item,
       snoozeWakeLabelText,
-      timeLabel:
-        settlesAtMs !== null && input.snoozeLabelNow !== undefined
-          ? threadSettlingTimeLabel(settlesAtMs, { now: input.snoozeLabelNow }, resolve)
-          : resolveThreadListV2ItemTimeLabel(
-              item,
-              snoozeWakeLabelText !== undefined,
-              trailStart !== null && index >= trailStart && index < trailStop,
-              resolve,
-            ),
+      timeLabel: resolveThreadListV2ItemTimeLabel(
+        item,
+        snoozeWakeLabelText !== undefined,
+        trailStart !== null && index >= trailStart && index < trailStop,
+        resolve,
+      ),
+      settlingLabel:
+        settlesAtMs !== null &&
+        input.snoozeLabelNow !== undefined &&
+        settlesAtMs - Date.parse(input.snoozeLabelNow) <= AUTO_SETTLE_SOON_MS
+          ? threadSettlingStatus(settlesAtMs, { now: input.snoozeLabelNow }, resolve)
+          : undefined,
       snoozePresetMinute,
       showTrailingDivider: false,
       groupStart: false,
@@ -859,9 +853,7 @@ export function buildThreadListV2ListItems(input: {
   const listEnd = settledShelfHeaderIndex ?? semanticHeaderIndex ?? threadItems.length;
   // Classic: active, Working, Snoozed. Self-filing: Needs you, Trail, Working, Later.
   const snoozedEnd = tide === null ? (trailHeaderIndex ?? listEnd) : listEnd;
-  const settlingHeaderIndex = tide?.settlingHeaderIndex ?? null;
-  const settlingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
-  const workingEnd = settlingHeaderIndex ?? settlingEnd;
+  const workingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
   const trailEnd = workingShelfHeaderIndex ?? workingEnd;
   const activeEnd =
     (tide === null ? workingShelfHeaderIndex : trailHeaderIndex) ??
@@ -932,22 +924,16 @@ export function buildThreadListV2ListItems(input: {
     }
   };
   if (tide === null) pushLater();
-  const settlingStart = tide !== null && tide.settlingCount > 0 ? settlingHeaderIndex : null;
-  if (
-    tide !== null &&
-    (settlingStart !== null || (trailHeaderIndex !== null && tide.trailCount > 0))
-  ) {
+  if (tide !== null && trailHeaderIndex !== null && tide.trailCount > 0) {
     result.push({
       type: "v2-section-header",
       key: "v2-trail-header",
       title: "Recent",
-      count: tide.trailCount + tide.settlingCount,
+      count: tide.trailCount,
       clearThreads: tide.trailClearThreads.length > 0 ? tide.trailClearThreads : null,
       disabled: shelfDisabled,
     });
-    if (trailHeaderIndex !== null) {
-      result.push(...threadItems.slice(trailHeaderIndex, trailEnd));
-    }
+    result.push(...threadItems.slice(trailHeaderIndex, trailEnd));
     if (tide.trailMore !== null) {
       result.push({
         type: "v2-trail-more",
@@ -956,18 +942,6 @@ export function buildThreadListV2ListItems(input: {
         expanded: tide.trailExpanded,
         disabled: shelfDisabled,
       });
-    }
-    // Threads the server expects to settle end Recent, under their own label.
-    if (settlingStart !== null) {
-      result.push({
-        type: "v2-section-header",
-        key: "v2-settling-header",
-        title: "About to settle",
-        count: tide.settlingCount,
-        clearThreads: null,
-        disabled: shelfDisabled,
-      });
-      result.push(...threadItems.slice(settlingStart, settlingEnd));
     }
   }
   if (tide !== null && input.settledAway !== undefined && input.settledAway.length > 0) {
@@ -1041,8 +1015,8 @@ type ThreadListV2TideInput = {
 };
 
 /**
- * Splits the active threads into Needs you (longest wait first), the Trail (latest message you
- * sent first) and Settling (the surest last).
+ * Splits the active threads into Needs you (longest wait first) and the Trail (latest message
+ * you sent first).
  */
 function arrangeThreadListV2Tide(
   active: ReadonlyArray<EnvironmentThreadShell>,
@@ -1051,7 +1025,6 @@ function arrangeThreadListV2Tide(
 ) {
   const keyOf = (thread: EnvironmentThreadShell) => `${thread.environmentId}:${thread.id}`;
   const needsYou: EnvironmentThreadShell[] = [];
-  const settling: EnvironmentThreadShell[] = [];
   const rest: EnvironmentThreadShell[] = [];
   for (const thread of active) {
     const needs = threadNeedsYou(thread, { includeCompleted: false });
@@ -1060,14 +1033,13 @@ function arrangeThreadListV2Tide(
         ? thread.latestRun?.requestedAt
         : thread.latestUserAuthoredMessageAt) ?? null;
     const placed = tide.holdNeedsYou?.(keyOf(thread), needs, sentAt, thread.card) ?? needs;
-    (placed ? needsYou : threadSettlingChance(thread) !== null ? settling : rest).push(thread);
+    (placed ? needsYou : rest).push(thread);
   }
   const trail = sortTrailThreads(rest);
   const split = splitTrail(trail, { now: tide.day });
   const folded = [...split.moreToday, ...split.earlier];
   return {
     needsYou: sortNeedsYouThreads(needsYou),
-    settling: sortSettlingThreads(settling),
     trail,
     // The open thread stays listed, as it does in a collapsed shelf.
     visibleTrail:
@@ -1507,23 +1479,8 @@ export function buildThreadListV2Items(input: {
       isLast: false,
     });
   }
-  let settlingHeaderIndex: number | null = null;
   if (tideZones !== null) {
     pushWorking();
-    settlingHeaderIndex = tideZones.settling.length > 0 ? items.length : null;
-    for (const thread of tideZones.settling) {
-      items.push({
-        thread,
-        variant: "slim",
-        snoozed: false,
-        pinned: false,
-        wokeAt: null,
-        cardLine: null,
-        projectLine: slimProjectOf(thread),
-        compact: true,
-        isLast: false,
-      });
-    }
     pushLater();
   }
   const settledShelfHeaderIndex = settledTotal > 0 ? items.length : null;
@@ -1559,11 +1516,9 @@ export function buildThreadListV2Items(input: {
     trailHeaderIndex,
     trailCount: tideZones?.trail.length ?? 0,
     trailMore: tideZones?.trailMore ?? null,
-    trailClearThreads: [...(tideZones?.trail ?? []), ...(tideZones?.settling ?? [])].filter(
+    trailClearThreads: (tideZones?.trail ?? []).filter(
       (thread) => `${thread.environmentId}:${thread.id}` !== selectedThreadKey,
     ),
-    settlingHeaderIndex,
-    settlingCount: tideZones?.settling.length ?? 0,
     nextSnoozeWakeAt,
     contentOnlyThreadKeys,
     semanticOnlyThreadKeys,

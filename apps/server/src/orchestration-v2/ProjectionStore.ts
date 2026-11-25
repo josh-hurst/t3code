@@ -262,7 +262,7 @@ export type ProjectionSettlementCandidate = Pick<
   | "lastVisitedAt"
   | "opens"
 > &
-  Pick<OrchestrationV2AppThread, "lastSnoozeWakeAt"> & {
+  Pick<OrchestrationV2AppThread, "lastSnoozeWakeAt" | "heldAt" | "autoSettlePostpone"> & {
     readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
     /** Only its open items and time matter here, so a thread's card and a shell's summary both fit. */
     readonly card?: Pick<ThreadCardSummary, "open" | "at"> | null | undefined;
@@ -2196,6 +2196,7 @@ export function threadShellFromProjection(
 
     autoSettleDisabledAt: projection.thread.autoSettleDisabledAt ?? null,
     autoSettlePlan: projection.thread.autoSettlePlan ?? null,
+    autoSettlePostpone: projection.thread.autoSettlePostpone ?? null,
     pinOrderKey: projection.thread.pinOrderKey ?? null,
     ...(projection.thread.nestedUnder ? { nestedUnder: projection.thread.nestedUnder } : {}),
     ...(projection.thread.tags?.length ? { tags: projection.thread.tags } : {}),
@@ -2510,6 +2511,7 @@ function shellFromState(input: {
 
     autoSettleDisabledAt: input.state.thread.autoSettleDisabledAt ?? null,
     autoSettlePlan: input.state.thread.autoSettlePlan ?? null,
+    autoSettlePostpone: input.state.thread.autoSettlePostpone ?? null,
     pinOrderKey: input.state.thread.pinOrderKey ?? null,
     ...(input.state.thread.nestedUnder ? { nestedUnder: input.state.thread.nestedUnder } : {}),
     ...(input.state.thread.tags?.length ? { tags: input.state.thread.tags } : {}),
@@ -2710,6 +2712,17 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 type: "thread.visited",
                 payload: applyOrchestrationV2ThreadVisit(thread, event.payload),
               });
+              const stay = event.payload.stay;
+              // Visit events are pruned, so stays are kept apart; a replay leaves the row as it was.
+              if (stay !== undefined) {
+                yield* sql`
+                  INSERT OR IGNORE INTO tide_thread_stays (thread_id, left_at, stay_ms, looked_ms)
+                  VALUES (
+                    ${event.threadId}, ${DateTime.formatIso(event.occurredAt)},
+                    ${stay.forMs}, ${stay.lookedMs}
+                  )
+                `;
+              }
               break;
             }
             case "thread.card-updated": {

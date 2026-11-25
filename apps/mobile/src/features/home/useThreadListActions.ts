@@ -56,6 +56,15 @@ function environmentSupportsAutoSettleOptOut(
   );
 }
 
+function environmentSupportsAutoSettlePostpone(
+  environmentId: EnvironmentThreadShell["environmentId"],
+) {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadAutoSettlePostpone === true
+  );
+}
+
 type ThreadListAction = "archive" | "unarchive" | "delete" | "settle" | "unsettle";
 
 const ACTION_FAILURES: Record<ThreadListAction, string> = {
@@ -238,9 +247,11 @@ export function useThreadListActions(): {
   readonly unsettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly pinThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly unpinThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  /** With `postpone`, puts off settling a thread about to settle instead of changing the switch. */
   readonly setThreadAutoSettle: (
     thread: EnvironmentThreadShell,
     enabled: boolean,
+    options?: { readonly postpone?: boolean },
   ) => Promise<boolean>;
   readonly moveThread: (
     thread: EnvironmentThreadShell,
@@ -581,8 +592,24 @@ export function useThreadListActions(): {
     offerUndo(thread, "Unpinned", claim, plan);
     return true;
   };
-  const setThreadAutoSettle = async (thread: EnvironmentThreadShell, enabled: boolean) => {
-    if (!environmentSupportsAutoSettleOptOut(thread.environmentId)) {
+  const setThreadAutoSettle = async (
+    thread: EnvironmentThreadShell,
+    enabled: boolean,
+    options?: { readonly postpone?: boolean },
+  ) => {
+    const postpone = options?.postpone === true;
+    if (postpone && !environmentSupportsAutoSettlePostpone(thread.environmentId)) {
+      Dialog.alert(
+        m(msg("Could not update auto-settle")),
+        m(
+          msg(
+            "This environment's server cannot put off settling a thread yet. Update the server to use it.",
+          ),
+        ),
+      );
+      return false;
+    }
+    if (!postpone && !environmentSupportsAutoSettleOptOut(thread.environmentId)) {
       Dialog.alert(
         m(msg("Could not update auto-settle")),
         m(
@@ -596,7 +623,7 @@ export function useThreadListActions(): {
     selectionHaptic();
     const result = await setAutoSettleMutation({
       environmentId: thread.environmentId,
-      input: { threadId: thread.id, enabled },
+      input: { threadId: thread.id, enabled, ...(postpone ? { postpone: true } : {}) },
     });
     if (result._tag === "Failure") {
       const error = Cause.squash(result.cause);
@@ -854,7 +881,8 @@ export function useThreadListActions(): {
     unsettleThread: (thread) => unsettleThread(liveThread(thread)),
     pinThread: (thread) => pinThread(liveThread(thread)),
     unpinThread: (thread) => unpinThread(liveThread(thread)),
-    setThreadAutoSettle: (thread, enabled) => setThreadAutoSettle(liveThread(thread), enabled),
+    setThreadAutoSettle: (thread, enabled, options) =>
+      setThreadAutoSettle(liveThread(thread), enabled, options),
     moveThread,
     renameThread: (thread) => renameThread(liveThread(thread)),
     regenerateThreadTitle: (thread) => regenerateThreadTitle(liveThread(thread)),

@@ -11,6 +11,8 @@ export interface Pass {
   readonly together?: ReadonlyArray<ReadonlyArray<number>>;
   /** Runs the model may drop before `repairTopics` fills them in. */
   readonly maxRepaired?: number;
+  /** No topic title may match, such as a redesign for runs that only made mockups. */
+  readonly titleAvoids?: RegExp;
 }
 
 export const groupingOfLabels = (labels: ReadonlyArray<string>): Grouping =>
@@ -90,6 +92,9 @@ export function grade(input: {
   }
   if (pass.maxRepaired !== undefined && input.repaired > pass.maxRepaired) {
     failures.push(`${input.repaired} runs repaired`);
+  }
+  for (const topic of input.topics) {
+    if (pass.titleAvoids?.test(topic.title)) failures.push(`title "${topic.title}"`);
   }
   return { f, topics: count, repaired: input.repaired, pass: failures.length === 0, failures };
 }

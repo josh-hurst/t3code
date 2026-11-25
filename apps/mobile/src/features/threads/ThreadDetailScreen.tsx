@@ -394,6 +394,13 @@ const threadVisitTracker = createThreadVisitTracker({
   threadShellAtom: (ref) => wakeAwareVisitShell(threadKey(ref)),
   sessionGenerationAtom: environmentCatalog.sessionGenerationAtom,
   visit: threadEnvironment.visit,
+  looking: {
+    current: () => AppState.currentState === "active",
+    subscribe: (onChange) => {
+      const subscription = AppState.addEventListener("change", onChange);
+      return () => subscription.remove();
+    },
+  },
 });
 
 // Past the composer's 180 ms height animation.

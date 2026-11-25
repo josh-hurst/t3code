@@ -141,6 +141,7 @@ describe("runMigrations", () => {
           "tide_thread_entries_thread_idx",
           "tide_thread_runs",
           "tide_thread_runs_thread_idx",
+          "tide_thread_stays",
         ],
       );
       assert.isFalse(yield* hasPendingMigrations());

@@ -780,6 +780,13 @@ export function useThreadActions() {
     });
   };
 
+  // Callers offer it only where the server lists `threadAutoSettlePostpone`.
+  const postponeThreadSettle = (target: ScopedThreadRef) =>
+    setThreadAutoSettleMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, enabled: true, postpone: true },
+    });
+
   const sendPin = async (target: ScopedThreadRef, opts: { orderKey?: string } = {}) => {
     if (!readEnvironmentServerConfigLoaded(target.environmentId)) {
       return AsyncResult.failure(
@@ -1073,6 +1080,7 @@ export function useThreadActions() {
     nestThread,
     markThreadUnread,
     setThreadAutoSettle,
+    postponeThreadSettle,
     turnThreadIntoProject: (target: ScopedThreadRef) =>
       createProjectFromThread({
         environmentId: target.environmentId,

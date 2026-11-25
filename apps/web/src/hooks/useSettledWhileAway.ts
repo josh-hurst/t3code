@@ -2,6 +2,8 @@ import * as SettledAway from "@t3tools/client-runtime/state/settled-while-away";
 import { useEffect } from "react";
 import { create } from "zustand";
 
+import { isWindowLookedAt, subscribeWindowLooking } from "../lib/windowLooking";
+
 const LAST_LOOKED_AT_KEY = "t3code:sidebar:last-looked-at";
 
 function readLastLookedAt(): number | null {
@@ -25,11 +27,6 @@ export const useSettledAway = create<SettledAway.SettledAwayState>(() =>
   SettledAway.settledAwayStart(typeof window === "undefined" ? null : readLastLookedAt()),
 );
 
-// Focus moving into a preview frame is still looking at the app.
-const looking = () =>
-  document.visibilityState === "visible" &&
-  (document.hasFocus() || document.activeElement instanceof HTMLIFrameElement);
-
 /**
  * Tracks when this window stops and starts being looked at, for the sidebar's settled notice.
  * A second mounted tracker is harmless: leaving and returning twice changes nothing.
@@ -40,7 +37,7 @@ export function useSettledAwayTracking() {
     let wasLooking = false;
     const check = () => {
       const now = Date.now();
-      const isLooking = looking();
+      const isLooking = isWindowLookedAt();
       if (isLooking === wasLooking) return;
       wasLooking = isLooking;
       if (isLooking) {
@@ -50,23 +47,17 @@ export function useSettledAwayTracking() {
         useSettledAway.setState((state) => SettledAway.settledAwayLeft(state, now));
       }
     };
-    // A blur into a frame reports the frame as active only after the event.
-    const checkSoon = () => window.setTimeout(check, 0);
     const leave = () => {
       if (wasLooking) writeLastLookedAt(Date.now());
     };
     check();
     if (!wasLooking)
       useSettledAway.setState((state) => SettledAway.settledAwayLeft(state, Date.now()));
-    document.addEventListener("visibilitychange", check);
-    window.addEventListener("focus", check);
-    window.addEventListener("blur", checkSoon);
+    const unsubscribe = subscribeWindowLooking(check);
     window.addEventListener("pagehide", leave);
     return () => {
       leave();
-      document.removeEventListener("visibilitychange", check);
-      window.removeEventListener("focus", check);
-      window.removeEventListener("blur", checkSoon);
+      unsubscribe();
       window.removeEventListener("pagehide", leave);
     };
   }, []);
