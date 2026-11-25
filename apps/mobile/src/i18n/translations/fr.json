@@ -4894,6 +4894,8 @@
   "13300e8565fbd665": "{label} ({count})",
   "e1339579e7c2743f": "Bientôt clos",
   "98ef1b41b5c80500": "Par sens",
+  "f0ef397bc9639c7b": "{count, plural, one {{count} fil clos pendant votre absence} other {{count} fils clos pendant votre absence}}",
+  "f3739c47fb55c3b0": "Afficher dans History",
   "694e089caefce25f": "{count, plural, one {Afficher {count} autre fil clos} other {Afficher {count} autres fils clos}}",
   "ece9e2869077cbb6": "Supprimer {title}",
   "306a6f95ad9d52f7": "Non envoyées",

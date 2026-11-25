@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useLayoutEffect } from "react";
 import { cn } from "~/lib/utils";
+import { InlineButton } from "../ui/button";
 import {
   animateSidebarLayoutChanges,
   sidebarMarkerId,
@@ -129,6 +130,36 @@ export function SidebarSettlingLabel(props: { label: string; count: number }) {
         <TimerIcon aria-hidden className="size-3.5 shrink-0" />
         <span className="min-w-0 flex-1 truncate">{props.label}</span>
         <span className="font-normal tabular-nums">{props.count}</span>
+      </div>
+    </SortableSidebarMarker>
+  );
+}
+
+/** Ends Recent after threads settled on their own while this window was not being looked at. */
+export function SidebarSettledAwayNotice(props: {
+  label: string;
+  showLabel: string;
+  undoLabel: string;
+  onShow: () => void;
+  onUndo: () => void;
+}) {
+  return (
+    <SortableSidebarMarker
+      marker="settled-away"
+      data-testid="sidebar-settled-away"
+      className="mx-0.5"
+    >
+      <div className="flex h-7 items-center gap-1.5 px-2.5 text-xs text-sidebar-muted-foreground">
+        <HistoryIcon aria-hidden className="size-3.5 shrink-0" />
+        <InlineButton
+          tone="muted"
+          className="min-w-0 flex-1"
+          title={props.showLabel}
+          onClick={props.onShow}
+        >
+          <span className="truncate">{props.label}</span>
+        </InlineButton>
+        <InlineButton onClick={props.onUndo}>{props.undoLabel}</InlineButton>
       </div>
     </SortableSidebarMarker>
   );

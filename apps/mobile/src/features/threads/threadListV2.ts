@@ -572,6 +572,15 @@ export interface ThreadListV2TrailMoreListItem {
   readonly disabled: boolean;
 }
 
+/** Ends Recent after the server settled threads while the app was in the background. */
+export interface ThreadListV2SettledAwayListItem {
+  readonly type: "v2-settled-away";
+  readonly key: "v2-settled-away";
+  /** What Undo un-settles; on the item so a recycled cell never undoes an old set. */
+  readonly threads: ReadonlyArray<EnvironmentThreadShell>;
+  readonly disabled: boolean;
+}
+
 export type ThreadListV2ListItem =
   | ThreadListV2ThreadListItem
   | ThreadListV2PendingListItem
@@ -580,7 +589,8 @@ export type ThreadListV2ListItem =
   | ThreadListV2SnoozedShelfListItem
   | ThreadListV2SettledShelfListItem
   | ThreadListV2SectionHeaderListItem
-  | ThreadListV2TrailMoreListItem;
+  | ThreadListV2TrailMoreListItem
+  | ThreadListV2SettledAwayListItem;
 
 export function isThreadListV2ListItem(value: {
   readonly type: string;
@@ -593,7 +603,8 @@ export function isThreadListV2ListItem(value: {
     value.type === "v2-snoozed-shelf" ||
     value.type === "v2-settled-shelf" ||
     value.type === "v2-section-header" ||
-    value.type === "v2-trail-more"
+    value.type === "v2-trail-more" ||
+    value.type === "v2-settled-away"
   );
 }
 
@@ -684,6 +695,12 @@ export function threadListV2ListItemsAreEqual(
         previous.expanded === item.expanded &&
         previous.disabled === item.disabled
       );
+    case "v2-settled-away":
+      return (
+        previous.type === "v2-settled-away" &&
+        previous.disabled === item.disabled &&
+        sameThreadKeys(previous.threads, item.threads)
+      );
   }
 }
 
@@ -758,6 +775,8 @@ export function buildThreadListV2ListItems(input: {
     | "settlingHeaderIndex"
     | "settlingCount"
   > & { readonly trailExpanded: boolean };
+  /** Settled by the server while the app was in the background; the self-filing list only. */
+  readonly settledAway?: ReadonlyArray<EnvironmentThreadShell>;
   readonly snoozeLabelNow?: string;
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly queuedThreadKeys?: ReadonlySet<string>;
@@ -950,6 +969,14 @@ export function buildThreadListV2ListItems(input: {
       });
       result.push(...threadItems.slice(settlingStart, settlingEnd));
     }
+  }
+  if (tide !== null && input.settledAway !== undefined && input.settledAway.length > 0) {
+    result.push({
+      type: "v2-settled-away",
+      key: "v2-settled-away",
+      threads: input.settledAway,
+      disabled: shelfDisabled,
+    });
   }
   if (tide !== null) {
     pushWorking();

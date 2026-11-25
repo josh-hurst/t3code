@@ -236,6 +236,7 @@ export type SidebarListMarker =
   | "pinned-divider"
   | "working-header"
   | "settling-header"
+  | "settled-away"
   | "snoozed-header"
   | "trail-header"
   | "trail-more"

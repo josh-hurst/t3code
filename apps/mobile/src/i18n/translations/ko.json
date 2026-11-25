@@ -4879,6 +4879,8 @@
   "13300e8565fbd665": "{label}({count})",
   "e1339579e7c2743f": "곧 정리됨",
   "98ef1b41b5c80500": "의미별 일치",
+  "f0ef397bc9639c7b": "{count, plural, other {자리를 비운 동안 스레드 {count}개 정리함}}",
+  "f3739c47fb55c3b0": "History에서 보기",
   "694e089caefce25f": "{count, plural, other {정리된 스레드 {count}개 더 보기}}",
   "ece9e2869077cbb6": "{title} 삭제",
   "306a6f95ad9d52f7": "보내지 않음",

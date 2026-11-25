@@ -639,6 +639,68 @@ export const ThreadListV2TrailMoreRow = memo(function ThreadListV2TrailMoreRow(p
   );
 });
 
+export const ThreadListV2SettledAwayRow = memo(function ThreadListV2SettledAwayRow(props: {
+  readonly count: number;
+  readonly disabled?: boolean;
+  readonly onShow: () => void;
+  readonly onUndo: () => void;
+  readonly pane?: "screen" | "sidebar";
+}) {
+  const gt = useGT();
+  const sidebarPane = props.pane === "sidebar";
+  const label = gt(
+    "{count, plural, one {Settled {count} while you were away} other {Settled {count} while you were away}}",
+    { count: props.count },
+  );
+  return (
+    <View className={cn("flex-row items-center gap-2 py-2.5", sidebarPane ? "px-3" : "px-9")}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={gt("Show in History")}
+        disabled={props.disabled}
+        onPress={props.onShow}
+        className="min-w-0 flex-1 flex-row items-center gap-2"
+        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+      >
+        <SymbolView
+          name="checkmark.circle"
+          size={12}
+          tintColorClassName={
+            sidebarPane ? "accent-drawer-foreground-muted" : "accent-foreground-muted"
+          }
+          type="monochrome"
+        />
+        <Text
+          numberOfLines={1}
+          className={cn(
+            "flex-1 text-sm",
+            sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-muted",
+          )}
+        >
+          {label}
+        </Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        disabled={props.disabled}
+        onPress={props.onUndo}
+        hitSlop={8}
+        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+      >
+        <Text
+          className={cn(
+            "text-sm font-medium",
+            sidebarPane ? "text-drawer-foreground" : "text-foreground",
+          )}
+        >
+          {gt("Undo")}
+        </Text>
+      </Pressable>
+    </View>
+  );
+});
+
 export const ThreadListV2FolderHeader = memo(function ThreadListV2FolderHeader(props: {
   readonly folderKey: string;
   readonly title: string;

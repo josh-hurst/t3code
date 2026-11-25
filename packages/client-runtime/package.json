@@ -467,6 +467,10 @@
       "types": "./src/state/threadUndo.ts",
       "default": "./src/state/threadUndo.ts"
     },
+    "./state/settled-while-away": {
+      "types": "./src/state/settledWhileAway.ts",
+      "default": "./src/state/settledWhileAway.ts"
+    },
     "./state/thread-settled": {
       "types": "./src/state/threadSettled.ts",
       "default": "./src/state/threadSettled.ts"

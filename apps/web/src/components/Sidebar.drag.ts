@@ -378,6 +378,7 @@ export function createSidebarSortingStrategy(input: {
         marker("settling-header");
         projected.push(...groups.settling);
       }
+      if (items.some((item) => isMarker(item, "settled-away"))) marker("settled-away");
       if (
         groups.snoozed.length > 0 ||
         ((active.section !== "snoozed" || (input.snoozedThreadCount ?? 0) > 1) &&

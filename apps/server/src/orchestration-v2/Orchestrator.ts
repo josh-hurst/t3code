@@ -5663,6 +5663,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...thread,
             settledOverride: "settled",
             settledAt: alreadySettled ? thread.settledAt : (command.settledAt ?? now),
+            autoSettledAt: alreadySettled
+              ? (thread.autoSettledAt ?? null)
+              : command.automatic === true
+                ? now
+                : null,
             // Settled threads refuse recovery, so an armed resume would stay hidden until un-settled.
             limitRecovery: thread.limitRecovery
               ? { ...thread.limitRecovery, autoResume: false, snooze: false }
@@ -5688,6 +5693,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...thread,
             settledOverride: "active",
             settledAt: null,
+            autoSettledAt: null,
             unsettledAt: alreadyPinnedActive
               ? (thread.unsettledAt ?? null)
               : restoredUnsettledAt === undefined
@@ -8153,6 +8159,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...projection.thread,
         settledOverride: null,
         settledAt: null,
+        autoSettledAt: null,
         unsettledAt:
           projection.thread.settledOverride === "active"
             ? (projection.thread.unsettledAt ?? null)
@@ -16621,7 +16628,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const effectsBefore = yield* Ref.get(effects);
       yield* dispatchThreadMutation(
         command.type === "thread.settle"
-          ? { type: "thread.settle", commandId, threadId, settledAt }
+          ? {
+              type: "thread.settle",
+              commandId,
+              threadId,
+              settledAt,
+              ...(command.automatic === true ? { automatic: true } : {}),
+            }
           : {
               type: "thread.unsettle",
               commandId,
@@ -16733,6 +16746,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           commandId: command.commandId,
           threadId: command.threadId,
           ...(command.settledAt === undefined ? {} : { settledAt: command.settledAt }),
+          automatic: true,
         } as const;
         yield* dispatchThreadMutation(settle, events, effects);
         yield* cascadeNestedSettlement(settle, null, cascadeIds, events, effects);

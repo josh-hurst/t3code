@@ -4893,6 +4893,8 @@
   "13300e8565fbd665": "{label} ({count})",
   "e1339579e7c2743f": "Se resolverá pronto",
   "98ef1b41b5c80500": "Por significado",
+  "f0ef397bc9639c7b": "{count, plural, one {Se resolvió {count} hilo mientras no estabas} other {Se resolvieron {count} hilos mientras no estabas}}",
+  "f3739c47fb55c3b0": "Mostrar en History",
   "694e089caefce25f": "{count, plural, one {Mostrar {count} hilo resuelto más} other {Mostrar {count} hilos resueltos más}}",
   "ece9e2869077cbb6": "Descartar {title}",
   "306a6f95ad9d52f7": "Sin enviar",

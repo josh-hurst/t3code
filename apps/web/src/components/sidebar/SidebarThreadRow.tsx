@@ -139,7 +139,9 @@ import {
   TideProject,
   TideRowBody,
   TideStatusLabel,
+  tideProjectMenu,
   tideRowMeta,
+  type TideProjectMenuOpener,
 } from "./SidebarTideRow";
 import { SearchMatchHintLine, ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import type { SearchMatchHint } from "@t3tools/shared/paletteSearch";
@@ -785,8 +787,9 @@ type SidebarThreadRowProps = {
   groupDivider?: boolean;
   // The project's name as text on a slim row, or null where the list already says it.
   projectNameOnRow?: string | null;
-  // The sidebar project group the name opens Changes for.
-  projectChangesKey?: string | null;
+  // The sidebar project group whose menu the name opens.
+  projectMenuKey?: string | null;
+  onProjectMenu?: TideProjectMenuOpener;
   // How many levels this row sits under a parent drawn above it.
   nestDepth?: number;
   // The parent's title, for a nested thread drawn away from its parent.
@@ -1977,7 +1980,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     <TideProject
                       project={props.project}
                       name={projectName}
-                      changesProjectKey={props.projectChangesKey ?? null}
+                      projectMenu={tideProjectMenu(props)}
                     />
                   </span>
                 ) : null
@@ -2014,7 +2017,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   : tideRowMeta({
                       project: props.project,
                       name: projectName,
-                      changesProjectKey: props.projectChangesKey ?? null,
+                      projectMenu: tideProjectMenu(props),
                       pullRequest: prBadge,
                       branch: metaBranch,
                     })
@@ -2510,7 +2513,8 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
   now: string;
   // The project's name as text in the new layout, or null where the list already says it.
   projectNameOnRow: string | null;
-  projectChangesKey?: string | null;
+  projectMenuKey?: string | null;
+  onProjectMenu?: TideProjectMenuOpener;
   explain?: (() => SearchMatchHint | undefined) | undefined;
   onHighlight: () => void;
   onSelect: () => void;
@@ -2663,7 +2667,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               meta={tideRowMeta({
                 project: props.project,
                 name: props.projectNameOnRow,
-                changesProjectKey: props.projectChangesKey ?? null,
+                projectMenu: tideProjectMenu(props),
                 branch: nonMainlineBranchName(thread.branch),
               })}
               time={

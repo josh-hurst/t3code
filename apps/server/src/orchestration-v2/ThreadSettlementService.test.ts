@@ -387,7 +387,7 @@ describe("resolveAutoSettlementAt", () => {
       autoSettleAfterDays: 2,
       autoSettleOnMerge: true,
       presence: around,
-      // Busy elsewhere and published 5m after going quiet: 3.4% chance at the 3h first look.
+      // Busy elsewhere and published 5m after going quiet: 4.0% chance at the 1.5h first look.
       activity: busySince(
         thread,
         DateTime.toEpochMillis(thread.latestRunCompletedAt ?? thread.createdAt) + 5 * 60 * 1_000,
@@ -403,9 +403,9 @@ describe("resolveAutoSettlementAt", () => {
     const idle = 5 * HOUR_MS;
 
     expect(settles(quiet(idle))).toEqual(at(-idle));
-    // Without the publish, and with 12 messages from the owner, it misses the 3h first look
-    // (> 10 turns and 12.5% > 9.5%). At 5h the chance is 9.8%: listed as settling, and planned for
-    // the 24h late mark (1% wait is 208h, 7% wait is 9.4h).
+    // Without the publish, and with 12 messages from the owner, it misses the 1.5h first look
+    // (> 10 turns). At 5h the chance is 7.5%, planned for the 24h late mark (1% wait is 94h, 7%
+    // wait is 5.6h), and not listed as settling: that is 19 hours off.
     const unpublished = {
       activity: {
         ...busySince(quiet(idle), NOW_MS - idle + 5 * 60 * 1_000),
@@ -416,35 +416,36 @@ describe("resolveAutoSettlementAt", () => {
     expect(planned(quiet(idle), unpublished)).toEqual({
       at: NOW_MS - idle + DAY_MS,
       basisAt: NOW_MS - idle,
-      returnChance: 0.1,
     });
-    // Busy activity arriving only after the 3h mark does not pass the first look (no project work
-    // and 23.8% at 3h), but 30 messages + publish bring the 1% between-bar wait to 18.86h (~13h52m
-    // from now).
+    // Busy activity arriving only after the first look does not pass it (no project work and 25.3%
+    // at 1.5h), but 30 messages + publish bring the 1% between-bar wait to 12.02h (~7h from now).
     const busyLate = {
       activity: busySince(quiet(idle), NOW_MS - 5 * 60 * 1_000, true, 30),
     };
     expect(settles(quiet(idle), busyLate)).toBeNull();
     const betweenPlan = planned(quiet(idle), busyLate);
-    expect(betweenPlan).toMatchObject({ basisAt: NOW_MS - idle, returnChance: 0.02 });
-    expect(betweenPlan?.at).toBeGreaterThan(NOW_MS + 13 * HOUR_MS);
-    expect(betweenPlan?.at).toBeLessThan(NOW_MS + 14 * HOUR_MS);
-    // Sure enough to settle, but three hours must pass, and it is not listed in its first minutes.
+    // Seven hours off, so not listed as settling yet.
+    expect(betweenPlan).toEqual({ at: betweenPlan?.at, basisAt: NOW_MS - idle });
+    expect(betweenPlan?.at).toBeGreaterThan(NOW_MS + 7 * HOUR_MS);
+    expect(betweenPlan?.at).toBeLessThan(NOW_MS + 8 * HOUR_MS);
+    // Sure enough to settle, but an hour and a half must pass. It is listed as settling only in
+    // the last half hour before that.
     expect(planned(quiet(10 * 60 * 1_000))).toEqual({
-      at: NOW_MS + 170 * 60 * 1_000,
+      at: NOW_MS + 80 * 60 * 1_000,
       basisAt: NOW_MS - 10 * 60 * 1_000,
     });
-    // Nothing the owner did in the project: an hour's wait leaves a 33% chance, so not listed,
-    // while the score still schedules the 7% late bar past 24h (32.7h, before the 48h window).
+    expect(planned(quiet(70 * 60 * 1_000))).toEqual({
+      at: NOW_MS + 20 * 60 * 1_000,
+      basisAt: NOW_MS - 70 * 60 * 1_000,
+      returnChance: 0.04,
+    });
+    // Nothing the owner did in the project: an hour's wait leaves a 29% chance, so not listed,
+    // while the score still settles it at the 24h mark, before the 48h window.
     const idleOwner = {
       activity: { messages: [], publishes: [], turns: new Map([["thread-1", 1]]) },
     };
-    const idleLateWaitMs = ThreadSettleOutlook.settleOutlookSettleWaitMs(
-      { waitHours: 1, ageHours: 0.5, turns: 1, elsewhere: 0, published: false },
-      ThreadSettleOutlook.SETTLE_OUTLOOK_LATE_BELOW,
-    );
     expect(planned(quiet(HOUR_MS), idleOwner)).toEqual({
-      at: NOW_MS - HOUR_MS + idleLateWaitMs,
+      at: NOW_MS - HOUR_MS + DAY_MS,
       basisAt: NOW_MS - HOUR_MS,
     });
 
@@ -478,7 +479,7 @@ describe("resolveAutoSettlementAt", () => {
     const unread = owes("ask", { lastVisitedAt: at(-idle - HOUR_MS) });
     expect(settles(unread)).toBeNull();
     expect(planned(unread)).toBeNull();
-    // Read an hour ago, three days in: the window has passed, and the open still buys two hours.
+    // Read an hour ago, three days in: the window has passed, and the open still buys 1.5 hours.
     const readLate = (kind: "verify" | "ask") => ({
       ...owes(kind),
       ...quiet(3 * DAY_MS, { opens: { openedAt: NOW_MS - HOUR_MS, score: 1, picks: [] } }),
@@ -486,30 +487,30 @@ describe("resolveAutoSettlementAt", () => {
     });
     expect(settles(readLate("verify"))).toEqual(at(-3 * DAY_MS));
     expect(settles(readLate("ask"))).toBeNull();
-    expect(planned(readLate("ask"))?.at).toBe(NOW_MS + HOUR_MS);
+    expect(planned(readLate("ask"))?.at).toBe(NOW_MS + HOUR_MS / 2);
 
-    // Opened an hour ago, or the owner came back an hour ago: two hours must pass first.
+    // Opened an hour ago, or the owner came back an hour ago: 1.5 hours must pass first.
     const opened = quiet(idle, {
       opens: { openedAt: NOW_MS - HOUR_MS, score: 1, picks: [] },
     });
     expect(settles(opened)).toBeNull();
-    expect(planned(opened)?.at).toBe(NOW_MS + HOUR_MS);
+    expect(planned(opened)?.at).toBe(NOW_MS + HOUR_MS / 2);
     const justBack = { lastAtMs: NOW_MS, sinceAtMs: NOW_MS - HOUR_MS };
     expect(settles(quiet(idle), { presence: justBack })).toBeNull();
-    expect(planned(quiet(idle), { presence: justBack })?.at).toBe(NOW_MS + HOUR_MS);
+    expect(planned(quiet(idle), { presence: justBack })?.at).toBe(NOW_MS + HOUR_MS / 2);
 
     // Away: the early time passes without settling, and the plan shows it as already due.
     const away = { lastAtMs: NOW_MS - 3 * HOUR_MS, sinceAtMs: NOW_MS - 9 * HOUR_MS };
     for (const presence of [away, null]) {
       expect(settles(quiet(idle), { presence })).toBeNull();
-      expect(planned(quiet(idle), { presence })?.at).toBe(NOW_MS - 2 * HOUR_MS);
+      expect(planned(quiet(idle), { presence })?.at).toBe(NOW_MS - 3.5 * HOUR_MS);
       // The window is the owner's own setting, so it still settles the thread.
       expect(settles(quiet(49 * HOUR_MS), { presence })).toEqual(at(-49 * HOUR_MS));
     }
 
     expect(settles(quiet(idle), { autoSettleAfterDays: null })).toBeNull();
     expect(planned(quiet(idle), { autoSettleAfterDays: null })).toBeNull();
-    // A window shorter than the three hours wins.
+    // A window shorter than the first look wins.
     expect(planned(quiet(HOUR_MS / 2), { autoSettleAfterDays: 1 / 24 })?.at).toBe(
       NOW_MS + HOUR_MS / 2,
     );
@@ -1279,8 +1280,8 @@ describe("ThreadSettlementServiceV2 worker", () => {
       const fixture = yield* makeHarness({
         snapshot: makeSnapshot([thread]),
         settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 3 },
-        // Busy 3h after going quiet (at the 3h first look): 1.5% at 3h, 0.7% at 13h.
-        activity: busySince(thread, nowMs - 10 * HOUR_MS),
+        // Busy 1h after going quiet (before the 1.5h first look): 2.4% at 1.5h, 0.7% at 13h.
+        activity: busySince(thread, nowMs - 12 * HOUR_MS),
       });
       const wrote = (id: string, text: string, agoMs: number): OrchestrationV2DomainEvent => {
         const createdAt = DateTime.makeUnsafe(nowMs - agoMs);
@@ -1322,9 +1323,9 @@ describe("ThreadSettlementServiceV2 worker", () => {
         assert.deepEqual(yield* Ref.get(fixture.commands), []);
         yield* sweepAfter(wrote("compaction", "/compact", HOUR_MS));
         assert.deepEqual(yield* Ref.get(fixture.commands), []);
-        // Sure enough to settle three hours in; only the owner being away holds it.
+        // Sure enough to settle 1.5 hours in; only the owner being away holds it.
         assert.deepEqual(yield* Ref.get(fixture.plans), [
-          { at: nowMs - 10 * HOUR_MS, basisAt: nowMs - 13 * HOUR_MS, returnChance: 0.01 },
+          { at: nowMs - 11.5 * HOUR_MS, basisAt: nowMs - 13 * HOUR_MS, returnChance: 0.01 },
         ]);
         yield* sweepAfter(wrote("back", "Morning", 3 * HOUR_MS), wrote("still", "Next", HOUR_MS));
         expect((yield* Ref.get(fixture.commands)).map((command) => command.threadId)).toEqual([

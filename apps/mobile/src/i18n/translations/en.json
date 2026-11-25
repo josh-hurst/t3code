@@ -4902,6 +4902,8 @@
   "13300e8565fbd665": "{label} ({count})",
   "e1339579e7c2743f": "About to settle",
   "98ef1b41b5c80500": "By meaning",
+  "f0ef397bc9639c7b": "{count, plural, one {Settled {count} while you were away} other {Settled {count} while you were away}}",
+  "f3739c47fb55c3b0": "Show in History",
   "694e089caefce25f": "{count, plural, one {Show {count} more settled threads} other {Show {count} more settled threads}}",
   "ece9e2869077cbb6": "Discard {title}",
   "306a6f95ad9d52f7": "Unsent",

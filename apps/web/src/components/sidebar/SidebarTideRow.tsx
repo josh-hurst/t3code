@@ -12,13 +12,13 @@ import {
   UserRoundIcon,
   type LucideIcon,
 } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import type { ContextMenuSource } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
+import { contextMenuSourceOf } from "../../contextMenuSource";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { MiddleTruncate } from "../ui/middle-truncate";
-import { useSidebar } from "../ui/sidebar";
 import type { TideStatusTone } from "./tideSidebar.logic";
 
 const STATUS_LOOK: Record<TideStatusTone, { icon: LucideIcon; className: string }> = {
@@ -56,48 +56,75 @@ export function TideOwedLabel(props: { children: ReactNode }) {
   );
 }
 
-/** A thread row's project name; with a project group key it opens that project's Changes. */
-function TideProjectName(props: {
-  name: string;
-  changesProjectKey: string | null;
-  className?: string | undefined;
-}) {
-  if (props.changesProjectKey === null) {
-    return <span className={cn("min-w-0 truncate", props.className)}>{props.name}</span>;
-  }
-  return (
-    <TideProjectChangesLink
-      name={props.name}
-      projectKey={props.changesProjectKey}
-      className={props.className}
-    />
-  );
+/** Opens a project's menu from a row's project name. */
+export type TideProjectMenuOpener = (
+  projectKey: string,
+  position: { x: number; y: number },
+  source: ContextMenuSource,
+) => void;
+
+/** A row's project menu: the sidebar project group key and the opener. */
+export interface TideProjectMenu {
+  projectKey: string;
+  open: TideProjectMenuOpener;
 }
 
-function TideProjectChangesLink(props: {
+export function tideProjectMenu(props: {
+  projectMenuKey?: string | null | undefined;
+  onProjectMenu?: TideProjectMenuOpener | undefined;
+}): TideProjectMenu | null {
+  return props.projectMenuKey != null && props.onProjectMenu
+    ? { projectKey: props.projectMenuKey, open: props.onProjectMenu }
+    : null;
+}
+
+/** A thread row's project name; with a menu it opens that project's menu. */
+function TideProjectName(props: {
   name: string;
-  projectKey: string;
+  menu: TideProjectMenu | null;
   className?: string | undefined;
 }) {
-  const { isMobile, setOpenMobile } = useSidebar();
+  const menu = props.menu;
+  if (menu === null) {
+    return <span className={cn("min-w-0 truncate", props.className)}>{props.name}</span>;
+  }
+  const open = (element: HTMLElement, position: { x: number; y: number } | null) => {
+    const rect = element.getBoundingClientRect();
+    menu.open(
+      menu.projectKey,
+      position ?? { x: rect.left, y: rect.bottom },
+      position ? "mouse" : "keyboard",
+    );
+  };
   // Inside the row's own button: keep the click, drag and rename gestures off the row.
   return (
-    <Link
-      to="/history"
-      search={{ project: props.projectKey, view: "changes" }}
+    <span
+      role="button"
+      tabIndex={0}
+      aria-haspopup="menu"
       className={cn(
-        "relative min-w-0 truncate underline-offset-2 hover:text-foreground hover:underline focus-visible:underline focus-visible:outline-none",
+        "relative min-w-0 cursor-pointer truncate underline-offset-2 hover:text-foreground hover:underline focus-visible:underline focus-visible:outline-none",
         props.className,
       )}
       onPointerDown={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
       onClick={(event) => {
+        event.preventDefault();
         event.stopPropagation();
-        if (isMobile) setOpenMobile(false);
+        open(
+          event.currentTarget,
+          contextMenuSourceOf(event) === "keyboard" ? null : { x: event.clientX, y: event.clientY },
+        );
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        open(event.currentTarget, null);
       }}
     >
       {props.name}
-    </Link>
+    </span>
   );
 }
 
@@ -106,7 +133,7 @@ export function TideProject(props: {
   project: ProjectFaviconProject | null;
   name: string;
   branch?: string | null;
-  changesProjectKey?: string | null;
+  projectMenu?: TideProjectMenu | null;
 }) {
   const branch = props.branch ?? null;
   return (
@@ -118,7 +145,7 @@ export function TideProject(props: {
       ) : null}
       <TideProjectName
         name={props.name}
-        changesProjectKey={props.changesProjectKey ?? null}
+        menu={props.projectMenu ?? null}
         className={branch !== null ? "max-w-1/2" : undefined}
       />
       {branch !== null ? (
@@ -140,7 +167,7 @@ export function TideProject(props: {
 export function tideRowMeta(props: {
   project: ProjectFaviconProject | null;
   name: string | null;
-  changesProjectKey?: string | null;
+  projectMenu?: TideProjectMenu | null;
   pullRequest?: ReactNode;
   branch: string | null;
 }) {
@@ -154,7 +181,7 @@ export function tideRowMeta(props: {
               <ProjectFavicon project={props.project} className="size-3" />
             </span>
           ) : null}
-          <TideProjectName name={props.name} changesProjectKey={props.changesProjectKey ?? null} />
+          <TideProjectName name={props.name} menu={props.projectMenu ?? null} />
         </span>
       ) : null}
       {props.branch !== null ? (

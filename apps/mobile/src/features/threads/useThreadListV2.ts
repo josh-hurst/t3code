@@ -1,5 +1,6 @@
 import type { OlderSettledScope } from "@t3tools/client-runtime/state/threads";
 import { createOpenThreadPlacementHold } from "@t3tools/client-runtime/state/thread-zones";
+import { threadsSettledWhileAway } from "@t3tools/client-runtime/state/settled-while-away";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useMemo, useState } from "react";
@@ -15,6 +16,7 @@ import {
   threadListInboxReturns,
   threadListV2LayoutTime,
 } from "./threadListV2";
+import { useSettledAwayStretches } from "./settledWhileAway";
 import { computeThreadMoveAvailability } from "./threadOrder";
 
 /**
@@ -226,6 +228,12 @@ export function useThreadListV2(input: {
     openNeedsYouHold,
   ]);
   useOlderSettledShelfGrowth(olderSettledShelf, layout.listedSettledThreads);
+  const settledAwayStretches = useSettledAwayStretches();
+  const settledAway = useMemo(
+    () =>
+      input.tide ? threadsSettledWhileAway(layout.listedSettledThreads, settledAwayStretches) : [],
+    [input.tide, layout.listedSettledThreads, settledAwayStretches],
+  );
   const contentOnlyThreadKeys = useKeySet([...layout.contentOnlyThreadKeys].sort().join("\n"));
   const semanticOnlyThreadKeys = useKeySet([...layout.semanticOnlyThreadKeys].sort().join("\n"));
   const pendingTasks = useMemo(() => {
@@ -264,6 +272,7 @@ export function useThreadListV2(input: {
         semanticCount: layout.semanticCount,
         semanticHeaderIndex: layout.semanticHeaderIndex,
         ...(input.tide ? { tide: { ...layout, trailExpanded: input.trailExpanded } } : {}),
+        settledAway,
         snoozeLabelNow: `${input.now.slice(0, 16)}:00.000Z`,
         snoozeEnvironmentIds: input.snoozeEnvironmentIds,
         queuedThreadKeys: input.queuedThreadKeys,
@@ -286,6 +295,7 @@ export function useThreadListV2(input: {
       input.tide,
       input.trailExpanded,
       input.historyAll,
+      settledAway,
     ],
   );
   return { layout, items, contentOnlyThreadKeys, semanticOnlyThreadKeys, olderSettledShelf };

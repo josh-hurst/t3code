@@ -188,6 +188,8 @@ export interface EnvironmentThreadShell {
   readonly settledOverride: "settled" | "active" | null;
   readonly settledAt: string | null;
   readonly unsettledAt: string | null;
+  /** When the server settled the thread on its own; null when the owner did. */
+  readonly autoSettledAt?: string | null;
   readonly snoozedUntil: string | null;
   readonly snoozedAt: string | null;
   readonly limitRecovery?: import("@t3tools/contracts").OrchestrationV2LimitRecovery | null;
@@ -353,6 +355,7 @@ export function presentThreadShell(
     settledOverride: thread.settledOverride,
     settledAt: nullableIso(thread.settledAt),
     unsettledAt: nullableIso(thread.unsettledAt ?? null),
+    autoSettledAt: nullableIso(thread.autoSettledAt ?? null),
     snoozedUntil: nullableIso(thread.snoozedUntil ?? null),
     snoozedAt: nullableIso(thread.snoozedAt ?? null),
     limitRecovery: thread.limitRecovery ?? null,

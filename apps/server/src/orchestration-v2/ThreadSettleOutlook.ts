@@ -9,44 +9,41 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 const HOUR_MS = 60 * 60 * 1_000;
 
-/** At or below this chance of the owner writing again, clients list the thread as settling. */
-export const SETTLE_OUTLOOK_LIST_BELOW = 0.15;
-export const SETTLE_OUTLOOK_LIST_AFTER_MS = 15 * 60 * 1_000;
+/**
+ * Clients list a thread as settling once the score plans to settle it this soon. A low chance
+ * alone listed threads hours early, and about one in eight of those was written in again.
+ */
+export const SETTLE_OUTLOOK_LIST_LEAD_MS = 30 * 60 * 1_000;
 // A thread settled the moment its chance drifts under one bar carries about that bar's risk; the
-// batch already under the bar at one first look, and threads still quiet after a day, are much safer.
+// batch already under the bar at one first look is much safer.
 /** When the score first evaluates a quiet thread. */
-const SETTLE_OUTLOOK_FIRST_LOOK_MS = 3 * HOUR_MS;
+const SETTLE_OUTLOOK_FIRST_LOOK_MS = 1.5 * HOUR_MS;
 /** At or below this chance at the first look, the thread settles. */
-const SETTLE_OUTLOOK_FIRST_LOOK_BELOW = 0.095;
+const SETTLE_OUTLOOK_FIRST_LOOK_BELOW = 0.14;
 /** Threads longer than this wait past the first look. */
 const SETTLE_OUTLOOK_FIRST_LOOK_MAX_TURNS = 10;
 /** At or below this chance between the first look and a day quiet, the thread settles. */
 export const SETTLE_OUTLOOK_BETWEEN_BELOW = 0.01;
-/** When the score switches to the late bar. */
+/** A thread still quiet after this settles: under 1% are written in again within two days. */
 const SETTLE_OUTLOOK_LATE_MS = 24 * HOUR_MS;
-/** At or below this chance after a day quiet, the thread settles. */
-export const SETTLE_OUTLOOK_LATE_BELOW = 0.07;
-/** Threads longer than this keep the owner's window unless the project published since. */
-const SETTLE_OUTLOOK_LONG_THREAD_TURNS = 16;
 /** Older activity is not read; a thread quiet for longer only looks a little likelier to return. */
 export const SETTLE_OUTLOOK_LOOKBACK_MS = 72 * HOUR_MS;
 
-const AGE_CAP_MINUTES = 30;
+const AGE_CAP_MINUTES = 60;
 const TURNS_FREE = 8;
 
 /**
- * A logistic score fitted to a month of one owner's threads, checked every 15 minutes up to a day.
- * Return risk changes over a thread's first half hour and is flat up to about eight messages, then
- * climbs. Only work in the thread's own project counts: the owner leaves a project and comes back.
- * The reply's text, a model's reading of it and embeddings added nothing.
+ * Fitted to a month of one owner's threads; a return over two days on is a new need, not a wrong
+ * settle. Risk changes over a thread's first hour and climbs past about eight messages. Only work
+ * in the thread's own project counts: the owner leaves a project and comes back.
  */
 const WEIGHTS = {
-  intercept: -1.7408,
-  waitHours: -0.669,
-  ageHours: 0.4387,
-  turns: 0.4358,
-  elsewhere: -0.4888,
-  published: -0.683,
+  intercept: -1.5866,
+  waitHours: -0.754,
+  ageHours: 0.3482,
+  turns: 0.4047,
+  elsewhere: -0.4661,
+  published: -0.6687,
 } as const;
 
 const SettleOutlookSignals = Schema.Struct({
@@ -168,15 +165,12 @@ export function settleOutlookSettleAfterMs(
   }
   const current = settleOutlookSignals(activity, thread);
   if (current === null) return null;
-  if (current.turns > SETTLE_OUTLOOK_LONG_THREAD_TURNS && !current.published) return null;
-  const between = Math.max(
-    SETTLE_OUTLOOK_FIRST_LOOK_MS,
-    settleOutlookSettleWaitMs(current, SETTLE_OUTLOOK_BETWEEN_BELOW),
-  );
-  if (between < SETTLE_OUTLOOK_LATE_MS) return between;
-  return Math.max(
+  return Math.min(
     SETTLE_OUTLOOK_LATE_MS,
-    settleOutlookSettleWaitMs(current, SETTLE_OUTLOOK_LATE_BELOW),
+    Math.max(
+      SETTLE_OUTLOOK_FIRST_LOOK_MS,
+      settleOutlookSettleWaitMs(current, SETTLE_OUTLOOK_BETWEEN_BELOW),
+    ),
   );
 }
 

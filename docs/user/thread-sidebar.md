@@ -356,25 +356,33 @@ does not count, so a project you leave for another keeps its threads longer. A s
 you left for other work in the project scores low within the hour; a long one you wrote in
 often stays in Recent for much longer.
 
-When the chance is low, the thread moves to the end of Recent, under **About to settle**. Its
-rows show only the project, the title, and how long until the thread settles if you do nothing
-more. Work in other threads brings that time forward. The thread you are likeliest to come
+In the last half hour before a thread settles on its own, it moves to the end of Recent, under
+**About to settle**. Its rows show only the project, the title, and how long until the thread
+settles if you do nothing more. A thread that will only settle at your auto-settle setting is
+not listed there. The thread you are likeliest to come
 back to is at the top and the surest to leave is at the bottom. Nothing settles this way in
-its first three hours. At three hours quiet, a thread whose chance is low settles if you have
+its first hour and a half. At an hour and a half quiet, a thread whose chance is low settles if you have
 worked in its project since and it is not a long one. One that misses that settles once its
-chance is close to none, or after a day if it is still low, and never later than the setting.
-A thread you wrote in more than 16 times waits for the setting unless its project published. Write in a thread to put it back among your recent threads, or hover its row and choose
+chance is close to none, and any thread you have read settles after a day quiet, since you
+almost never write in one again within the next day. Write in a thread to put it back among your recent threads, or hover its row and choose
 **Keep** (on mobile, **Keep** in its menu) to turn auto-settle off for it. **Clear** settles these rows too.
 The classic sidebar has no About to settle rows, and its threads settle by the same rule.
 
 A thread with a pull request keeps the full wait and is not listed under About to settle. Something its
 summary lists for you to check, commit, or publish does not hold it, but a question you have
-not read keeps it from settling on its own, and a thread stays at least two hours after you
-open it to read one.
+not read keeps it from settling on its own, and a thread stays at least an hour and a half
+after you open it to read one.
 
 Nothing settles early while you are away. After two hours without a message from you in
-any thread, early settling pauses, and it resumes two hours after you next write. A thread
-you opened in the last two hours also waits.
+any thread, early settling pauses, and it resumes an hour and a half after you next write. A
+thread you opened in the last hour and a half also waits.
+
+When threads settle on their own while T3 Code is in the background or another window has
+focus, Recent ends with one line, such as **Settled 3 while you were away**. Click it to open
+History, or choose **Undo** to bring those threads back and keep them from settling again until
+they have new activity. Threads you settle yourself are never counted. The web and desktop apps
+remember when you last looked across a restart; the mobile app counts only while it stays open
+in the background.
 
 A thread within an hour of settling shows **Settling soon** in the thread list, and the
 open thread shows the time left with **Keep open**, which turns auto-settle off for that

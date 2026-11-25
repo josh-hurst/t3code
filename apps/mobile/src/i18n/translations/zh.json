@@ -4883,6 +4883,8 @@
   "13300e8565fbd665": "{label}（{count}）",
   "e1339579e7c2743f": "即将收尾",
   "98ef1b41b5c80500": "按语义匹配",
+  "f0ef397bc9639c7b": "你离开期间已收尾 {count, plural, other {{count} 个会话}}",
+  "f3739c47fb55c3b0": "在 History 中显示",
   "694e089caefce25f": "{count, plural, other {再显示 {count} 个已收尾的会话}}",
   "ece9e2869077cbb6": "丢弃 {title}",
   "306a6f95ad9d52f7": "未发送",

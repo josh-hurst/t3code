@@ -489,7 +489,7 @@ export type OrchestrationV2LimitRecoveryUpdate = typeof OrchestrationV2LimitReco
  * When inactivity will settle a thread if nothing changes, as the server last worked it out.
  * `basisAt` is the thread activity it was worked out from, so later activity voids the plan.
  * Times are epoch milliseconds. A time already past means the thread is held while the owner is away.
- * `returnChance` (0 to 1) is set once the owner is unlikely to write again; clients list those apart.
+ * `returnChance` (0 to 1) is set once the score will settle the thread within half an hour; clients list those apart.
  */
 export const OrchestrationV2AutoSettlePlan = Schema.Struct({
   at: Schema.Finite,
@@ -588,6 +588,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /** When the settler settled the thread on its own; null once the owner settles or un-settles it. */
+  autoSettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   lastSnoozeWakeAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -2560,6 +2562,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   settledOverride: Schema.NullOr(Schema.Literals(["settled", "active"])),
   settledAt: Schema.NullOr(Schema.DateTimeUtc),
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  autoSettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
@@ -2739,6 +2742,7 @@ export const OrchestrationV2AppThreadJson = OrchestrationV2AppThread.mapFields((
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  autoSettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   lastSnoozeWakeAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
@@ -3202,6 +3206,7 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
   archivedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   settledAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  autoSettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
@@ -3509,6 +3514,8 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     expectedLatestRunId: Schema.optional(RunId),
     settledAt: Schema.optional(Schema.DateTimeUtc),
+    /** Set by the settlement sweep, which marks the thread `autoSettledAt`. */
+    automatic: Schema.optional(Schema.Boolean),
   }),
   /** Rejects changes since snapshotAt or any explicit settled override to preserve user actions. */
   Schema.Struct({

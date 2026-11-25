@@ -1966,6 +1966,7 @@ describe("self-filing list", () => {
     threads: ReadonlyArray<EnvironmentThreadShell>,
     input: Partial<Parameters<typeof buildThreadListV2Items>[0]> = {},
     trailExpanded = false,
+    settledAway = false,
   ) => {
     const layout = buildThreadListV2Items({
       threads,
@@ -1990,6 +1991,7 @@ describe("self-filing list", () => {
       settledCount: layout.settledCount,
       settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
       tide: { ...layout, trailExpanded },
+      ...(settledAway ? { settledAway: layout.listedSettledThreads } : {}),
     });
     return { layout, items };
   };
@@ -2089,6 +2091,13 @@ describe("self-filing list", () => {
       "snoozed",
       "[History]",
       "settled",
+    ]);
+    // Threads the server settled while the app was away end Recent, before Working.
+    const away = names(build(threads, { projectFolders: folders }, false, true).items);
+    expect(away.slice(away.indexOf("settling-surest"), away.indexOf("working"))).toEqual([
+      "settling-surest",
+      "[v2-settled-away]",
+      "[v2-working-shelf]",
     ]);
     expect(
       items.find((item) => item.key === "v2-thread:environment-1:settling-surest"),

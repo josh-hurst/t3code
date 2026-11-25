@@ -51,8 +51,7 @@ import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { QUIET_AFTER_MS, QUIET_SYNC_INTERVAL_MS } from "./PullRequestSyncReactor.ts";
 import {
-  SETTLE_OUTLOOK_LIST_AFTER_MS,
-  SETTLE_OUTLOOK_LIST_BELOW,
+  SETTLE_OUTLOOK_LIST_LEAD_MS,
   SETTLE_OUTLOOK_LOOKBACK_MS,
   type SettleOutlookActivity,
   type SettleOutlookSignals,
@@ -73,7 +72,7 @@ const DAY_MS = 24 * HOUR_MS;
 /** The owner counts as away once they have written nowhere for this long. */
 const AWAY_AFTER_MS = 2 * HOUR_MS;
 /** A thread settles early only this long after the owner came back, and after they last opened it. */
-const BACK_FOR_MS = 2 * HOUR_MS;
+const BACK_FOR_MS = 1.5 * HOUR_MS;
 
 /** When the owner last wrote in any thread, and when that unbroken stretch of writing began. */
 export interface OwnerPresence {
@@ -390,7 +389,7 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
     if (signals !== null) outlook = { chance: settleOutlookReturnChance(signals), signals };
     afterMs = settleOutlookSettleAfterMs(input.activity, context);
   }
-  // Settles on the score's schedule (first look at 3h, tighter bar until 24h, late bar from 24h),
+  // Settles on the score's schedule (first look at 1.5h, tighter bar until 24h, late bar from 24h),
   // even before the thread is listed as settling, held behind opens, return from away and window.
   if (afterMs !== null) {
     atMs = Math.min(
@@ -402,7 +401,6 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
       ),
     );
   }
-  const low = outlook !== null && outlook.chance <= SETTLE_OUTLOOK_LIST_BELOW ? outlook : null;
   const away = presence === null || input.nowMs - presence.lastAtMs > AWAY_AFTER_MS;
   // The window is the owner's own setting, so it settles whether or not they are around.
   if (input.nowMs > (away ? windowAtMs : atMs)) {
@@ -412,8 +410,11 @@ function resolveAutoSettlement(input: AutoSettlementInput): {
       outlook: input.nowMs > windowAtMs ? null : outlook,
     };
   }
+  // Listed only when the score itself will settle it soon, not the owner's window.
   const listed =
-    low !== null && input.nowMs - inactivityAtMs >= SETTLE_OUTLOOK_LIST_AFTER_MS ? low : null;
+    afterMs !== null && atMs < windowAtMs && atMs - input.nowMs <= SETTLE_OUTLOOK_LIST_LEAD_MS
+      ? outlook
+      : null;
   return {
     settledAt: null,
     plan: {

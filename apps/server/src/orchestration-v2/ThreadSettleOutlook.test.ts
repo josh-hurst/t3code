@@ -59,10 +59,10 @@ describe("ThreadSettleOutlook", () => {
         }).toFixed(3),
       );
     // A quick question half an hour on: the owner busy elsewhere, then not.
-    assert.equal(chance(0.5, 0.1, 1, 6), 0.108);
-    assert.equal(chance(0.5, 0.1, 1, 0), 0.239);
+    assert.equal(chance(0.5, 0.1, 1, 6), 0.107);
+    assert.equal(chance(0.5, 0.1, 1, 0), 0.229);
     // A long thread stays likelier to be written in again, even after a publish.
-    assert.equal(chance(4, 3, 12, 12, true), 0.073);
+    assert.equal(chance(4, 3, 12, 12, true), 0.07);
     // Quiet for the projected wait, the thread is exactly at the requested cutoff.
     const signals = {
       waitHours: 0.5,
@@ -71,15 +71,11 @@ describe("ThreadSettleOutlook", () => {
       elsewhere: 6,
       published: false,
     };
-    const waitHours =
-      ThreadSettleOutlook.settleOutlookSettleWaitMs(
-        signals,
-        ThreadSettleOutlook.SETTLE_OUTLOOK_LATE_BELOW,
-      ) / 3_600_000;
-    assert.closeTo(waitHours, 2.06, 0.05);
+    const waitHours = ThreadSettleOutlook.settleOutlookSettleWaitMs(signals, 0.07) / 3_600_000;
+    assert.closeTo(waitHours, 1.78, 0.05);
     assert.closeTo(
       ThreadSettleOutlook.settleOutlookReturnChance({ ...signals, waitHours }),
-      ThreadSettleOutlook.SETTLE_OUTLOOK_LATE_BELOW,
+      0.07,
       1e-6,
     );
   });
@@ -94,17 +90,17 @@ describe("ThreadSettleOutlook", () => {
 
   it.each([
     {
-      name: "passes the 3h first look when busy in the project before 3h",
-      // 10 messages at 1h -> 8.8% at 3h (<= 9.5%), settles at 3h.
+      name: "passes the 1.5h first look when busy in the project before 1.5h",
+      // 10 messages at 1h -> 10.0% at 1.5h (<= 14%), settles at 1.5h.
       activity: { messages: messages(10, HOUR_MS), publishes: [], turns: new Map([[quiet, 1]]) },
       ageMs: 0.5 * HOUR_MS,
       nowMs: 6 * HOUR_MS,
-      expected: 3 * HOUR_MS,
+      expected: 1.5 * HOUR_MS,
     },
     {
       name: "misses the first look with no project work since even when chance is low",
-      // 0m old, no project work: 6.5% at 3h (<= 9.5%) but requires work in the project; 1% wait is
-      // 70.3h (>= 24h) and 7% wait is 2.5h -> clamped to 24h.
+      // 0m old, no project work: 9.3% at 1.5h (<= 14%) but requires work in the project; 1% wait is
+      // 53.1h, so it settles at 24h.
       activity: { messages: [], publishes: [], turns: new Map([[quiet, 1]]) },
       ageMs: 0,
       nowMs: 6 * HOUR_MS,
@@ -112,8 +108,8 @@ describe("ThreadSettleOutlook", () => {
     },
     {
       name: "misses the first look past 10 turns even when chance is low",
-      // 11 turns with 10 messages + publish at 1h: 8.2% at 3h (<= 9.5%) but > 10 turns; 1% wait is
-      // 103.4h (>= 24h) and 7% wait is 4.2h -> clamped to 24h.
+      // 11 turns with 10 messages + publish at 1h: 9.1% at 1.5h (<= 14%) but > 10 turns; 1% wait is
+      // 51.0h, so it settles at 24h.
       activity: {
         messages: messages(10, HOUR_MS),
         publishes: [{ projectId: projectA, atMs: HOUR_MS }],
@@ -124,9 +120,9 @@ describe("ThreadSettleOutlook", () => {
       expected: 24 * HOUR_MS,
     },
     {
-      name: "ignores messages written after 3h when judging the first look",
-      // 10 messages at 4h: no project work and 23.8% at 3h (fails first look); 1% wait is 116.5h
-      // (>= 24h) and 7% wait is 4.8h -> clamped to 24h.
+      name: "ignores messages written after the first look when judging it",
+      // 10 messages at 4h: no project work and 25.3% at 1.5h (fails first look); 1% wait is 59.0h,
+      // so it settles at 24h.
       activity: {
         messages: messages(10, 4 * HOUR_MS),
         publishes: [],
@@ -137,9 +133,9 @@ describe("ThreadSettleOutlook", () => {
       expected: 24 * HOUR_MS,
     },
     {
-      name: "reaches the 1% between-bar before 24h when heavy activity arrives after 3h",
-      // Fails first look at 3h (no project work, 23.8%); 30 messages + publish at 4h bring the 1%
-      // wait to 18.86h (< 24h).
+      name: "reaches the 1% between-bar before 24h when heavy activity arrives after the first look",
+      // Fails first look at 1.5h (no project work, 25.3%); 30 messages + publish at 4h bring the 1%
+      // wait to 12.0h (< 24h).
       activity: {
         messages: messages(30, 4 * HOUR_MS),
         publishes: [{ projectId: projectA, atMs: 4 * HOUR_MS }],
@@ -153,33 +149,11 @@ describe("ThreadSettleOutlook", () => {
       ),
     },
     {
-      name: "waits past 24h when the 7% late bar is reached after a day",
-      // 3h old, 12 turns, no activity: 38.7% at 3h, 7% wait is 95.0h (> 24h).
-      activity: { messages: [], publishes: [], turns: new Map([[quiet, 12]]) },
+      name: "settles a long, likely thread at 24h all the same",
+      // 3h old, 17 turns, no activity: still likely to be written in again, but under 1% of threads
+      // quiet for a day are written in within two days of the reply.
+      activity: { messages: [], publishes: [], turns: new Map([[quiet, 17]]) },
       ageMs: 3 * HOUR_MS,
-      nowMs: 6 * HOUR_MS,
-      expected: ThreadSettleOutlook.settleOutlookSettleWaitMs(
-        { waitHours: 6, ageHours: 3, turns: 12, elsewhere: 0, published: false },
-        ThreadSettleOutlook.SETTLE_OUTLOOK_LATE_BELOW,
-      ),
-    },
-    {
-      name: "leaves threads past 16 turns to the window when nothing published since",
-      activity: { messages: messages(20, HOUR_MS), publishes: [], turns: new Map([[quiet, 17]]) },
-      ageMs: 0.5 * HOUR_MS,
-      nowMs: 6 * HOUR_MS,
-      expected: null,
-    },
-    {
-      name: "still scores threads past 16 turns after a publish",
-      // Misses first look (17 > 10); published unlocks scoring, 1% wait is 117.3h, 7% wait is 4.9h
-      // -> clamped to 24h.
-      activity: {
-        messages: messages(20, HOUR_MS),
-        publishes: [{ projectId: projectA, atMs: HOUR_MS }],
-        turns: new Map([[quiet, 17]]),
-      },
-      ageMs: 0.5 * HOUR_MS,
       nowMs: 6 * HOUR_MS,
       expected: 24 * HOUR_MS,
     },

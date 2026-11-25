@@ -4874,6 +4874,8 @@
   "13300e8565fbd665": "{label} ({count})",
   "e1339579e7c2743f": "まもなく対応済み",
   "98ef1b41b5c80500": "意味で一致",
+  "f0ef397bc9639c7b": "{count, plural, other {不在の間に {count} 件のスレッドを対応済みにしました}}",
+  "f3739c47fb55c3b0": "History に表示",
   "694e089caefce25f": "{count, plural, other {対応済みのスレッドをさらに {count} 件表示}}",
   "ece9e2869077cbb6": "{title} を破棄",
   "306a6f95ad9d52f7": "未送信",

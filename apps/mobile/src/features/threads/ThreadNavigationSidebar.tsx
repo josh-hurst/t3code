@@ -1,4 +1,6 @@
 import { useGT, useMessages } from "gt-react-native";
+import { useSettledAwayAppState } from "./useSettledAwayAppState";
+import { dismissSettledAway } from "./settledWhileAway";
 import { useActiveNewTask } from "../../state/active-new-task";
 import { useNavigation } from "@react-navigation/native";
 import { useAnyEnvironmentKeepsEntries } from "../../state/threadEntries";
@@ -76,6 +78,7 @@ import {
   historyAllAction,
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
+  ThreadListV2SettledAwayRow,
   ThreadListV2TrailMoreRow,
   ThreadListV2WorkingShelfHeader,
 } from "./thread-list-v2-items";
@@ -303,6 +306,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   const historyAll = useAnyEnvironmentKeepsEntries();
   const rootNavigation = useNavigation();
   const openHistory = () => rootNavigation.navigate("History");
+  useSettledAwayAppState();
   const {
     layout: threadListV2Layout,
     items: threadListV2Items,
@@ -579,6 +583,22 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
           />
         );
       }
+      case "v2-settled-away":
+        return (
+          <ThreadListV2SettledAwayRow
+            count={item.threads.length}
+            disabled={item.disabled}
+            onShow={() => {
+              dismissSettledAway();
+              if (!settledShelfExpanded) toggleSettledShelf();
+            }}
+            onUndo={() => {
+              dismissSettledAway();
+              for (const thread of item.threads) void unsettleThread(thread);
+            }}
+            pane="sidebar"
+          />
+        );
       case "v2-trail-more":
         return (
           <ThreadListV2TrailMoreRow

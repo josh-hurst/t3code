@@ -3802,6 +3802,12 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const autoSettledProjection = yield* orchestrator.getThreadProjection(threadId);
       assert.equal(autoSettledProjection.thread.settledOverride, "settled");
       assert.isNull(autoSettledProjection.thread.activeOrderKey);
+      // Clients tell the owner about settles they did not make; settledAt is backdated to the quiet.
+      assert.isNotNull(autoSettledProjection.thread.autoSettledAt ?? null);
+      assert.equal(
+        shellOf(yield* orchestrator.getShellSnapshot()).autoSettledAt?.toString(),
+        autoSettledProjection.thread.autoSettledAt?.toString(),
+      );
       yield* orchestrator.dispatch({
         type: "thread.unsettle",
         commandId: CommandId.make("runtime-layer-lifecycle-auto-unsettle"),
@@ -3809,6 +3815,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         reason: "user",
       });
       const postUnsettleProjection = yield* orchestrator.getThreadProjection(threadId);
+      assert.isNull(postUnsettleProjection.thread.autoSettledAt ?? null);
       const overriddenAutoSettle = yield* orchestrator
         .dispatch({
           type: "thread.auto-settle",
@@ -3827,6 +3834,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const settledProjection = yield* orchestrator.getThreadProjection(threadId);
       assert.equal(settledProjection.thread.settledOverride, "settled");
       assert.isNotNull(settledProjection.thread.settledAt);
+      assert.isNull(settledProjection.thread.autoSettledAt ?? null);
 
       yield* orchestrator.dispatch({
         type: "thread.unsettle",

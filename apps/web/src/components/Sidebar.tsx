@@ -172,6 +172,12 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 import { environmentProjects } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
 import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../state/olderSettledShelf";
+import {
+  dismissSettledAway,
+  useSettledAway,
+  useSettledAwayTracking,
+} from "../hooks/useSettledWhileAway";
+import { threadsSettledWhileAway } from "@t3tools/client-runtime/state/settled-while-away";
 import { useThreadSearch } from "../state/queries";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
@@ -324,6 +330,7 @@ import {
   SidebarDragBoundary,
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
+  SidebarSettledAwayNotice,
   SidebarSettlingLabel,
 } from "./sidebar/SidebarListMarkers";
 
@@ -581,6 +588,10 @@ function useSidebarThreads(input: {
   });
 
   const { workingThreads, snoozedThreads, settledThreads } = partition;
+  const settledAwayStretches = useSettledAway((state) => state.away);
+  const settledAwayThreads = tide
+    ? threadsSettledWhileAway(settledThreads, settledAwayStretches)
+    : EMPTY_THREADS;
   // Rows drawn under their parent in the same list, and how deep.
   const nestDepthByKey = new Map<string, number>();
   const nest = (list: readonly EnvironmentThreadShell[]) => {
@@ -858,6 +869,7 @@ function useSidebarThreads(input: {
     toggleWorkingShelf: () => setWorkingShelfExpanded((value) => !value),
     settlingThreads,
     visibleSettlingThreads,
+    settledAwayThreads,
     projectFolders,
     toggleProjectFolder: (group: SidebarProjectSnapshot) => {
       const keys = sidebarFolderExpansionKeys(group);
@@ -1671,6 +1683,73 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     },
   );
 
+  const openProjectNameMenu = useStableCallback(
+    (projectKey: string, position: { x: number; y: number }, source: ContextMenuSource) => {
+      const group = projectGroupByScopeKey.get(projectKey);
+      const api = readLocalApi();
+      if (!group || !api) return;
+      const project = group.displayName;
+      const isFiltered = projectScopeKeys.length === 1 && projectScopeKeys[0] === projectKey;
+      void (async () => {
+        const clicked = await settlePromise(() =>
+          api.contextMenu.show(
+            [
+              {
+                id: "new-thread",
+                label: gt("New thread in {project}", { project }),
+                icon: "message-square-plus",
+              },
+              // An archived project is not a filter choice and cannot be hidden.
+              ...(group.archived
+                ? []
+                : [
+                    {
+                      id: "filter-by-project",
+                      label: isFiltered
+                        ? gt("Show all projects")
+                        : gt("Filter by {project}", { project }),
+                      icon: "folder-tree",
+                      separatorBefore: true,
+                    },
+                    {
+                      id: "hide-project",
+                      label: gt("Hide {project}", { project }),
+                      icon: "eye-off",
+                    },
+                  ]),
+              { id: "changes", label: gt("Changes"), icon: "git-branch", separatorBefore: true },
+              { id: "project-settings", label: gt("Project settings"), icon: "settings" },
+            ],
+            position,
+            source,
+          ),
+        );
+        if (clicked._tag === "Failure") return;
+        switch (clicked.value) {
+          case "new-thread":
+            startThreadInProjectFolder(group);
+            return;
+          case "filter-by-project":
+            setProjectScopeKeys(isFiltered ? [] : [projectKey]);
+            return;
+          case "hide-project":
+            setProjectHidden(projectKey, true);
+            return;
+          case "changes":
+            if (isMobile) setOpenMobile(false);
+            void router.navigate({
+              to: "/history",
+              search: { project: projectKey, view: "changes" },
+            });
+            return;
+          case "project-settings":
+            openProjectSettings(group);
+            return;
+        }
+      })();
+    },
+  );
+
   const {
     activeTimeOrdered,
     pinnedThreads,
@@ -1695,6 +1774,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     toggleWorkingShelf,
     settlingThreads,
     visibleSettlingThreads,
+    settledAwayThreads,
     projectFolders,
     toggleProjectFolder,
     needsYouKeys,
@@ -2171,6 +2251,36 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       }
     })();
   };
+  useSettledAwayTracking();
+  const showSettledAway = () => {
+    dismissSettledAway();
+    if (!settledShelfExpanded) toggleSettledShelf();
+  };
+  const undoSettledAway = () => {
+    const undone = settledAwayThreads;
+    dismissSettledAway();
+    void (async () => {
+      // Null keeps each thread's place and brings back what was nested under it.
+      const results = await Promise.all(
+        undone.map((thread) =>
+          unsettleThread(scopeThreadRef(thread.environmentId, thread.id), null),
+        ),
+      );
+      const failure = results.find(
+        (result) => result._tag === "Failure" && !isAtomCommandInterrupted(result),
+      );
+      if (failure !== undefined && failure._tag === "Failure") {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt("Failed to un-settle thread"),
+            description:
+              thrownErrorMessage(squashAtomCommandFailure(failure), m) ?? gt("An error occurred."),
+          }),
+        );
+      }
+    })();
+  };
   const attemptUnsnooze = (threadRef: ScopedThreadRef) => {
     void (async () => {
       const result = await unsnoozeThread(threadRef);
@@ -2583,6 +2693,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         items.push({ kind: "marker", marker: "settling-header" });
         items.push(...rowsOf(visibleSettlingThreads, "settling"));
       }
+      if (settledAwayThreads.length > 0) items.push({ kind: "marker", marker: "settled-away" });
       pushWorking();
       pushLater();
     }
@@ -4211,11 +4322,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   )
                                 : null
                             }
-                            projectChangesKey={
+                            projectMenuKey={
                               projectGroupKeyByKey.get(
                                 `${thread.environmentId}:${thread.projectId}`,
                               ) ?? null
                             }
+                            onProjectMenu={openProjectNameMenu}
                             isSettled={settledThreadKeys.has(threadKey)}
                             thread={thread}
                             project={
@@ -4479,11 +4591,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             groupLabel={groupLabelByKey.get(threadKey)}
                             groupDivider={groupDividerKey === threadKey}
                             projectNameOnRow={projectNameOnRow(thread, threadKey)}
-                            projectChangesKey={
+                            projectMenuKey={
                               projectGroupKeyByKey.get(
                                 `${thread.environmentId}:${thread.projectId}`,
                               ) ?? null
                             }
+                            onProjectMenu={openProjectNameMenu}
                             nestDepth={nestDepthByKey.get(threadKey) ?? 0}
                             nestedUnderTitle={nestedUnderTitleByKey.get(threadKey) ?? null}
                             isNestTarget={dragState?.nestTargetKey === threadKey}
@@ -4705,6 +4818,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   $context: "label above Recent threads that will settle soon",
                                 })}
                                 count={settlingThreads.length}
+                              />,
+                            );
+                            break;
+                          case "settled-away":
+                            items.push(
+                              <SidebarSettledAwayNotice
+                                key="settled-away"
+                                label={gt(
+                                  "{count, plural, one {Settled {count} while you were away} other {Settled {count} while you were away}}",
+                                  { count: settledAwayThreads.length },
+                                )}
+                                showLabel={gt("Show in History")}
+                                undoLabel={gt("Undo")}
+                                onShow={showSettledAway}
+                                onUndo={undoSettledAway}
                               />,
                             );
                             break;

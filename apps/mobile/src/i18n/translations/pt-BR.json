@@ -4894,6 +4894,8 @@
   "13300e8565fbd665": "{label} ({count})",
   "e1339579e7c2743f": "Será concluído em breve",
   "98ef1b41b5c80500": "Por significado",
+  "f0ef397bc9639c7b": "{count, plural, one {{count} thread concluída enquanto você estava fora} other {{count} threads concluídas enquanto você estava fora}}",
+  "f3739c47fb55c3b0": "Mostrar em History",
   "694e089caefce25f": "{count, plural, one {Mostrar mais {count} thread concluída} other {Mostrar mais {count} threads concluídas}}",
   "ece9e2869077cbb6": "Descartar {title}",
   "306a6f95ad9d52f7": "Não enviadas",
