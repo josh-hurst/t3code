@@ -97,6 +97,8 @@ export interface TimelineRowSharedState {
   onForkFromRun:
     | ((input: { readonly sourceThreadId: ThreadId; readonly runId: RunId }) => Promise<void>)
     | undefined;
+  /** Absent hides "Side chat from here", as where side chats are unavailable. */
+  onSideChatFromRun: ((runId: RunId) => Promise<boolean>) | undefined;
   onToggleTurnFold: (runId: RunId) => void;
   onToggleAttemptFold: (attemptId: RunAttemptId) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;

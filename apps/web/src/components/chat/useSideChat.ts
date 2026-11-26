@@ -1,7 +1,7 @@
 import { msg } from "gt-react";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
-import type { ModelSelection, RuntimeMode, ScopedThreadRef } from "@t3tools/contracts";
+import type { ModelSelection, RunId, RuntimeMode, ScopedThreadRef } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { StartThreadTurnInput } from "@t3tools/client-runtime/operations";
 import {
@@ -26,10 +26,9 @@ export type SideChatMessage = Pick<
 > & { readonly titleSeed: string };
 
 /**
- * Starts side chats from `threadRef`, or offers none when it is null. `open` forks the
- * thread's latest stable point, sends `message` there with `readSettings()`, the parent
- * composer's settings, and shows the tab. It resolves false when the side chat did not
- * start, or another one is still starting.
+ * Starts side chats from `threadRef`, or none when it is null. `open` forks the latest stable
+ * point and sends `message` with the parent composer's `readSettings()`; `openFromRun` forks one
+ * of the thread's own runs and sends nothing. Both resolve false when nothing started.
  */
 export function useSideChat(input: {
   readonly threadRef: ScopedThreadRef | null;
@@ -56,13 +55,22 @@ export function useSideChat(input: {
     const error = squashAtomCommandFailure(failure);
     input.onError(thrownErrorMessage(error, m) ?? fallback);
   };
-  const start = async (threadRef: ScopedThreadRef, message: SideChatMessage | undefined) => {
+  const start = async (
+    threadRef: ScopedThreadRef,
+    message: SideChatMessage | undefined,
+    runId: RunId | undefined,
+  ) => {
     const { runtimeMode, modelSelection } = input.readSettings();
     const targetThreadId = newThreadId();
     const fork = await forkSideChat({
       environmentId: threadRef.environmentId,
-      // oxlint-disable-next-line t3code/no-untranslated-copy -- stored on the server as the thread title, shared by every viewer
-      input: { sourceThreadId: threadRef.threadId, targetThreadId, title: "Side chat" },
+      input: {
+        sourceThreadId: threadRef.threadId,
+        targetThreadId,
+        ...(runId === undefined ? {} : { runId }),
+        // oxlint-disable-next-line t3code/no-untranslated-copy -- stored on the server as the thread title, shared by every viewer
+        title: "Side chat",
+      },
     });
     if (fork._tag === "Failure") {
       reportFailure(fork, m(msg("Could not start a side chat.")));
@@ -123,13 +131,17 @@ export function useSideChat(input: {
     useRightPanelStore.getState().openThread(threadRef, targetThreadId);
     return true;
   };
-  const open = async (message?: SideChatMessage) => {
+  const begin = async (message: SideChatMessage | undefined, runId: RunId | undefined) => {
     const { threadRef } = input;
     if (!threadRef || pendingRef.current) return false;
     pendingRef.current = true;
-    return start(threadRef, message).finally(() => {
+    return start(threadRef, message, runId).finally(() => {
       pendingRef.current = false;
     });
   };
-  return { available: input.threadRef !== null, open: useStableCallback(open) };
+  return {
+    available: input.threadRef !== null,
+    open: useStableCallback((message?: SideChatMessage) => begin(message, undefined)),
+    openFromRun: useStableCallback((runId: RunId) => begin(undefined, runId)),
+  };
 }

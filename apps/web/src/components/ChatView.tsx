@@ -3105,6 +3105,8 @@ export default function ChatView(props: ChatViewProps) {
   const openSideChatStable = useStableCallback(() => void sideChat.open());
   const openSurfaceInMainView = useOpenSurfaceInMainView(activeThreadRef);
   const sendSideChatStable = useStableCallback(sideChat.open);
+  const sideChatFromRun =
+    sideChat.available && sideChatDisabledReason === null ? sideChat.openFromRun : undefined;
   const { onConfirmRevertStable, onForkFromRunStable, onRevertTimelineTurnStable } =
     useTimelineRewind({
       environmentId,
@@ -3765,7 +3767,11 @@ export default function ChatView(props: ChatViewProps) {
                   // Side chat runs keep no checkpoints to diff, and a fork would promote the side chat.
                   {...(embedded
                     ? {}
-                    : { onOpenTurnDiff: onOpenTurnDiffStable, onForkFromRun: onForkFromRunStable })}
+                    : {
+                        onOpenTurnDiff: onOpenTurnDiffStable,
+                        onForkFromRun: onForkFromRunStable,
+                        onSideChatFromRun: sideChatFromRun,
+                      })}
                   onOpenThread={onOpenRelatedThreadStable}
                   parentThreadLink={parentThreadLink}
                   workflowOpening={workflowOpening}

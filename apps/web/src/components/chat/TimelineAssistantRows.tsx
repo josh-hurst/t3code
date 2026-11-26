@@ -1,13 +1,14 @@
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/assistantInsights";
-import { MessageId, type RunId, type TurnItemId } from "@t3tools/contracts";
+import { MessageId, type RunId, type ThreadId, type TurnItemId } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import { agentWorkingDirectories } from "@t3tools/client-runtime/workspace-basename-lookup";
 import { T, useGT, useMessages } from "gt-react";
 import { memo, use, useState } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
-import { GitForkIcon, ReplyIcon } from "lucide-react";
+import { GitForkIcon, MessagesSquareIcon, ReplyIcon, SquareIcon, Volume2Icon } from "lucide-react";
 import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
+import { readAloudSupported, toggleReadAloud, useReadingAloud } from "~/speech/readAloud";
 import { responseContextRecord } from "~/lib/composerContextRecords";
 import { Button } from "../ui/button";
 import { ProposedPlanCard } from "./ProposedPlanCard";
@@ -150,14 +151,16 @@ export function SentMessageTimelineRow({
   );
 }
 
-function AssistantForkButton({
+type ProjectedAssistantItem = NonNullable<
+  Extract<TimelineRow, { kind: "message" }>["projectedItem"]
+>;
+
+function AssistantForkActions({
   projectedItem,
 }: {
-  readonly projectedItem: NonNullable<Extract<TimelineRow, { kind: "message" }>["projectedItem"]>;
+  readonly projectedItem: ProjectedAssistantItem;
 }) {
   const ctx = use(TimelineRowCtx);
-  const gt = useGT();
-  const [busy, setBusy] = useState(false);
   const support = useV2ItemSupport({
     environmentId: ctx.activeThreadEnvironmentId,
     sourceThreadId: projectedItem.sourceThreadId,
@@ -167,10 +170,31 @@ function AssistantForkButton({
     projectedItem,
     capabilities: support.providerSession?.capabilities,
   });
-
-  const onForkFromRun = ctx.onForkFromRun;
-  if (!canFork || onForkFromRun === undefined || projectedItem.item.runId === null) return null;
   const runId = projectedItem.item.runId;
+  if (!canFork || runId === null) return null;
+  return (
+    <>
+      <AssistantForkButton sourceThreadId={projectedItem.sourceThreadId} runId={runId} />
+      {/* The side chat forks this thread's own runs; inherited rows belong to an ancestor. */}
+      {projectedItem.sourceThreadId === ctx.threadRef?.threadId ? (
+        <AssistantSideChatButton runId={runId} />
+      ) : null}
+    </>
+  );
+}
+
+function AssistantForkButton({
+  sourceThreadId,
+  runId,
+}: {
+  readonly sourceThreadId: ThreadId;
+  readonly runId: RunId;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const gt = useGT();
+  const [busy, setBusy] = useState(false);
+  const onForkFromRun = ctx.onForkFromRun;
+  if (onForkFromRun === undefined) return null;
 
   return (
     <Tooltip>
@@ -183,9 +207,7 @@ function AssistantForkButton({
             disabled={busy}
             onClick={() => {
               setBusy(true);
-              void onForkFromRun({ sourceThreadId: projectedItem.sourceThreadId, runId }).finally(
-                () => setBusy(false),
-              );
+              void onForkFromRun({ sourceThreadId, runId }).finally(() => setBusy(false));
             }}
             aria-label={gt("Fork from this response")}
           />
@@ -195,6 +217,39 @@ function AssistantForkButton({
       </TooltipTrigger>
       <TooltipPopup side="top">
         <T>Fork from this response</T>
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function AssistantSideChatButton({ runId }: { readonly runId: RunId }) {
+  const ctx = use(TimelineRowCtx);
+  const gt = useGT();
+  const [busy, setBusy] = useState(false);
+  const onSideChatFromRun = ctx.onSideChatFromRun;
+  if (onSideChatFromRun === undefined) return null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void onSideChatFromRun(runId).finally(() => setBusy(false));
+            }}
+            aria-label={gt("Side chat from here")}
+          />
+        }
+      >
+        <MessagesSquareIcon className={cn("size-3", busy && "animate-pulse")} />
+      </TooltipTrigger>
+      <TooltipPopup side="top">
+        <T>Side chat from here</T>
       </TooltipPopup>
     </Tooltip>
   );
@@ -255,8 +310,11 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
+      {readAloudSupported && !message.streaming && message.text.trim() ? (
+        <AssistantReadAloudButton message={message} />
+      ) : null}
       {projectedItem?.item.type === "assistant_message" ? (
-        <AssistantForkButton projectedItem={projectedItem} />
+        <AssistantForkActions projectedItem={projectedItem} />
       ) : null}
       {!message.streaming && projectedItem ? (
         <AssistantReplyButton message={message} itemId={projectedItem.sourceItemId} />
@@ -326,6 +384,36 @@ function AssistantReplyButton({ message, itemId }: { message: ChatMessage; itemI
       <TooltipPopup side="top">
         <T>Reply to this response</T>
       </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function AssistantReadAloudButton({ message }: { message: ChatMessage }) {
+  const gt = useGT();
+  const reading = useReadingAloud(message.id);
+  const label = reading ? gt("Stop reading") : gt("Read aloud");
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost-muted"
+            onClick={() => toggleReadAloud(message.id, message.text)}
+            aria-label={label}
+            aria-pressed={reading}
+          />
+        }
+      >
+        {reading ? (
+          <SquareIcon className="size-3 fill-current" />
+        ) : (
+          <Volume2Icon className="size-3" />
+        )}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{label}</TooltipPopup>
     </Tooltip>
   );
 }
